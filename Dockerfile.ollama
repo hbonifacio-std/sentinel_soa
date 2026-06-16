@@ -1,0 +1,5 @@
+# Usamos la versión ligera de solo CPU
+FROM ollama/ollama:latest
+
+# Ya no descargamos el modelo aquí (lo automatizamos en el arranque)
+EXPOSE 11434

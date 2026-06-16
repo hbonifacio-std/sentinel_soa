@@ -1,0 +1,28 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Variable de entorno para deshabilitar el buffering de salida de Python
+ENV PYTHONUNBUFFERED=1
+
+# Instalar dependencias del sistema esenciales para compilaciones
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar requerimientos e instalar dependencias de Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia todo el código fuente.
+COPY . .
+
+# El contenedor expone el puerto de la API REST
+EXPOSE 8000
+
+# Copiar script de inicialización y hacerlo ejecutable
+COPY start_core.sh .
+RUN chmod +x start_core.sh
+
+# Comando por defecto para inicializar el Core Orchestrator con MCP integrado
+CMD ["./start_core.sh"]

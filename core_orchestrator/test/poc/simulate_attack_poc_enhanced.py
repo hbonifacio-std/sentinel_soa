@@ -1,0 +1,203 @@
+"""
+Script de Simulación de Ataque Mejorado para la Prueba de Concepto (PoC).
+
+Genera dinámicamente timestamps basados en el tiempo real actual y proporciona
+análisis detallado de los resultados con las mejoras implementadas.
+
+Cambios desde la versión anterior:
+- Preservación de parámetros de URI para detección de SQL injection
+- Análisis visual mejorado de resultados
+- Reporte diciente con estructura clara
+"""
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+import asyncio
+import httpx
+import json
+from datetime import datetime, timezone
+
+BASE_URL = "http://localhost:8000/api/v1/telemetry"
+
+# Obtenemos la hora actual del sistema en formato Nginx estándar
+now_nginx = datetime.now(timezone.utc).strftime("%d/%b/%Y:%H:%M:%S +0000")
+
+# ✅ MEJORA: Payloads dinámicos preservando parámetros de la URI completos
+BENIGN_LOGS = [
+    f'192.168.1.100 - - [{now_nginx}] "GET /index.html HTTP/1.1" 200 4500 "-" "Mozilla/5.0"',
+    f'192.168.1.100 - - [{now_nginx}] "GET /assets/style.css HTTP/1.1" 200 1200 "-" "Mozilla/5.0"',
+    f'192.168.1.102 - - [{now_nginx}] "GET /favicon.ico HTTP/1.1" 200 350 "-" "Mozilla/5.0"'
+]
+
+# ✅ MEJORA: Incluye parámetros con patrones de ataque en la URI
+ATTACK_LOGS = [
+    f'10.0.0.66 - - [{now_nginx}] "GET /etc/passwd HTTP/1.1" 404 230 "-" "Nikto-Scanner"',
+    f'10.0.0.66 - - [{now_nginx}] "GET /../../win.ini HTTP/1.1" 404 230 "-" "Nikto-Scanner"',
+    f'10.0.0.66 - - [{now_nginx}] "GET /admin/login.php?id=1%27%20OR%201=1 HTTP/1.1" 500 520 "-" "Nikto-Scanner"',
+    f'10.0.0.66 - - [{now_nginx}] "GET /wp-config.bak HTTP/1.1" 404 230 "-" "Nikto-Scanner"',
+    f'10.0.0.66 - - [{now_nginx}] "GET /.git/config HTTP/1.1" 403 150 "-" "Nikto-Scanner"'
+]
+
+
+def print_banner():
+    """Imprime banner atractivo."""
+    print("\n" + "="*80)
+    print("  🛡️  SIMULACIÓN AVANZADA DE ATAQUE - PRUEBA DE CONCEPTO (PoC)")
+    print("  📊 Incluye análisis mejorado de tipos de amenaza")
+    print("="*80 + "\n")
+
+
+def print_section(title: str):
+    """Imprime una sección de título."""
+    print(f"\n{'─'*80}")
+    print(f"  {title}")
+    print(f"{'─'*80}\n")
+
+
+def analyze_threat_assessment(assessment: dict) -> None:
+    """Analiza y formatea el veredicto de amenaza."""
+    threat_level = assessment.get("threat_level", "UNKNOWN")
+    threat_score = assessment.get("threat_score", 0)
+    threat_detected = assessment.get("threat_detected", False)
+    indicators = assessment.get("indicators_found", [])
+    reasoning = assessment.get("reasoning_summary", "")
+    recommendation = assessment.get("recommendation", "")
+    kill_chain = assessment.get("kill_chain_phase", None)
+    
+    # Emojis y colores
+    level_emoji = {
+        "CRITICAL": "🔴",
+        "HIGH": "🟠",
+        "MEDIUM": "🟡",
+        "LOW": "🟢",
+        "NONE": "⚪"
+    }.get(threat_level, "❓")
+    
+    print(f"{level_emoji} VEREDICTO DE AMENAZA")
+    print(f"├─ Amenaza Detectada: {'✅ SÍ' if threat_detected else '❌ NO'}")
+    print(f"├─ Nivel de Severidad: {threat_level} (Puntuación: {threat_score}/100)")
+    if kill_chain:
+        print(f"├─ Fase del Cyber Kill Chain: {kill_chain}")
+    print(f"└─ Total de Indicadores: {len(indicators)}\n")
+    
+    if indicators:
+        print("📍 INDICADORES DETECTADOS:")
+        for i, indicator in enumerate(indicators, 1):
+            print(f"  {i}. {indicator}")
+        print()
+    
+    if reasoning:
+        print("💭 ANÁLISIS HEURÍSTICO:")
+        print(f"  {reasoning}\n")
+    
+    if recommendation:
+        print("⚡ RECOMENDACIÓN DE MITIGACIÓN:")
+        # Mejorar formato de la recomendación
+        for line in recommendation.split('\n'):
+            if line.strip():
+                print(f"  {line}")
+        print()
+
+
+async def run_poc_enhanced():
+    """
+    Ejecuta la secuencia de inyección de la PoC mejorada con análisis detallados.
+    """
+    print_banner()
+    print(f"[ℹ️] Sincronizando timestamps a hora actual UTC: {now_nginx}\n")
+    
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        try:
+            # 1. Enviar Tráfico Benigno
+            print_section("FASE 1: INYECCIÓN DE TRÁFICO BENIGNO")
+            print("Enviando 3 solicitudes legítimas para establecer línea base...")
+            response = await client.post(f"{BASE_URL}/ingest/raw", json=BENIGN_LOGS)
+            benign_result = response.json()
+            print(f"✅ Respuesta: {benign_result['status']}")
+            print(f"   └─ Eventos procesados: {benign_result.get('processed_records', 0)}\n")
+
+            # 2. Enviar Ráfaga de Ataque
+            print_section("FASE 2: INYECCIÓN DE ATAQUE COORDINADO")
+            print("Enviando ráfaga de exploración desde IP 10.0.0.66...")
+            print("Patrones incluidos: Path traversal, SQL injection, escaneo de archivos sensibles\n")
+            response_atk = await client.post(f"{BASE_URL}/ingest/raw", json=ATTACK_LOGS)
+            attack_result = response_atk.json()
+            print(f"✅ Respuesta: {attack_result['status']}")
+            print(f"   └─ Eventos procesados: {attack_result.get('processed_records', 0)}\n")
+
+            # 3. Espera temporal
+            print_section("FASE 3: ESPERA TEMPORAL")
+            print("Esperando 61 segundos para expiración natural de ventana temporal...")
+            for i in range(61, 0, -1):
+                sys.stdout.write(f"\r⏳ Tiempo restante: {i:2d}s ")
+                sys.stdout.flush()
+                await asyncio.sleep(1)
+            print("\n✅ Ventana temporal expirada.\n")
+
+            # 4. Forzar análisis
+            print_section("FASE 4: EJECUCIÓN DEL ANÁLISIS DE ORQUESTACIÓN")
+            print("Forzando cierre de ventana y evaluación por el Agente IA...")
+            flush_response = await client.post(f"{BASE_URL}/flush", timeout=120.0)
+            
+            result = flush_response.json()
+            
+            # Mostrar Summary
+            print_section("📊 RESUMEN EJECUTIVO")
+            threat_summary = result.get("threat_summary", {})
+            print(f"Estado General de Amenazas: {threat_summary.get('overall_threat_status', '❓ DESCONOCIDO')}")
+            print(f"├─ 🔴 Crítica: {threat_summary.get('critical_threats', 0)}")
+            print(f"├─ 🟠 Alta: {threat_summary.get('high_threats', 0)}")
+            print(f"├─ 🟡 Media: {threat_summary.get('medium_threats', 0)}")
+            print(f"├─ 🟢 Baja: {threat_summary.get('low_threats', 0)}")
+            print(f"├─ ⚪ Limpia: {threat_summary.get('clean', 0)}")
+            print(f"└─ Indicadores únicos detectados: {threat_summary.get('total_unique_indicators', 0)}\n")
+            
+            # Mostrar detalles por IP
+            print_section("🔍 ANÁLISIS DETALLADO POR FUENTE")
+            
+            details = result.get("details", [])
+            for detail in details:
+                source_ip = detail.get("source_ip", "UNKNOWN")
+                window_info = detail.get("window_info", {})
+                threat_assessment = detail.get("threat_assessment", {})
+                http_patterns = detail.get("http_patterns", {})
+                
+                print(f"IP de Origen: {source_ip}")
+                print(f"├─ Ventana Temporal: {window_info.get('total_requests', 0)} solicitudes")
+                print(f"├─ Velocidad: {window_info.get('requests_per_second', 0):.2f} req/s")
+                print(f"└─ URIs Únicas: {window_info.get('unique_uris', 0)}\n")
+                
+                # Patrones HTTP
+                print("📡 Patrones HTTP Capturados:")
+                methods = http_patterns.get("methods_distribution", {})
+                codes = http_patterns.get("response_codes_distribution", {})
+                print(f"  Métodos: {dict(methods)}")
+                print(f"  Códigos de respuesta: {dict(codes)}")
+                print()
+                
+                # Análisis de amenaza
+                analyze_threat_assessment(threat_assessment)
+            
+            # Footer
+            print_section("✨ CONCLUSIÓN")
+            print("✅ PoC ejecutada correctamente con mejoras implementadas.")
+            print("   • Parámetros de URI preservados → Detección mejorada")
+            print("   • Heurísticas enriquecidas → Indicadores más dicientes")
+            print("   • Recomendaciones estructuradas → Acciones claras y priorizadas")
+            print("   • Formato de respuesta completo → Máxima información de debugging")
+            print("\n" + "="*80 + "\n")
+
+        except httpx.ConnectError:
+            print("\n❌ ERROR: No se pudo conectar al Core Orchestrator.")
+            print("   Asegúrate de que FastAPI está corriendo: python -m uvicorn core_orchestrator.main:app")
+            sys.exit(1)
+        except Exception as exc:
+            print(f"\n❌ ERROR en la ejecución: {str(exc)}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    asyncio.run(run_poc_enhanced())
+

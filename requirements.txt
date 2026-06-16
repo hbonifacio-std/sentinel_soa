@@ -1,0 +1,9 @@
+## Allow pip to resolve a fastapi version compatible with fastmcp's starlette requirements
+fastapi>=0.111.0,<1.0.0
+uvicorn>=0.35.0,<1.0.0
+# pydantic pin loosened to satisfy fastmcp and other libs requiring newer pydantic
+pydantic>=2.11.7,<3.0.0
+google-generativeai==0.5.4
+fastmcp>=3.4.2
+httpx>=0.28.1,<1.0
+pytest==9.0.3

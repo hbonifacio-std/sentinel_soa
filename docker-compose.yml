@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    container_name: sentinel_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+      - ./Modelfile:/tmp/Modelfile
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    # Sobrescribimos el punto de entrada para que acepte comandos de terminal (sh)
+    entrypoint: ["/bin/sh", "-c"]
+    # Ahora sí, ejecutamos la lógica en orden y al final dejamos Ollama corriendo al frente
+    command: >
+      "ollama serve & 
+       sleep 5 && 
+       ollama pull llama3.2:1b && 
+       ollama create sentinel-analyst -f /tmp/Modelfile && 
+       tail -f /dev/null"
+    networks:
+      - sentinel_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile.core
+    container_name: sentinel_core
+    ports:
+      - "8000:8000"
+    environment:
+      # --- Variables de entorno heredadas desde .env ---
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      # --- Variables de entorno específicas del servicio ---
+      - MCP_TRANSPORT=http
+      - MCP_SERVER_HOST=log-analysis-server
+      - MCP_SERVER_PORT=8080
+      - PYTHONUNBUFFERED=1
+    networks:
+      - sentinel_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+    depends_on:
+      log-analysis-server:
+        condition: service_healthy
+
+  log-analysis-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    container_name: sentinel_mcp_server
+    environment:
+      # --- Variables de entorno heredadas desde .env ---
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      # --- Variables de entorno específicas del servicio ---
+      - MCP_TRANSPORT=http
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8080
+      - PYTHONUNBUFFERED=1
+    networks:
+      - sentinel_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8080), 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+networks:
+  sentinel_net:
+    driver: bridge
+
+volumes:
+  ollama_storage:

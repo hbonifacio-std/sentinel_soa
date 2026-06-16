@@ -1,0 +1,27 @@
+# Archivos de entorno - ¡MUY IMPORTANTE para no subir secretos!
+.env
+.env.*
+!.env.example
+
+# Dependencias y entornos virtuales de Python
+venv/
+.venv/
+env/
+*.pyc
+__pycache__/
+
+# Archivos de instalación y distribución
+build/
+dist/
+*.egg-info/
+
+# Archivos de configuración de IDEs
+.vscode/
+.idea/
+
+# Archivos de testing
+.pytest_cache/
+
+# Archivos de sistema operativo
+.DS_Store
+Thumbs.db

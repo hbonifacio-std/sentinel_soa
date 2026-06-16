@@ -1,0 +1,24 @@
+# Usamos la base oficial y ligera de Kali Linux
+FROM kalilinux/kali-rolling:latest
+
+# Evita alertas e interrupciones en la instalación de paquetes
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Actualizamos repositorios e instalamos Python, Pip y utilitarios de red básicos
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    curl \
+    iputils-ping \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Definimos el directorio de trabajo
+WORKDIR /app
+
+# Instalamos automáticamente la librería HTTPX que requiere tu script PoC
+# Usamos break-system-packages porque las versiones modernas de Debian/Kali lo exigen en entornos globales
+RUN pip3 install --break-system-packages httpx
+
+# Mantenemos el contenedor vivo esperando instrucciones
+ENTRYPOINT ["tail", "-f", "/dev/null"]

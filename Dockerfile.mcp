@@ -1,0 +1,23 @@
+# Dockerfile.mcp
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Variable de entorno crítica para deshabilitar el buffering.
+ENV PYTHONUNBUFFERED=1
+
+# Instalar dependencias del sistema para compilar paquetes si es necesario.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia todo el código fuente.
+COPY . .
+
+# El comando por defecto para iniciar el servidor MCP.
+# Este se ejecutará cuando el contenedor arranque.
+CMD ["python", "-m", "mcp_servers.log_analysis_server.server"]
