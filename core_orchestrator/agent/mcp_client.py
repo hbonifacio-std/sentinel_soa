@@ -43,7 +43,8 @@ class MCPClientManager:
             Client: Cliente inicializado y listo para usarse.
         """
         transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
-        logger.info(f"Iniciando sesión FastMCP en modo de transporte: {transport_mode}")
+        logger.info(
+            f"Iniciando sesión FastMCP en modo de transporte: {transport_mode}")
 
         client: Client
 
@@ -54,14 +55,17 @@ class MCPClientManager:
                     port = int(os.getenv('MCP_SERVER_PORT', '8080'))
                     # FastMCP HTTP transport exposes its endpoint under /mcp
                     url = f"http://{host}:{port}/mcp"
-                    logger.info(f"Configurando cliente FastMCP para conectar a {url}")
+                    logger.info(
+                        f"Configurando cliente FastMCP para conectar a {url}")
                     return Client(url)
 
                 elif transport_mode == 'stdio':
                     if not self.server_script_path:
-                        raise ValueError("El 'server_script_path' es requerido para el modo stdio.")
+                        raise ValueError(
+                            "El 'server_script_path' es requerido para el modo stdio.")
 
-                    logger.info(f"Levantando servidor FastMCP desde: {self.server_script_path}")
+                    logger.info(
+                        f"Levantando servidor FastMCP desde: {self.server_script_path}")
                     python_executable = sys.executable
                     command = [
                         python_executable,
@@ -75,7 +79,8 @@ class MCPClientManager:
                     return Client(command)
 
                 else:
-                    raise ValueError(f"Modo de transporte no válido: '{transport_mode}'. Usar 'http' o 'stdio'.")
+                    raise ValueError(
+                        f"Modo de transporte no válido: '{transport_mode}'. Usar 'http' o 'stdio'.")
 
             self._client = await asyncio.wait_for(_create_client(), timeout=timeout)
             # Inicializar la sesión
@@ -87,11 +92,15 @@ class MCPClientManager:
             return self._client
 
         except asyncio.TimeoutError:
-            logger.critical(f"Timeout durante inicialización FastMCP (>{timeout}s) - el servidor no responde o está bloqueado.")
-            raise RuntimeError(f"Timeout al inicializar FastMCP después de {timeout}s")
+            logger.critical(
+                f"Timeout durante inicialización FastMCP (>{timeout}s) - el servidor no responde o está bloqueado.")
+            raise RuntimeError(
+                f"Timeout al inicializar FastMCP después de {timeout}s")
         except Exception as exc:
-            logger.critical(f"Error fatal al conectar con el servidor FastMCP: {str(exc)}", exc_info=True)
-            raise RuntimeError(f"No se pudo inicializar la sesión FastMCP: {str(exc)}") from exc
+            logger.critical(
+                f"Error fatal al conectar con el servidor FastMCP: {str(exc)}", exc_info=True)
+            raise RuntimeError(
+                f"No se pudo inicializar la sesión FastMCP: {str(exc)}") from exc
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -113,7 +122,8 @@ class MCPClientManager:
                 result = await self._client.call_tool(tool_name, arguments)
             return result
         except Exception as exc:
-            logger.error(f"Falla al ejecutar call para '{tool_name}': {str(exc)}", exc_info=True)
+            logger.error(
+                f"Falla al ejecutar call para '{tool_name}': {str(exc)}", exc_info=True)
             return {"error": f"Excepción en la ejecución de la herramienta remota: {str(exc)}"}
 
     async def close(self):

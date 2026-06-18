@@ -4,21 +4,43 @@ FROM kalilinux/kali-rolling:latest
 # Evita alertas e interrupciones en la instalación de paquetes
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Actualizamos repositorios e instalamos Python, Pip y utilitarios de red básicos
+# Actualizamos repositorios e instalamos Python, Pip y utilidades de ataque OWASP Top 10
+# - curl, jq          -> peticiones HTTP manuales y parseo de JSON en bash
+# - nmap              -> reconocimiento de puertos/servicios (Recon / A05 Misconfig)
+# - sqlmap            -> inyección SQL automatizada (A03 Injection)
+# - hydra             -> fuerza bruta de credenciales (A07 Identification & Auth Failures)
+# - dirb, gobuster    -> descubrimiento de rutas/ficheros ocultos (A05 Misconfig)
+# - nikto             -> escaneo de vulnerabilidades web genérico
+# - whois, dnsutils   -> utilidades de reconocimiento de red
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     curl \
+    jq \
     iputils-ping \
+    nmap \
+    sqlmap \
+    hydra \
+    dirb \
+    gobuster \
+    nikto \
+    whois \
+    dnsutils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Definimos el directorio de trabajo
 WORKDIR /app
 
-# Instalamos automáticamente la librería HTTPX que requiere tu script PoC
-# Usamos break-system-packages porque las versiones modernas de Debian/Kali lo exigen en entornos globales
-RUN pip3 install --break-system-packages httpx
+# Instalamos las librerías Python que requiere el script de simulación de tráfico
+# httpx     -> cliente HTTP async (PoC original)
+# requests  -> cliente HTTP síncrono (más simple para scripts secuenciales)
+# faker     -> generación de datos realistas para tráfico benigno
+RUN pip3 install --break-system-packages httpx requests faker
+
+# Copiamos el script de simulación de tráfico al contenedor
+COPY /pentesting/traffic_simulator.py /app/traffic_simulator.py
 
 # Mantenemos el contenedor vivo esperando instrucciones
+# (el script se ejecuta manualmente con: docker exec -it sentinel_attacker python3 /app/traffic_simulator.py)
 ENTRYPOINT ["tail", "-f", "/dev/null"]

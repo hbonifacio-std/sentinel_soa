@@ -6,16 +6,17 @@ Este script valida que todas las mejoras de detección de amenazas
 están funcionando correctamente sin depender de FastAPI.
 """
 
+from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessment
+from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
+from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
+import json
+from uuid import uuid4
+from datetime import datetime, timezone, timedelta
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+sys.path.append(os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "../../../")))
 
-from datetime import datetime, timezone, timedelta
-from uuid import uuid4
-import json
-from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
-from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
-from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessment
 
 print("=" * 80)
 print("VALIDACIÓN DE MEJORAS EN DETECCIÓN DE AMENAZAS")
@@ -49,7 +50,8 @@ attack_window = WebActivityWindowInput(
 )
 
 # Ejecutar análisis heurístico
-heuristic_score, indicators, reasoning = ThreatHeuristics.analyze(attack_window)
+heuristic_score, indicators, reasoning = ThreatHeuristics.analyze(
+    attack_window)
 
 # Crear veredicto
 attack_verdict = ThreatAssessment(
@@ -114,7 +116,8 @@ benign_window = WebActivityWindowInput(
     requests_per_second_avg=0.05
 )
 
-benign_score, benign_indicators, benign_reasoning = ThreatHeuristics.analyze(benign_window)
+benign_score, benign_indicators, benign_reasoning = ThreatHeuristics.analyze(
+    benign_window)
 
 benign_verdict = ThreatAssessment(
     window_id=benign_window.window_id,
@@ -155,7 +158,8 @@ print("[TEST 3] FORMATO DE SALIDA PROFESIONAL")
 print("-" * 80)
 print()
 print("VEREDICTO DEL ATAQUE (JSON):")
-print(json.dumps(attack_verdict.model_dump(), indent=2, ensure_ascii=False, default=str))
+print(json.dumps(attack_verdict.model_dump(),
+      indent=2, ensure_ascii=False, default=str))
 print()
 print()
 
@@ -196,4 +200,3 @@ print("     - Historial de alertas por IP")
 print("     - Reincidencia detectada")
 print()
 print("=" * 80)
-

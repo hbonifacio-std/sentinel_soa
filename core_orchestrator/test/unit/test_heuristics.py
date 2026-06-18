@@ -1,14 +1,15 @@
 """
 Test unitario para validar el motor de heurísticas de amenazas.
 """
+from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
+from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
+from uuid import uuid4
+from datetime import datetime, timezone, timedelta
 import sys
 import os
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
+sys.path.append(os.path.abspath(os.path.join(
+    os.path.dirname(__file__), "../../../")))
 
-from datetime import datetime, timezone, timedelta
-from uuid import uuid4
-from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
-from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
 
 # Crear una ventana de ataque típico
 window_id = uuid4()
@@ -39,7 +40,8 @@ print("=" * 60)
 print(f"IP: {attack_window.source_ip}")
 print(f"URIs solicitadas: {attack_window.unique_uris_requested}")
 print(f"User-Agents: {attack_window.user_agents_observed}")
-print(f"Ratio 404: {attack_window.response_codes_distribution.get('404', 0)}/{attack_window.total_requests}")
+print(
+    f"Ratio 404: {attack_window.response_codes_distribution.get('404', 0)}/{attack_window.total_requests}")
 print()
 
 # Ejecutar análisis heurístico
@@ -89,7 +91,8 @@ benign_window = WebActivityWindowInput(
     requests_per_second_avg=0.05
 )
 
-benign_score, benign_indicators, benign_reasoning = ThreatHeuristics.analyze(benign_window)
+benign_score, benign_indicators, benign_reasoning = ThreatHeuristics.analyze(
+    benign_window)
 
 print(f"THREAT SCORE: {benign_score}/100")
 print(f"INDICADORES: {len(benign_indicators)}")
@@ -99,7 +102,7 @@ print()
 if benign_score < 20:
     print("✓ RESULTADO: Tráfico benigno correctamente clasificado")
 else:
-    print(f"⚠ RESULTADO: Score inesperado ({benign_score}) para tráfico benigno")
+    print(
+        f"⚠ RESULTADO: Score inesperado ({benign_score}) para tráfico benigno")
 
 print("=" * 60)
-

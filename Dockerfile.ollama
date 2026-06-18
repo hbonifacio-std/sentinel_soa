@@ -1,5 +1,19 @@
-# Usamos la versión ligera de solo CPU
 FROM ollama/ollama:latest
-
-# Ya no descargamos el modelo aquí (lo automatizamos en el arranque)
-EXPOSE 11434
+ 
+WORKDIR /app
+ 
+# Instalar netcat
+RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/lists/*
+ 
+# Copiar el Modelfile
+COPY Modelfile .
+ 
+# Levantamos Ollama, esperamos el puerto, descargamos el modelo base y creamos sentinel-analyst
+RUN ollama serve & \
+    echo "Esperando a que Ollama inicie..." && \
+    while ! nc -z localhost 11434; do sleep 1; done && \
+    echo "Descargando llama3.2:1b..." && \
+    ollama pull llama3.2:1b && \
+    echo "Creando sentinel-analyst..." && \
+    ollama create sentinel-analyst -f Modelfile && \
+    echo "¡Modelo inyectado exitosamente en la imagen!"

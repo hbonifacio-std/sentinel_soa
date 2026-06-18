@@ -45,7 +45,8 @@ class LogPreprocessor:
 
         match = cls.LOG_REGEX.match(raw_line.strip())
         if not match:
-            logger.debug(f"Línea de log omitida por no cumplir con el patrón estándar: {raw_line[:50]}...")
+            logger.debug(
+                f"Línea de log omitida por no cumplir con el patrón estándar: {raw_line[:50]}...")
             return None
 
         data = match.groupdict()
@@ -59,12 +60,14 @@ class LogPreprocessor:
             parts = ts_str.split(' ', 1)
             datetime_part = parts[0]
             timezone_part = parts[1] if len(parts) > 1 else "+0000"
-            
+
             # Ajustamos el formato de los dos puntos de Nginx/Apache
             first_colon = datetime_part.find(':')
             if first_colon != -1:
-                dt_clean = datetime_part[:first_colon] + " " + datetime_part[first_colon+1:]
-                parsed_dt = datetime.strptime(f"{dt_clean} {timezone_part}", "%d/%b/%Y %H:%M:%S %z")
+                dt_clean = datetime_part[:first_colon] + \
+                    " " + datetime_part[first_colon+1:]
+                parsed_dt = datetime.strptime(
+                    f"{dt_clean} {timezone_part}", "%d/%b/%Y %H:%M:%S %z")
             else:
                 parsed_dt = datetime.now(timezone.utc)
 
@@ -79,12 +82,14 @@ class LogPreprocessor:
                 http_method=data["method"].upper(),
                 request_uri=full_uri,
                 response_code=int(data["status"]),
-                response_size_bytes=0 if data["bytes"] == "-" else int(data["bytes"]),
+                response_size_bytes=0 if data["bytes"] == "-" else int(
+                    data["bytes"]),
                 user_agent=data["user_agent"] if data["user_agent"] else "Unknown"
             )
 
         except Exception as exc:
-            logger.warning(f"Error al procesar los campos de la línea de log parseada: {str(exc)}")
+            logger.warning(
+                f"Error al procesar los campos de la línea de log parseada: {str(exc)}")
             return None
 
     @classmethod
@@ -96,5 +101,6 @@ class LogPreprocessor:
             # Reutiliza el validador estático de Pydantic pasándole el diccionario crudo
             return LogLine(**payload)
         except Exception as err:
-            logger.error(f"Estructura JSON inválida para el modelo LogLine: {str(err)}")
+            logger.error(
+                f"Estructura JSON inválida para el modelo LogLine: {str(err)}")
             return None

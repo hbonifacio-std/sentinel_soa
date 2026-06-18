@@ -11,10 +11,15 @@ from pydantic import BaseModel, Field, field_validator, IPvAnyAddress
 
 class LogEvent(BaseModel):
     """Modelo Pydantic que mapea una entrada de log web sanitizada.
-    
+
     Asegura tipos estáticos rígidos para la ingestión rápida en la API REST
     proveniente del daemon de recolección local.
     """
+    source_id: Optional[str] = Field(
+        default=None,
+        description="Identificador único del servidor o aplicación que origina el log. Ej: 'web-server-prod-01'.",
+        examples=["web-server-prod-01", "api-gateway-staging"]
+    )
 
     source_ip: str = Field(
         ...,
@@ -56,7 +61,7 @@ class LogEvent(BaseModel):
     @classmethod
     def validate_ip_format(cls, v: str) -> str:
         """Valida rigurosamente que el string recibido corresponda a una IP válida.
-        
+
         Usa internamente la lógica de tipado IP nativa de Pydantic para evitar 
         inyecciones o valores de red corruptos en la llave de agrupación.
         """
@@ -65,7 +70,8 @@ class LogEvent(BaseModel):
             IPvAnyAddress(v)
             return v
         except Exception as e:
-            raise ValueError(f"La dirección IP proporcionada '{v}' no tiene un formato válido.") from e
+            raise ValueError(
+                f"La dirección IP proporcionada '{v}' no tiene un formato válido.") from e
 
     @field_validator("http_method")
     @classmethod

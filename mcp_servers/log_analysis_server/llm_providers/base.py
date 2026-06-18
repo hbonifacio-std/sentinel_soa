@@ -26,6 +26,7 @@ class LLMResponse(BaseModel):
     reasoning_summary: str
     recommendation: str
     threat_score: Optional[float] = None
+    threat_score: Optional[float] = None # Cambiado a float para consistencia con LLM output
     attack_vector_identified: Optional[str] = None
     justification_summary: Optional[str] = None
 

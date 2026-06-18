@@ -1,0 +1,17 @@
+# Dockerfile para la aplicación "Víctima"
+
+FROM python:3.10-slim
+
+WORKDIR /app
+
+COPY victim_app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY victim_app/main.py .
+
+# Crear el directorio de logs y dar permisos
+RUN mkdir -p /var/log/victim_app && \
+    chown -R www-data:www-data /var/log/victim_app
+
+EXPOSE 8001
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

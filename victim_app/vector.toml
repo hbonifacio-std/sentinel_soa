@@ -1,0 +1,62 @@
+# Configuración de Vector para el entorno de simulación de Sentinel SOA
+# Reemplaza a filebeat.yml para el envío de logs.
+
+# --- Fuentes (Inputs) ---
+# Define de dónde Vector debe recolectar los datos.
+[sources.victim_logs]
+  type = "file" # Lee desde archivos.
+  include = ["/var/log/victim_app/activity.log"] # Ruta al archivo de log dentro del contenedor.
+  
+  # Configuración moderna para evitar el WARN de obsolescencia
+  read_from = "beginning"
+  ignore_checkpoints = false
+
+# --- Transformaciones (Procesamiento) ---
+# Define cómo se deben procesar los logs antes de enviarlos.
+[transforms.parse_and_enrich]
+  type = "remap" # Permite reestructurar los eventos de log con el lenguaje VRL.
+  inputs = ["victim_logs"] # Aplica esta transformación a los logs de la fuente 'victim_logs'.
+  source = """
+  # 1. Parsea el log (que viene en el campo 'message') como JSON.
+  . = parse_json!(.message)
+
+  # 2. Renombra y mapea los campos al esquema de LogEvent.
+  .timestamp_utc = .timestamp
+  .http_method = .request_method
+  .response_code = .status_code
+  
+  # 3. Combina path y query para formar el URI completo de forma infalible (Elimina el Warning E900).
+  if .request_query != "" && .request_query != null {
+    .request_uri = (string(.request_path) ?? "") + "?" + (string(.request_query) ?? "")
+  } else {
+    .request_uri = .request_path
+  }
+
+  # 4. Elimina los campos originales que ya no son necesarios para limpiar el evento.
+  del(.timestamp)
+  del(.request_method)
+  del(.request_path)
+  del(.request_query)
+  del(.status_code)
+  del(.processing_time_ms)
+  del(.raw_request_body)
+  """
+
+# --- Sinks (Outputs) ---
+# Define a dónde se deben enviar los datos procesados.
+[sinks.sentinel_core_http]
+  type = "http" # Envía los datos a un endpoint HTTP.
+  inputs = ["parse_and_enrich"] # Envía los logs procesados por 'parse_and_enrich'.
+  uri = "http://sentinel_core:8000/api/v1/telemetry/ingest/batch" # Endpoint correcto para ingesta de eventos estructurados.
+  method = "post" # Usa el método POST.
+  encoding.codec = "json" # Codifica el payload de salida como JSON.
+  # Desactivamos el batching para enviar un evento por petición, que es lo que el endpoint espera.
+  batch.max_events = 100 
+  batch.timeout_secs = 60
+
+# --- Sink de Debug ---
+# Imprime los logs procesados a la consola para depuración.
+[sinks.debug_console]
+  type = "console"
+  inputs = ["parse_and_enrich"]
+  encoding.codec = "json"

@@ -1,0 +1,24 @@
+# Configuración de Filebeat para el entorno de simulación de Sentinel SOA
+
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/victim_app/activity.log
+  json:
+    keys_under_root: true
+    add_error_key: true
+    message_key: 'raw_request_body'
+
+processors:
+  - add_fields:
+      target: ''
+      fields:
+        source_id: "victim-web-server-01"
+
+# Output HTTP corregido
+output.http:
+  host: "http://sentinel_core:8000/api/v1/telemetry/ingest/structured"
+  method: "POST"
+  headers:
+    "Content-Type": "application/json"

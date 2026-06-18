@@ -1,35 +1,4 @@
-version: '3.8'
-
 services:
-  ollama:
-    build:
-      context: .
-      dockerfile: Dockerfile.ollama
-    container_name: sentinel_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_storage:/root/.ollama
-      - ./Modelfile:/tmp/Modelfile
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-    # Sobrescribimos el punto de entrada para que acepte comandos de terminal (sh)
-    entrypoint: ["/bin/sh", "-c"]
-    # Ahora sí, ejecutamos la lógica en orden y al final dejamos Ollama corriendo al frente
-    command: >
-      "ollama serve & 
-       sleep 5 && 
-       ollama pull llama3.2:1b && 
-       ollama create sentinel-analyst -f /tmp/Modelfile && 
-       tail -f /dev/null"
-    networks:
-      - sentinel_net
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 3G
-
   core:
     build:
       context: .
@@ -38,61 +7,145 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # --- Variables de entorno heredadas desde .env ---
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
-      - OLLAMA_MODEL=${OLLAMA_MODEL}
-      # --- Variables de entorno específicas del servicio ---
-      - MCP_TRANSPORT=http
-      - MCP_SERVER_HOST=log-analysis-server
-      - MCP_SERVER_PORT=8080
-      - PYTHONUNBUFFERED=1
+      # Variables de entorno para el Core Orchestrator
+      # Se pueden cargar desde un archivo .env en producción
+      WINDOW_THRESHOLD_REQUESTS: ${WINDOW_THRESHOLD_REQUESTS}
+      WINDOW_DURATION_SECONDS: ${WINDOW_DURATION_SECONDS}
+      MAX_ALERTS_IN_MEMORY: ${MAX_ALERTS_IN_MEMORY}
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      # Configuración de base de datos (ejemplos, ajustar según necesidad)
+      MONGO_HOST: ${MONGO_HOST}
+      MONGO_PORT: ${MONGO_PORT}
+      MONGO_USER: ${MONGO_USER}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_DB_NAME: ${MONGO_DB_NAME}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # Configuración del MCP Server
+      MCP_SERVER_HOST: mcp_server
+      MCP_SERVER_PORT: 8080
     networks:
       - sentinel_net
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 2G
     depends_on:
-      log-analysis-server:
-        condition: service_healthy
+      - mongo
+      - redis
+      - mcp_server
 
-  log-analysis-server:
+  mcp_server:
     build:
       context: .
       dockerfile: Dockerfile.mcp
     container_name: sentinel_mcp_server
     environment:
-      # --- Variables de entorno heredadas desde .env ---
-      - LLM_PROVIDER=${LLM_PROVIDER}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
-      - OLLAMA_MODEL=${OLLAMA_MODEL}
-      # --- Variables de entorno específicas del servicio ---
-      - MCP_TRANSPORT=http
-      - MCP_SERVER_HOST=0.0.0.0
-      - MCP_SERVER_PORT=8080
-      - PYTHONUNBUFFERED=1
+      # Variables de entorno para el Log Analysis Server (MCP)
+      LLM_PROVIDER: ${LLM_PROVIDER}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+      OLLAMA_MODEL: ${OLLAMA_MODEL}
+      MCP_SERVER_HOST: 0.0.0.0 # Escucha en todas las interfaces dentro del contenedor
+      MCP_SERVER_PORT: 8080
     networks:
       - sentinel_net
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 1G
+    depends_on:
+      - ollama # Depende de ollama si LLM_PROVIDER es ollama
+
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    container_name: sentinel_ollama
+    ports:
+      - "11434:11434" # Puerto por defecto de Ollama
+    networks:
+      - sentinel_net
+    volumes:
+      - ollama_data:/root/.ollama # Persistir modelos
+    # command: ollama serve # El Dockerfile ya lo inicia
+  
+  attacker:
+    build:
+      context: .
+      dockerfile: Dockerfile.attacker
+    container_name: sentinel_attacker
+    networks:
+      - sentinel_net
+
+  victim_app:
+    build:
+      context: . # El contexto es la raíz del proyecto
+      dockerfile: Dockerfile.victim # El Dockerfile está en la raíz
+    container_name: sentinel_victim_app
+    ports:
+      - "8001:8001"
+    networks:
+      - sentinel_net
+    volumes:
+      - victim_logs:/var/log/victim_app # Montar volumen para logs
+
+  log_shipper:
+    image: timberio/vector:0.38.0-alpine # Imagen estable y ligera de Vector basada en Alpine
+    container_name: sentinel_log_shipper_vector
+    command: ["--config", "/etc/vector/vector.toml"] # Forzar el uso del archivo de config .toml
+    volumes:
+      # Mapeo del archivo de configuración nativo TOML desde tu host al contenedor
+      - ./victim_app/vector.toml:/etc/vector/vector.toml:ro
+      
+      # Mapeo del volumen de logs de la app víctima en modo solo lectura
+      - victim_logs:/var/log/victim_app:ro
+    networks:
+      - sentinel_net
+    depends_on:
+      - victim_app
+      - core # Garantiza que el Core Orchestrator esté corriendo para recibir los HTTP POST
+  mongo:
+      image: mongo:latest
+      container_name: sentinel_mongodb
+      ports:
+        - "27017:27017"
+      volumes:
+        - mongo_data:/data/db
+      environment:
+        - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
+        - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      networks:
+        - sentinel_net
+      healthcheck:
+        # Se comprueba que el servidor responde y que la autenticación es exitosa.
+        test: ["CMD-SHELL", "mongosh --username $$MONGO_USER --password $$MONGO_PASSWORD --authenticationDatabase admin --quiet --eval 'db.adminCommand(\"ping\")'"]
+        interval: 10s
+        timeout: 10s
+        retries: 5
+        start_period: 10s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: sentinel_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    # Inicia Redis con una contraseña requerida para todas las operaciones.
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    networks:
+      - sentinel_net
     healthcheck:
-      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 8080), 1)"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 5
 
 networks:
   sentinel_net:
     driver: bridge
 
 volumes:
-  ollama_storage:
+  victim_logs:
+  ollama_data:
+  mongo_data:
+  redis_data:

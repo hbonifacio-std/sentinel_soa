@@ -12,11 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY mcp_servers/log_analysis_server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia todo el código fuente.
-COPY . .
+COPY mcp_servers/ ./mcp_servers/
 
 # El comando por defecto para iniciar el servidor MCP.
 # Este se ejecutará cuando el contenedor arranque.

@@ -21,9 +21,9 @@ def test_parse_valid_combined_log_line():
         '"GET /api/v1/users?id=99 HTTP/1.1" 200 1024 '
         '"http://referer.com" "Mozilla/5.0 (Windows NT 10.0)"'
     )
-    
+
     result = LogPreprocessor.parse_raw_line(raw_line)
-    
+
     assert result is not None
     assert isinstance(result, LogLine)
     assert result.source_ip == "192.168.1.50"
@@ -41,9 +41,9 @@ def test_parse_malformed_log_line():
     o que no coincidan con la firma esperada, retornando None.
     """
     malformed_line = "ESTO NO ES UN LOG WEB VALIDO 404 GET"
-    
+
     result = LogPreprocessor.parse_raw_line(malformed_line)
-    
+
     assert result is None
 
 
