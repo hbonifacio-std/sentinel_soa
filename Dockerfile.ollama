@@ -12,8 +12,8 @@ COPY Modelfile .
 RUN ollama serve & \
     echo "Esperando a que Ollama inicie..." && \
     while ! nc -z localhost 11434; do sleep 1; done && \
-    echo "Descargando llama3.2:1b..." && \
-    ollama pull llama3.2:1b && \
+    echo "Descargando FROM qwen2.5-coder:7b..." && \
+    ollama pull qwen2.5-coder:7b && \
     echo "Creando sentinel-analyst..." && \
     ollama create sentinel-analyst -f Modelfile && \
     echo "¡Modelo inyectado exitosamente en la imagen!"

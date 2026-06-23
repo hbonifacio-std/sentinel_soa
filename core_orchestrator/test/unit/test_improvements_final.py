@@ -32,6 +32,7 @@ print("-" * 80)
 now = datetime.now(timezone.utc)
 attack_window = WebActivityWindowInput(
     window_id=uuid4(),
+    source_id="test-source",
     source_ip="10.0.0.66",
     window_start_utc=now,
     window_end_utc=now + timedelta(seconds=60),
@@ -56,6 +57,8 @@ heuristic_score, indicators, reasoning = ThreatHeuristics.analyze(
 # Crear veredicto
 attack_verdict = ThreatAssessment(
     window_id=attack_window.window_id,
+    source_id="test-source",
+    source_ip=attack_window.source_ip,
     threat_detected=heuristic_score >= 70,
     threat_level="CRITICAL" if heuristic_score >= 90 else "HIGH" if heuristic_score >= 70 else "MEDIUM",
     threat_score=heuristic_score,
@@ -101,6 +104,7 @@ print("-" * 80)
 
 benign_window = WebActivityWindowInput(
     window_id=uuid4(),
+    source_id="test-source",
     source_ip="192.168.1.100",
     window_start_utc=now,
     window_end_utc=now + timedelta(seconds=60),
@@ -121,6 +125,8 @@ benign_score, benign_indicators, benign_reasoning = ThreatHeuristics.analyze(
 
 benign_verdict = ThreatAssessment(
     window_id=benign_window.window_id,
+    source_id="test-source",
+    source_ip=benign_window.source_ip,
     threat_detected=benign_score >= 20,
     threat_level="NONE" if benign_score < 20 else "LOW",
     threat_score=benign_score,

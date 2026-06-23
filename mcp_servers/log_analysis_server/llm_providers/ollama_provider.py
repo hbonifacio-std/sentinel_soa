@@ -1,13 +1,13 @@
 """
-Módulo del adaptador Ollama para la interfaz LLM genérica.
+Ollama adapter module for the generic LLM interface.
 
-Implementa LLMProviderInterface para Ollama (modelos LLM locales), permitiendo
-ejecutar análisis sin dependencias de APIs externas y sin costos.
+Implements LLMProviderInterface for Ollama (local LLM models), allowing
+analysis execution without external API dependencies and without costs.
 """
 
-import asyncio
 import json
 import logging
+import re
 from typing import Any, Dict, Optional, List
 
 import httpx
@@ -25,28 +25,28 @@ logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers.ollama
 
 class OllamaProvider(LLMProviderInterface):
     """
-    Adaptador de Ollama para el framework LLM genérico.
+    Ollama adapter for the generic LLM framework.
     
-    Permite ejecutar modelos de LLM locales (Mistral, Llama2, etc.) sin
-    dependencias de APIs externas, ideal para desarrollo y testing.
+    Allows running local LLM models (Mistral, Llama2, etc.) without
+    external API dependencies, ideal for development and testing.
     
-    Requiere que Ollama esté ejecutándose (típicamente en Docker):
+    Requires Ollama to be running (typically in Docker):
         docker run -d -p 11434:11434 ollama/ollama
         docker exec <container_id> ollama pull mistral
     """
 
     _PROVIDER_NAME = "ollama"
-    _TIMEOUT_SECONDS = 300  # 5 minutos por defecto
+    _TIMEOUT_SECONDS = 900  # 15 minutes by default
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Inicializar el proveedor Ollama con configuración específica.
+        Initialize the Ollama provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Debe contener:
-                - ollama_base_url: URL base de Ollama (default: http://localhost:11434)
-                - ollama_model: Nombre del modelo (default: mistral)
-                - ollama_timeout_seconds: Timeout para requests (default: 300)
+            config (Dict[str, Any]): Must contain:
+                - ollama_base_url: Ollama base URL (default: http://localhost:11434)
+                - ollama_model: Model name (default: mistral)
+                - ollama_timeout_seconds: Request timeout (default: 300)
         """
         super().__init__(config)
         self._base_url = config.get("ollama_base_url", "http://localhost:11434").rstrip("/")
@@ -54,39 +54,103 @@ class OllamaProvider(LLMProviderInterface):
         self._timeout = config.get("ollama_timeout_seconds", self._TIMEOUT_SECONDS)
         self._client = None
         
-        logger.info(f"OllamaProvider inicializado para modelo: {self._model_name} en {self._base_url}")
+        logger.info(f"OllamaProvider initialized for model: {self._model_name} at {self._base_url}")
 
     def _get_client(self) -> httpx.AsyncClient:
         """
-        Obtener o crear cliente HTTP asincrónico para Ollama.
+        Get or create an asynchronous HTTP client for Ollama.
         
         Returns:
-            httpx.AsyncClient: Cliente con timeout configurado
+            httpx.AsyncClient: Client with configured timeout
         """
         if self._client is None:
             self._client = httpx.AsyncClient(timeout=self._timeout)
         return self._client
 
     def build_analysis_prompt(self, telemetry: Any, history: List[Any]) -> str:
-        """Genera el payload JSON ultra reducido aprovechando el Modelfile pre-cargado."""
+        """Generates the ultra-reduced JSON payload leveraging the pre-loaded Modelfile."""
         return AnalysisPromptBuilder.build_optimized_json_prompt(telemetry, history)
+
+    @staticmethod
+    def _extract_json_object(raw_text: str) -> Dict[str, Any]:
+        """Extract a JSON object even when the model wraps it with extra text or markdown fences."""
+        stripped = raw_text.strip()
+
+        # Fast-path: fully valid JSON object
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        # Remove markdown code fences and retry
+        fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", stripped, re.DOTALL | re.IGNORECASE)
+        if fence_match:
+            candidate = fence_match.group(1).strip()
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+
+        # Fallback: take first '{' and last '}' block
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            candidate = stripped[start:end + 1]
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+
+        raise json.JSONDecodeError("Could not extract a valid JSON object", stripped, 0)
+
+    @staticmethod
+    def _normalize_response(parsed: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize aliases and keep only the 3 canonical LLM decision fields."""
+        raw = dict(parsed)
+
+        aliases = {
+            "score": "threat_score",
+            "risk_score": "threat_score",
+            "analysis_summary": "reasoning_summary",
+            "summary": "reasoning_summary",
+            "justification": "reasoning_summary",
+            "recommended_action": "recommendation",
+            "mitigation": "recommendation",
+        }
+
+        normalized: Dict[str, Any] = {}
+        for source_key, target_key in aliases.items():
+            if target_key not in raw and source_key in raw:
+                raw[target_key] = raw[source_key]
+
+        normalized["threat_score"] = raw.get("threat_score", 0)
+        normalized["reasoning_summary"] = raw.get(
+            "reasoning_summary",
+            "Partial LLM output received; reasoning completed using deterministic security heuristics.",
+        )
+        normalized["recommendation"] = raw.get(
+            "recommendation",
+            "Strengthen layered detection controls and harden exposed application attack surfaces.",
+        )
+
+        return normalized
 
     async def call_model(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """
-        Invocar a Ollama con el prompt proporcionado.
+        Invoke Ollama with the provided prompt.
         
-        Realiza request HTTP a la API de Ollama (/api/generate endpoint) y
-        retorna la respuesta como string.
+        Makes an HTTP request to the Ollama API (/api/generate endpoint) and
+        returns the response as a string.
         
         Args:
-            prompt (str): Prompt estructurado para análisis
-            max_tokens (Optional[int]): Número máximo de tokens (ignorado por Ollama en este endpoint)
+            prompt (str): Structured prompt for analysis
+            max_tokens (Optional[int]): Maximum number of tokens (ignored by Ollama in this endpoint)
             
         Returns:
-            str: Respuesta del modelo como string
+            str: Model response as string
             
         Raises:
-            LLMException: Si hay error en la comunicación con Ollama
+            LLMException: If there is an error communicating with Ollama
         """
         client = self._get_client()
         url = f"{self._base_url}/api/generate"
@@ -94,12 +158,12 @@ class OllamaProvider(LLMProviderInterface):
         payload = {
             "model": self._model_name,
             "prompt": prompt,
-            "stream": False,  # No usar streaming para respuestas estructuradas
-            "format": "json",  # Solicitar formato JSON
+            "stream": False,  # Do not use streaming for structured responses
+            "format": "json",  # Request JSON format
         }
 
         try:
-            logger.debug(f"Enviando request a Ollama: {url}")
+            logger.debug(f"Sending request to Ollama: {url}")
             
             response = await client.post(url, json=payload)
             response.raise_for_status()
@@ -107,84 +171,84 @@ class OllamaProvider(LLMProviderInterface):
             result = response.json()
 
             generated_text = result.get("response", "")
-            logger.info(generated_text)
+            logger.debug("Raw Ollama response (first 500 chars): %s", generated_text[:500])
             if not generated_text:
-                logger.error("Ollama retornó respuesta vacía")
-                raise LLMException("Respuesta vacía de Ollama")
+                logger.error("Ollama returned empty response")
+                raise LLMException("Empty response from Ollama")
             
-            logger.debug("Respuesta recibida de Ollama exitosamente")
+            logger.debug("Response received from Ollama successfully")
             return generated_text.strip()
             
         except httpx.HTTPError as http_err:
-            logger.error(f"Error HTTP en Ollama: {str(http_err)}")
-            raise LLMException(f"Error HTTP en Ollama: {str(http_err)}") from http_err
+            logger.error(f"HTTP error in Ollama: {str(http_err)}")
+            raise LLMException(f"HTTP error in Ollama: {str(http_err)}") from http_err
             
         except Exception as exc:
-            logger.error(f"Error en llamada a Ollama: {str(exc)}", exc_info=True)
-            raise LLMException(f"Falla en Ollama: {str(exc)}") from exc
+            logger.error(f"Error in Ollama call: {str(exc)}", exc_info=True)
+            raise LLMException(f"Ollama failure: {str(exc)}") from exc
 
     async def validate_response(self, response: str) -> LLMResponse:
         """
-        Validar y parsear la respuesta de Ollama.
+        Validate and parse the Ollama response.
         
-        Convierte la respuesta a JSON y la valida contra el schema LLMResponse.
+        Converts the response to JSON and validates it against the LLMResponse schema.
         
         Args:
-            response (str): Respuesta de Ollama
+            response (str): Ollama response
             
         Returns:
-            LLMResponse: Objeto validado
+            LLMResponse: Validated object
             
         Raises:
-            LLMException: Si hay error de parsing o validación
+            LLMException: If there is a parsing or validation error
         """
         try:
-            # Ollama a veces envuelve JSON en texto, intentar extraer
-            parsed = json.loads(response)
-            logger.debug("JSON parseado exitosamente")
+            parsed = self._extract_json_object(response)
+            normalized = self._normalize_response(parsed)
+            logger.debug("JSON parsed successfully")
             
-            # Validar con Pydantic
-            validated = LLMResponse(**parsed)
-            logger.debug("Respuesta validada según schema LLMResponse")
+            # Validate with Pydantic
+            validated = LLMResponse(**normalized)
+            logger.debug("Response validated against LLMResponse schema")
             return validated
             
         except json.JSONDecodeError as json_err:
-            logger.error(f"Error parseando JSON de Ollama: {str(json_err)}")
-            raise LLMException(f"JSON inválido de Ollama: {str(json_err)}") from json_err
+            logger.error(f"Error parsing Ollama JSON: {str(json_err)}")
+            raise LLMException(f"Invalid JSON from Ollama: {str(json_err)}") from json_err
             
         except ValidationError as val_err:
-            logger.error(f"Error validando schema de respuesta: {str(val_err)}")
-            raise LLMException(f"Respuesta no cumple schema: {str(val_err)}") from val_err
+            logger.error(f"Error validating response schema: {str(val_err)}")
+            raise LLMException(f"Response does not conform to schema: {str(val_err)}") from val_err
             
         except Exception as exc:
-            logger.error(f"Error inesperado en validate_response: {str(exc)}")
-            raise LLMException(f"Error inesperado: {str(exc)}") from exc
+            logger.error(f"Unexpected error in validate_response: {str(exc)}")
+            raise LLMException(f"Unexpected error: {str(exc)}") from exc
 
     @property
     def provider_name(self) -> str:
-        """Retorna 'ollama' como identificador único del proveedor."""
+        """Returns 'ollama' as the unique provider identifier."""
         return self._PROVIDER_NAME
 
     @property
     def model_name(self) -> str:
-        """Retorna el nombre del modelo Ollama siendo usado."""
+        """Returns the name of the Ollama model being used."""
         return self._model_name
 
     async def health_check(self) -> bool:
         """
-        Verificar disponibilidad de Ollama.
+        Verify Ollama availability.
         
-        Realiza llamada al endpoint /api/tags para verificar que el servicio
-        está disponible y que el modelo está descargado.
+        Makes a call to the /api/tags endpoint to verify that the service
+        is available and that the model is downloaded.
         
         Returns:
-            bool: True si Ollama está disponible y el modelo existe, False en caso contrario
+            bool: True if Ollama is available and the model exists, False otherwise
         """
         client = self._get_client()
         url = f"{self._base_url}/api/tags"
         
         try:
-            logger.info("Ejecutando health check de Ollama")
+            logger.info("Running Ollama health check")
             
             response = await client.get(url)
             response.raise_for_status()
@@ -192,22 +256,22 @@ class OllamaProvider(LLMProviderInterface):
             data = response.json()
             models = [m.get("name", "") for m in data.get("models", [])]
             
-            # Verificar que el modelo existe
+            # Verify that the model exists
             model_found = any(self._model_name in m for m in models)
             
             if model_found:
-                logger.info(f"Health check OK: modelo {self._model_name} disponible en Ollama")
+                logger.info(f"Health check OK: model {self._model_name} available in Ollama")
                 return True
             else:
-                logger.warning(f"Health check: modelo {self._model_name} no encontrado. Modelos disponibles: {models}")
+                logger.warning(f"Health check: model {self._model_name} not found. Available models: {models}")
                 return False
                 
         except Exception as exc:
-            logger.error(f"Health check de Ollama falló: {str(exc)}")
+            logger.error(f"Ollama health check failed: {str(exc)}")
             return False
 
     async def close(self):
-        """Cerrar conexión con Ollama."""
+        """Close connection with Ollama."""
         if self._client:
             await self._client.aclose()
             self._client = None

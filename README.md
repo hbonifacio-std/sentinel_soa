@@ -57,3 +57,6 @@ La guía completa de instalación y configuración se encuentra aquí:
 
 ---
 *Este README fue generado para proporcionar una visión completa y detallada del proyecto Sentinel SOA.*
+
+docker exec -it sentinel_attacker python3 /app/traffic_simulator.py
+FROM qwen2.5-coder:7b

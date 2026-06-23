@@ -1,21 +1,24 @@
 """
-Punto de Entrada y Configuración Maestra del Core Orchestrator.
+Entry Point and Master Configuration for the Core Orchestrator.
 
-Inicializa la aplicación FastAPI, orquesta los ciclos de vida de los subprocesos MCP
-y monta las rutas HTTP expuestas a la red corporativa.
+Initializes the FastAPI application, orchestrates the MCP subprocess lifecycles,
+and mounts the HTTP routes exposed to the corporate network.
 """
 
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-
-from core_orchestrator.config import orchestrator_settings as settings
-from core_orchestrator.api.v1.endpoints import telemetry
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from core_orchestrator.api.v1.endpoints import  agent_telemetry, analytics
 from core_orchestrator.agent.runner import agent_runner
+from core_orchestrator.exeptions.exeptions import validation_exception_handler
 from core_orchestrator.services.database import db
+from core_orchestrator.services.limiter import limiter
 
-# Configuración del logging centralizado de producción
+# Centralized production logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -26,63 +29,72 @@ logger = logging.getLogger("core_orchestrator.main")
 @asynccontextmanager
 async def app_lifespan(app: FastAPI):
     """
-    Manejador de ciclo de vida asíncrono (FastAPI Lifespan).
-    Garantiza que el cliente MCP encienda sus subprocesos concurrentes ANTES
-    de abrir las compuertas de la API HTTP, y los apague cleanly al detener el servicio.
+    Asynchronous lifecycle handler (FastAPI Lifespan).
+    Ensures the MCP client starts its concurrent subprocesses BEFORE
+    opening the HTTP API gates, and shuts them down cleanly when the service stops.
     """
-    logger.info("=== INICIANDO CONFIGURACIÓN DE ARRANQUE DEL SISTEMA ===")
+    logger.info("=== STARTING SYSTEM BOOT CONFIGURATION ===")
 
-    # Conectar a las bases de datos
+    # Connect to databases
     await db.connect_to_mongo()
     await db.connect_to_redis()
 
-    # Encendemos de forma perezosa el subsistema del agente y los túneles stdio MCP
+    # Lazily start the agent subsystem and MCP stdio tunnels
     await agent_runner.initialize_subsytem()
 
-    logger.info("=== CORE ORCHESTRATOR DESPLEGADO Y OPERATIVO EN PUERTO ===")
+    logger.info("=== CORE ORCHESTRATOR DEPLOYED AND OPERATIONAL ON PORT ===")
     yield
 
-    logger.info("=== INICIANDO PROCESO DE APAGADO DE RECURSOS ===")
-    # Apagamos los subprocesos de los servidores MCP hijos para no dejar procesos zombis en el SO
+    logger.info("=== INITIATING RESOURCE SHUTDOWN PROCESS ===")
+    # Shut down MCP child server subprocesses to avoid zombie processes in the OS
     await agent_runner.shutdown_subsytem()
 
-    # Desconectar de las bases de datos
+    # Disconnect from databases
     await db.close_mongo_connection()
     await db.close_redis_connection()
 
-    logger.info("=== SISTEMA APAGADO CORRECTAMENTE ===")
+    logger.info("=== SYSTEM SHUT DOWN CORRECTLY ===")
 
 
-# Instanciación formal de la app FastAPI implementando el gestor de ciclo de vida
+# Formal FastAPI app instantiation implementing the lifecycle manager
 app = FastAPI(
-    title="Framework de Orquestación de Agentes de IA - Core",
+    title="AI Agent Orchestration Framework - Core",
     version="1.0.0",
-    description="Plataforma orientada a servicios para prever intrusiones mediante análisis de telemetría web.",
+    description="Service-oriented platform for intrusion prevention through web telemetry analysis.",
     lifespan=app_lifespan
 )
 
-# Configuración estricta del Middleware de seguridad CORS
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.state.limiter = limiter
+# Strict CORS security middleware configuration
 app.add_middleware(
-    CORSMiddleware,
-    # Parametrizar en producción mediante settings.ALLOWED_HOSTS
+    CORSMiddleware,  # type: ignore[arg-type]
+    # Parameterize in production via settings.ALLOWED_HOSTS
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Inyección e inclusión de routers de endpoints de la versión 1
+# Injection and inclusion of version 1 endpoint routers
 app.include_router(
-    telemetry.router,
+    agent_telemetry.router,
     prefix="/api/v1/telemetry",
     tags=["Telemetry Ingestion"]
+)
+app.include_router(
+    analytics.router,
+    prefix="/api/v1",
+    tags=["Analytics"]
 )
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
 async def health_check():
     """
-    Endpoint básico de monitoreo para comprobar la disponibilidad operativa de la API.
+    Basic monitoring endpoint to check the operational availability of the API.
     """
     return {
         "status": "healthy",
@@ -92,6 +104,5 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    # Lanzamiento local explícito para depuración en desarrollo
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    # Explicit local launch for debugging in development
+    uvicorn.run("core_orchestrator.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,96 +1,94 @@
-"""Módulo de datos perimetrales para la ingesta de telemetría.
+"""Perimeter data module for telemetry ingestion.
 
-Define el esquema estructurado de validación Pydantic para cada línea parseada 
-del servidor web transmitida mediante HTTP/REST hacia el orquestador core.
+Defines the structured Pydantic validation schema for each parsed web server
+log line transmitted via HTTP/REST to the core orchestrator.
 """
 
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator, IPvAnyAddress
+from typing import Any, Dict, Optional
+from pydantic import BaseModel, Field, field_validator, TypeAdapter
+from pydantic.networks import IPvAnyAddress
+
+
+class NetworkContext(BaseModel):
+    """Network-layer metadata including transport parameters."""
+    client_ip: str = Field(..., description="Definitive resolved client IP.")
+    client_port: Optional[int] = Field(default=None, ge=0, le=65535, description="Source port of the attacker/client.")
+    server_port: Optional[int] = Field(default=None, ge=0, le=65535, description="Destination port of the service.")
+    proxy_forwarded_for: Optional[str] = Field(default=None)
+    proxy_real_ip: Optional[str] = Field(default=None)
+
+
+class HttpContext(BaseModel):
+    """Granular HTTP metrics."""
+    method: str
+    path: str
+    query: Optional[str] = Field(default=None)
+    status_code: int = Field(..., ge=100, le=599)
+    processing_time_ms: Optional[float] = Field(default=None, ge=0)
+    content_type: Optional[str] = Field(default=None)
+    user_agent: Optional[str] = Field(default=None)
+    referrer: Optional[str] = Field(default=None, description="Referrer string (compat)")
+    response_size_bytes: Optional[int] = Field(default=None, description="Response size in bytes (compat)")
+    payload: Optional[Optional[Any]] = Field(default=None, description="Raw request/response bodies.")
+
+
+class SecurityContext(BaseModel):
+    """Identity tracking context."""
+    authenticated_user: Optional[str] = Field(default=None)
+    attempted_login_user: Optional[str] = Field(default=None)
+    auth_mechanism: Optional[str] = Field(default=None)
+
+
+class HostContext(BaseModel):
+    """Operating System and Process level execution data."""
+    pid: Optional[int] = Field(default=None, description="Process ID that handled the request.")
+    process_name: Optional[str] = Field(default=None,
+                                        description="Name of the runtime process (e.g., uvicorn, python).")
+
+    process_time_ms: Optional[float] = Field(default=None, ge=0)
+    environment: Optional[str] = Field(default=None, description="Deployment stage (dev, simulation, prod).")
+
+
+class InfrastructureContext(BaseModel):
+    """Compact infrastructure summary derived from network and host metadata."""
+    environment: Optional[str] = Field(default=None, description="Deployment stage (dev, simulation, prod).")
+    process_name: Optional[str] = Field(default=None, description="Runtime process name (e.g., uvicorn/gunicorn).")
+    server_port: Optional[int] = Field(default=None, ge=0, le=65535, description="Service port that received the request.")
+    proxy_real_ip: Optional[str] = Field(default=None, description="Real client IP reported by the reverse proxy.")
+    proxy_forwarded_for: Optional[str] = Field(default=None, description="Forwarded-for chain reported by the reverse proxy.")
 
 
 class LogEvent(BaseModel):
-    """Modelo Pydantic que mapea una entrada de log web sanitizada.
+    """Comprehensive Multi-Layer Telemetry Model for AI Security Analysis."""
 
-    Asegura tipos estáticos rígidos para la ingestión rápida en la API REST
-    proveniente del daemon de recolección local.
-    """
-    source_id: Optional[str] = Field(
-        default=None,
-        description="Identificador único del servidor o aplicación que origina el log. Ej: 'web-server-prod-01'.",
-        examples=["web-server-prod-01", "api-gateway-staging"]
-    )
+    # Base Core Fields
+    source_id: str = Field(..., description="Unique ID of the app instance.")
+    source_ip: str = Field(..., description="Resolved IP address used for indexing.")
+    timestamp_utc: datetime = Field(..., description="Normalized ISO 8601 UTC timestamp.")
 
-    source_ip: str = Field(
-        ...,
-        description="Dirección IPv4 o IPv6 de origen extraída de la telemetría."
-    )
-    timestamp_utc: datetime = Field(
-        ...,
-        description="Fecha y hora del evento normalizada en formato ISO 8601 UTC."
-    )
-    http_method: str = Field(
-        ...,
-        description="Método estándar de la petición (e.g., GET, POST, HEAD)."
-    )
-    request_uri: str = Field(
-        ...,
-        description="Ruta de acceso absoluta del recurso, incluyendo query strings."
-    )
-    response_code: int = Field(
-        ...,
-        ge=100,
-        le=599,
-        description="Código de estado de la respuesta HTTP devuelto por el servidor."
-    )
-    response_size_bytes: Optional[int] = Field(
-        default=None,
-        ge=0,
-        description="Tamaño de la carga de respuesta en bytes. Nulo si no está disponible."
-    )
-    referrer: Optional[str] = Field(
-        default=None,
-        description="Cabecera HTTP Referer de procedencia de la consulta."
-    )
-    user_agent: Optional[str] = Field(
-        default=None,
-        description="Identificador de la aplicación cliente (User-Agent)."
-    )
+    # Layered Structs
+    network: Optional[NetworkContext] = Field(default=None)
+    http: Optional[HttpContext] = Field(default=None)
+    host: Optional[HostContext] = Field(default=None)
+    infra_context: Optional[InfrastructureContext] = Field(default=None)
 
-    @field_validator("source_ip")
+    # Compatibility Fields for flat log format
+    extra_fields: Optional[Dict[str, Any]] = Field(default_factory=dict,
+                                                   description="Catch-all dictionary for non-HTTP logs (SSH, Syslog, DB).")
+
+    @field_validator("source_ip")  # Puedes validar ambos si quieres
     @classmethod
     def validate_ip_format(cls, v: str) -> str:
-        """Valida rigurosamente que el string recibido corresponda a una IP válida.
-
-        Usa internamente la lógica de tipado IP nativa de Pydantic para evitar 
-        inyecciones o valores de red corruptos en la llave de agrupación.
-        """
         try:
-            # Forzamos la validación usando el tipo especializado de Pydantic
-            IPvAnyAddress(v)
+            TypeAdapter(IPvAnyAddress).validate_python(v)
             return v
         except Exception as e:
-            raise ValueError(
-                f"La dirección IP proporcionada '{v}' no tiene un formato válido.") from e
+            raise ValueError(f"Invalid IP format: {v}") from e
 
-    @field_validator("http_method")
-    @classmethod
-    def normalize_method(cls, v: str) -> str:
-        """Normaliza los métodos HTTP a mayúsculas para evitar colisiones de distribución."""
-        return v.strip().upper()
+
 
     model_config = {
         "populate_by_name": True,
-        "json_schema_extra": {
-            "example": {
-                "source_ip": "192.168.1.105",
-                "timestamp_utc": "2026-06-07T21:45:10Z",
-                "http_method": "GET",
-                "request_uri": "/api/v1/users?id=1",
-                "response_code": 200,
-                "response_size_bytes": 1024,
-                "referrer": "https://google.com",
-                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            }
-        }
+        "extra": "allow"  # Permite recibir campos extra en la raíz sin romper el parseo
     }

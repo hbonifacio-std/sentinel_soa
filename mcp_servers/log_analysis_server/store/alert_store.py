@@ -1,7 +1,7 @@
-"""Módulo de almacenamiento en memoria para el Servidor MCP.
+"""In-memory storage module for the MCP Server.
 
-Provee un almacén thread-safe (seguro para hilos) basado en colecciones indexadas
-para retener las alertas tempranas procesadas y permitir la consulta rápida de historial.
+Provides a thread-safe store based on indexed collections
+to retain early processed alerts and allow fast history queries.
 """
 
 import threading
@@ -13,63 +13,63 @@ from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessm
 
 
 class InMemoryAlertStore:
-    """Gestiona de forma segura el almacenamiento en RAM de las alertas generadas.
+    """Safely manages the RAM storage of generated alerts.
     
-    Implementa bloqueos de exclusión mutua (Mutex) para evitar condiciones de carrera
-    cuando el host realiza consultas asíncronas concurrentes sobre herramientas MCP.
+    Implements mutual exclusion locks (Mutex) to avoid race conditions
+    when the host makes concurrent asynchronous queries over MCP tools.
     """
 
     def __init__(self, max_history_per_ip: int = 50) -> None:
-        """Inicializa los diccionarios internos y los mecanismos de bloqueo.
+        """Initializes internal dictionaries and locking mechanisms.
         
         Args:
-            max_history_per_ip (int): Número máximo de veredictos que retendremos por IP.
+            max_history_per_ip (int): Maximum number of verdicts retained per IP.
         """
         self._max_history: int = max_history_per_ip
-        # Diccionario indexado por IP: [ThreatAssessment, ThreatAssessment, ...]
+        # Dictionary indexed by IP: [ThreatAssessment, ThreatAssessment, ...]
         self._store: Dict[str, List[ThreatAssessment]] = defaultdict(list)
-        # Lock primitivo para garantizar consistencia en lectura/escritura concurrente
+        # Primitive lock to guarantee consistency in concurrent read/write
         self._lock: threading.Lock = threading.Lock()
 
     def add_assessment(self, ip: str, assessment: ThreatAssessment) -> None:
-        """Registra un nuevo veredicto analítico en el historial de una IP.
+        """Records a new analytical verdict in the history for an IP.
         
-        Si el historial de la IP excede el límite máximo configurado, se remueve 
-        el registro más antiguo (comportamiento similar a una cola FIFO).
+        If the IP history exceeds the configured maximum limit, the oldest
+        record is removed (behavior similar to a FIFO queue).
 
         Args:
-            ip (str): Dirección IP de origen evaluada.
-            assessment (ThreatAssessment): Objeto con los datos del veredicto del LLM.
+            ip (str): Evaluated source IP address.
+            assessment (ThreatAssessment): Object with the LLM verdict data.
         """
         with self._lock:
-            # Insertar el veredicto más reciente al inicio de la lista
+            # Insert the most recent verdict at the beginning of the list
             self._store[ip].insert(0, assessment)
             
-            # Recorte preventivo para evitar fugas de memoria por almacenamiento infinito
+            # Preventive trim to avoid memory leaks from infinite storage
             if len(self._store[ip]) > self._max_history:
                 self._store[ip] = self._store[ip][:self._max_history]
 
     def get_history_by_ip(self, ip: str, limit: int = 10) -> List[ThreatAssessment]:
-        """Recupera el listado cronológico de veredictos históricos para una IP específica.
+        """Retrieves the chronological list of historical verdicts for a specific IP.
 
         Args:
-            ip (str): Dirección IP de consulta.
-            limit (int): Cantidad máxima de registros históricos a retornar.
+            ip (str): Query IP address.
+            limit (int): Maximum number of historical records to return.
 
         Returns:
-            List[ThreatAssessment]: Lista de objetos de evaluación de amenazas.
+            List[ThreatAssessment]: List of threat assessment objects.
         """
         with self._lock:
             if ip not in self._store:
                 return []
-            # Retorna una copia de la lista rebanada para evitar mutaciones externas corruptas
+            # Returns a copy of the sliced list to prevent external corrupt mutations
             return list(self._store[ip][:limit])
 
     def clear_all(self) -> None:
-        """Purga por completo todos los registros de la memoria del almacén."""
+        """Completely purges all records from the store memory."""
         with self._lock:
             self._store.clear()
 
 
-# Instancia compartida única (Singleton) a nivel de servidor MCP para conservar consistencia de estado
+# Unique shared instance (Singleton) at MCP server level to maintain state consistency
 alert_store = InMemoryAlertStore()

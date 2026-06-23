@@ -1,14 +1,14 @@
 """
-Módulo del Endpoint REST para la Ingesta de Telemetría.
+REST Endpoint Module for Telemetry Ingestion.
 
-Mapea las rutas HTTP de FastAPI encargadas de recibir ráfagas de líneas de log,
-procesarlas e inyectarlas en el pipeline de análisis temporal.
+Maps the FastAPI HTTP routes responsible for receiving bursts of log lines,
+processing them, and injecting them into the temporal analysis pipeline.
 """
 from datetime import datetime, timezone
 import logging
 import asyncio
 from typing import List, Dict, Any
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status
 
 from core_orchestrator.agent.runner import agent_runner
 from core_orchestrator.models.log_event import LogEvent
@@ -24,30 +24,30 @@ router = APIRouter()
 
 async def save_log_to_db(log_data: Dict[str, Any]):
     """
-    Función asíncrona para guardar un documento de log en MongoDB.
+    Asynchronous function to save a log document to MongoDB.
     """
     try:
         log_data["created_at_utc"] = datetime.now(timezone.utc)
         await db.mongo_client.sentinel_soa.raw_telemetry.insert_one(log_data)
     except Exception as e:
-        logger.error(f"Error al guardar log en MongoDB: {e}", exc_info=True)
+        logger.error(f"Error saving log to MongoDB: {e}", exc_info=True)
 
 
 async def _check_and_process_window_if_full(event: LogEvent):
     """
-    Comprueba si la ventana ha alcanzado el umbral de tamaño y, si es así,
-    la procesa inmediatamente en segundo plano.
+    Checks if the window has reached the size threshold and, if so,
+    processes it immediately in the background.
     """
     window_key = window_manager.get_window_key(event)
     current_size = await window_manager.get_window_size(window_key)
 
     if current_size >= orchestrator_settings.window_threshold_requests:
         logger.info(
-            f"La ventana '{window_key}' ha alcanzado el umbral de {orchestrator_settings.window_threshold_requests} eventos. "
-            "Procesando de inmediato."
+            f"Window '{window_key}' has reached the threshold of {orchestrator_settings.window_threshold_requests} events. "
+            "Processing immediately."
         )
-        # Intentar bloquear y procesar para evitar condiciones de carrera
-        lock = await agent_runner.agent.get_redis_lock(f"lock:{window_key}")
+        # Try to lock and process to avoid race conditions
+        lock = await agent_runner.get_redis_lock(f"lock:{window_key}")
         if await lock.acquire(blocking=False):
             try:
                 telemetry_window = await window_manager.process_window(window_key)
@@ -59,18 +59,18 @@ async def _check_and_process_window_if_full(event: LogEvent):
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_single_event(event: LogEvent):
     """
-    Recibe un único evento de telemetría y lo enruta a las ventanas en Redis.
+    Receives a single telemetry event and routes it to the windows in Redis.
     """
     logger.info(
-        f"Petición de ingesta de evento único recibida: {event.model_dump_json()}")
+        f"Single event ingestion request received: {event.model_dump_json()}")
 
-    # Ejecutar la inserción en DB como una tarea de fondo no bloqueante
+    # Execute the DB insertion as a non-blocking background task
     asyncio.create_task(save_log_to_db(event.model_dump()))
 
-    # Añadir a la ventana de Redis
+    # Add to the Redis window
     await window_manager.add_log_event(event)
 
-    # Comprobar si la ventana está llena y necesita ser procesada
+    # Check if the window is full and needs to be processed
     await _check_and_process_window_if_full(event)
 
     return {
@@ -82,25 +82,33 @@ async def ingest_single_event(event: LogEvent):
 @router.post("/ingest/batch", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_batch_events(events: List[LogEvent]):
     """
-    Recibe un lote de eventos de telemetría y los enruta a las ventanas en Redis.
+    Receives a batch of telemetry events and routes them to the windows in Redis.
     """
     if not events:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El cuerpo de la solicitud no contiene eventos."
+            detail="The request body does not contain events."
+        )
+
+    # Validate that all events in the batch have the same source_id
+    first_source_id = events[0].source_id
+    if any(event.source_id != first_source_id for event in events):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="All events in a batch must have the same source_id."
         )
 
     logger.info(
-        f"Petición de ingesta de lote recibida con {len(events)} eventos.")
+        f"Batch ingestion request received with {len(events)} events from '{first_source_id}'.")
 
     for event in events:
-        # Ejecutar la inserción en DB como una tarea de fondo no bloqueante
+        # Execute the DB insertion as a non-blocking background task
         asyncio.create_task(save_log_to_db(event.model_dump()))
-        # Añadir a la ventana de Redis
+        # Add to the Redis window
         await window_manager.add_log_event(event)
 
-    logger.debug(f"Procesados y encolados {len(events)} eventos.")
-    # Después de un lote, comprobamos la última ventana modificada
+    logger.debug(f"Processed and queued {len(events)} events.")
+    # After a batch, we check the last modified window
     await _check_and_process_window_if_full(events[-1])
 
     return {
@@ -112,33 +120,33 @@ async def ingest_batch_events(events: List[LogEvent]):
 @router.post("/ingest/raw", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_raw_logs(lines: List[str]):
     """
-    Recibe un arreglo masivo de líneas crudas de logs (Common/Combined Log Format).
-    Realiza el parsing asíncrono y enruta los eventos hacia las ventanas en Redis.
+    Receives a massive array of raw log lines (Common/Combined Log Format).
+    Performs asynchronous parsing and routes the events to the windows in Redis.
     """
     if not lines:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El cuerpo de la solicitud no contiene registros."
+            detail="The request body does not contain records."
         )
 
     logger.info(
-        f"Petición de ingesta cruda recibida con {len(lines)} registros.")
+        f"Raw ingestion request received with {len(lines)} records.")
 
     parsed_count = 0
     for line in lines:
         log_model = LogPreprocessor.parse_raw_line(line)
         if log_model:
-            # Ejecutar la inserción en DB como una tarea de fondo no bloqueante
+            # Execute the DB insertion as a non-blocking background task
             asyncio.create_task(save_log_to_db(log_model.model_dump()))
-            # Añadir a la ventana de Redis
+            # Add to the Redis window
             await window_manager.add_log_event(log_model)
             parsed_count += 1
 
-            # Comprobar si la ventana está llena después de cada evento parseado
+            # Check if the window is full after each parsed event
             await _check_and_process_window_if_full(log_model)
 
     logger.debug(
-        f"Parsing completado con éxito. Eventos válidos: {parsed_count}/{len(lines)}")
+        f"Parsing completed successfully. Valid events: {parsed_count}/{len(lines)}")
 
     return {
         "status": "accepted",
@@ -150,23 +158,23 @@ async def ingest_raw_logs(lines: List[str]):
 @router.post("/flush", status_code=status.HTTP_200_OK)
 async def flush_windows():
     """
-    Fuerza el procesamiento inmediato de todas las ventanas de telemetría activas en Redis.
-    Esta operación es útil para escenarios de prueba o depuración donde se necesita
-    analizar la telemetría acumulada sin esperar a que las ventanas expiren.
+    Forces the immediate processing of all active telemetry windows in Redis.
+    This operation is useful for testing or debugging scenarios where you need
+    to analyze accumulated telemetry without waiting for the windows to expire.
     """
-    logger.info("Solicitud de flush manual de ventanas de telemetría recibida.")
+    logger.info("Manual flush request for telemetry windows received.")
 
     processed_windows = 0
 
     try:
         keys = await window_manager.get_active_windows()
         if not keys:
-            logger.info("No se encontraron ventanas activas para procesar.")
+            logger.info("No active windows found to process.")
             return {"status": "ok", "message": "No active windows to flush.", "processed_windows": 0}
 
         for key in keys:
-            # Intentamos obtener un bloqueo para esta clave para evitar procesamiento duplicado
-            lock = await agent_runner.agent.get_redis_lock(f"lock:{key.decode('utf-8')}")
+            # We try to get a lock for this key to avoid duplicate processing
+            lock = await agent_runner.get_redis_lock(f"lock:{key.decode('utf-8')}")
             if await lock.acquire(blocking=False):
                 try:
                     telemetry_window = await window_manager.process_window(key.decode("utf-8"))
@@ -177,19 +185,19 @@ async def flush_windows():
                 finally:
                     await lock.release()
             else:
-                logger.warning(f"No se pudo adquirir el bloqueo para la clave {key.decode('utf-8')}, omitiendo. "
-                               f"Es posible que ya esté siendo procesada.")
+                logger.warning(f"Could not acquire lock for key {key.decode('utf-8')}, skipping. "
+                               f"It might already be being processed.")
 
     except Exception as e:
         logger.error(
-            f"Error durante el flush manual de ventanas: {e}", exc_info=True)
+            f"Error during manual flush of windows: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred during the flush operation: {e}"
         )
 
     logger.info(
-        f"Flush manual completado. Ventanas procesadas: {processed_windows}/{len(keys)}")
+        f"Manual flush completed. Processed windows: {processed_windows}/{len(keys)}")
 
     return {
         "status": "ok",

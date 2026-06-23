@@ -1,16 +1,23 @@
 """
-Módulo de Preprocesamiento y Parsing de Telemetría HTTP.
+HTTP Telemetry Preprocessing and Parsing Module.
 
-Contiene la lógica analítica para transformar cadenas de texto crudas
-(formato Common Log Format o similar) en modelos de datos estructurados Pydantic.
+Contains the analytical logic to transform raw text strings
+(Common Log Format or similar) into structured Pydantic data models.
 """
 
 import logging
 import re
+import json
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional
 
-from core_orchestrator.models.log_event import LogEvent as LogLine
+from core_orchestrator.models.log_event import (
+    LogEvent as LogLine,
+    HttpContext,
+    NetworkContext,
+    HostContext,
+    InfrastructureContext,
+)
 
 
 logger = logging.getLogger("core_orchestrator.services.preprocessor")
@@ -18,50 +25,118 @@ logger = logging.getLogger("core_orchestrator.services.preprocessor")
 
 class LogPreprocessor:
     """
-    Servicio encargado del parsing estricto y sanitización de registros de acceso web.
+    Service responsible for strict parsing and sanitization of web access records.
     """
 
-    # Expresión regular robusta para parsear el estándar Combined Log Format de Nginx / Apache
+    # Robust regular expression to parse the Nginx / Apache Combined Log Format standard
     LOG_REGEX = re.compile(
-        r'^(?P<ip>\S+)\s+\S+\s+\S+\s+\[(?P<timestamp>[^\]]+)\]\s+'
+        r'^(?P<ip>\S+)\s+\S+\s+\S+\s+\[(?P<timestamp>.+?)\]\s+'
         r'"(?P<method>\S+)\s+(?P<uri>\S+)\s+[^"]*"\s+'
         r'(?P<status>\d{3})\s+(?P<bytes>\d+|-)\s*'
         r'"?(?P<referer>[^"]*)"?\s*"?(?P<user_agent>[^"]*)"?'
     )
 
+    @staticmethod
+    def _build_json_log_line(data: dict) -> LogLine:
+        network_data = data.get("network", {}) if isinstance(data.get("network"), dict) else {}
+        host_data = data.get("host", {}) if isinstance(data.get("host"), dict) else {}
+
+        return LogLine(
+            source_id=data["source_id"],
+            source_ip=data["source_ip"],
+            timestamp_utc=datetime.fromisoformat(data["timestamp"]),
+            network=NetworkContext(
+                client_ip=data["source_ip"],
+                client_port=network_data.get("client_port"),
+                server_port=network_data.get("server_port"),
+                proxy_forwarded_for=network_data.get("proxy_forwarded_for"),
+                proxy_real_ip=network_data.get("proxy_real_ip"),
+            ),
+            host=HostContext(
+                pid=host_data.get("pid"),
+                process_name=host_data.get("process_name"),
+                process_time_ms=host_data.get("process_time_ms"),
+                environment=host_data.get("environment"),
+            ),
+            infra_context=InfrastructureContext(
+                environment=host_data.get("environment"),
+                process_name=host_data.get("process_name"),
+                server_port=network_data.get("server_port"),
+                proxy_real_ip=network_data.get("proxy_real_ip"),
+                proxy_forwarded_for=network_data.get("proxy_forwarded_for"),
+            ),
+            http=HttpContext(
+                method=data["request_method"],
+                path=data.get("request_path", "/"),
+                query=data.get("request_query"),
+                status_code=data["status_code"],
+                user_agent=data.get("user_agent"),
+                response_size_bytes=None,
+                referrer=None,
+            ),
+            extra_fields=data.get("extra_fields", {}) if isinstance(data.get("extra_fields"), dict) else {},
+        )
+
+    @staticmethod
+    def _build_combined_log_line(data: dict) -> LogLine:
+        return LogLine(
+            source_id="unknown-source",
+            source_ip=data["ip"],
+            timestamp_utc=data["parsed_dt"].astimezone(timezone.utc),
+            network=NetworkContext(
+                client_ip=data["ip"],
+            ),
+            infra_context=InfrastructureContext(
+                environment=None,
+                process_name=None,
+                server_port=None,
+                proxy_forwarded_for=None,
+                proxy_real_ip=None,
+            ),
+            http=HttpContext(
+                method=data["method"].upper(),
+                path=data["uri_path"],
+                query=data["uri_query"],
+                status_code=int(data["status"]),
+                response_size_bytes=0 if data["bytes"] == "-" else int(data["bytes"]),
+                user_agent=data.get("user_agent") if data.get("user_agent") else None,
+                referrer=data.get("referer") if data.get("referer") != "-" else None,
+            ),
+            extra_fields={},
+        )
+
     @classmethod
     def parse_raw_line(cls, raw_line: str) -> Optional[LogLine]:
         """
-        Parsea una línea cruda de log de servidor web y la transforma en un objeto LogLine.
-
-        Args:
-            raw_line (str): Línea de texto proveniente del log de acceso.
-
-        Returns:
-            Optional[LogLine]: Instancia validada si el parseo fue exitoso; None si es una línea malformada.
+        Parses a raw web server log line and transforms it into a LogLine object.
+        Supports JSON format and Combined Log Format.
         """
         if not raw_line or not raw_line.strip():
             return None
 
+        # Try parsing as JSON first
+        try:
+            data = json.loads(raw_line)
+            return cls._build_json_log_line(data)
+        except (json.JSONDecodeError, KeyError):
+            # If it fails, try with the combined log format (regex)
+            logger.debug("Failed to parse as JSON, trying classic log format.")
+
         match = cls.LOG_REGEX.match(raw_line.strip())
         if not match:
             logger.debug(
-                f"Línea de log omitida por no cumplir con el patrón estándar: {raw_line[:50]}...")
+                f"Log line skipped for not matching the standard pattern: {raw_line[:50]}...")
             return None
 
         data = match.groupdict()
 
         try:
-            # Parseo de timestamp con formato estándar de servidores web: "08/Jun/2026:10:11:00 -0500"
-            # Nota: Reemplazamos los dos puntos divisorios intermedios para facilitar el parseo nativo
+            # Timestamp parsing with web server standard format: "08/Jun/2026:10:11:00 -0500"
             ts_str = data["timestamp"]
-            # Formato típico: %d/%b/%Y:%H:%M:%S %z
-            # Ejemplo: 10/Oct/2024:13:55:36 +0000
             parts = ts_str.split(' ', 1)
             datetime_part = parts[0]
             timezone_part = parts[1] if len(parts) > 1 else "+0000"
 
-            # Ajustamos el formato de los dos puntos de Nginx/Apache
             first_colon = datetime_part.find(':')
             if first_colon != -1:
                 dt_clean = datetime_part[:first_colon] + \
@@ -70,37 +145,21 @@ class LogPreprocessor:
                     f"{dt_clean} {timezone_part}", "%d/%b/%Y %H:%M:%S %z")
             else:
                 parsed_dt = datetime.now(timezone.utc)
-
-            # ✅ MEJORA: Preservar URI completa con parámetros para detección de inyecciones
-            # Se mantienen los parámetros intactos ya que las heurísticas necesitan analizarlos
             full_uri = data["uri"]
-
-            # Instanciación y validación automática mediante Pydantic v2
-            return LogLine(
-                source_ip=data["ip"],
-                timestamp_utc=parsed_dt.astimezone(timezone.utc),
-                http_method=data["method"].upper(),
-                request_uri=full_uri,
-                response_code=int(data["status"]),
-                response_size_bytes=0 if data["bytes"] == "-" else int(
-                    data["bytes"]),
-                user_agent=data["user_agent"] if data["user_agent"] else "Unknown"
-            )
+            uri_parts = full_uri.split("?", 1)
+            return cls._build_combined_log_line({
+                "ip": data["ip"],
+                "parsed_dt": parsed_dt,
+                "method": data["method"],
+                "uri_path": uri_parts[0],
+                "uri_query": uri_parts[1] if len(uri_parts) > 1 else None,
+                "status": data["status"],
+                "bytes": data["bytes"],
+                "user_agent": data.get("user_agent"),
+                "referer": data.get("referer"),
+            })
 
         except Exception as exc:
             logger.warning(
-                f"Error al procesar los campos de la línea de log parseada: {str(exc)}")
-            return None
-
-    @classmethod
-    def preprocess_json_payload(cls, payload: Dict[str, Any]) -> Optional[LogLine]:
-        """
-        Valida y preprocesa eventos que ya vienen estructurados como objetos JSON desde agentes externos.
-        """
-        try:
-            # Reutiliza el validador estático de Pydantic pasándole el diccionario crudo
-            return LogLine(**payload)
-        except Exception as err:
-            logger.error(
-                f"Estructura JSON inválida para el modelo LogLine: {str(err)}")
+                f"Error processing fields of the regex-parsed log line: {str(exc)}")
             return None

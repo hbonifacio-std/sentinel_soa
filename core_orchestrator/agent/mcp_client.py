@@ -1,137 +1,91 @@
-"""
-Módulo del Cliente MCP para el Core Orchestrator usando FastMCP.
+"""MCP client for the Core Orchestrator.
 
-Gestiona la inicialización de la conexión con el servidor MCP, soportando
-transportes HTTP (para producción/Docker) y stdio (para depuración local).
+Uses the MCP Python SDK directly over streamable HTTP so the core can talk to the
+`mcp_server` container without pulling the FastMCP client extras that conflict
+with the FastAPI stack.
 """
 
 import asyncio
 import logging
 import os
-import sys
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from fastmcp.client import Client
+try:
+    from mcp import ClientSession
+except ImportError:  # pragma: no cover - import path differs slightly by SDK version
+    from mcp.client.session import ClientSession  # type: ignore
+
+try:
+    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+except ImportError:  # pragma: no cover
+    from mcp.client.streamable_http import streamablehttp_client as _streamable_http_client  # type: ignore
+
 
 logger = logging.getLogger("core_orchestrator.mcp_client")
 
 
 class MCPClientManager:
-    """
-    Administrador de Conexión del Cliente MCP.
-    Se encarga de inicializar la conexión con el servidor y mantener la sesión activa.
-    """
+    """Manages a persistent MCP session against the HTTP MCP server."""
 
     def __init__(self, server_script_path: Optional[str] = None):
-        """
-        Inicializa el mánager.
-
-        Args:
-            server_script_path (str, optional): Ruta al script del servidor, requerido para el modo stdio.
-        """
         self.server_script_path = server_script_path
-        self._client: Optional[Client] = None
+        self._transport_cm = None
+        self._session_cm = None
+        self._session: Optional[ClientSession] = None
 
-    async def start_server_session(self, timeout: float = 60.0) -> Client:
-        """
-        Establece la sesión de comunicación con el servidor MCP, usando HTTP o stdio.
-
-        Args:
-            timeout: Tiempo máximo en segundos para la inicialización (default 60s)
-
-        Returns:
-            Client: Cliente inicializado y listo para usarse.
-        """
-        transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
-        logger.info(
-            f"Iniciando sesión FastMCP en modo de transporte: {transport_mode}")
-
-        client: Client
+    async def _open_http_session(self, url: str) -> ClientSession:
+        self._transport_cm = _streamable_http_client(url)
+        transport = await self._transport_cm.__aenter__()
 
         try:
-            async def _create_client():
-                if transport_mode == 'http':
-                    host = os.getenv('MCP_SERVER_HOST', 'localhost')
-                    port = int(os.getenv('MCP_SERVER_PORT', '8080'))
-                    # FastMCP HTTP transport exposes its endpoint under /mcp
-                    url = f"http://{host}:{port}/mcp"
-                    logger.info(
-                        f"Configurando cliente FastMCP para conectar a {url}")
-                    return Client(url)
+            read_stream, write_stream = transport[0], transport[1]
+        except Exception as exc:  # pragma: no cover - defensive against SDK shape changes
+            raise RuntimeError(f"Unexpected MCP transport payload from {url}: {transport!r}") from exc
 
-                elif transport_mode == 'stdio':
-                    if not self.server_script_path:
-                        raise ValueError(
-                            "El 'server_script_path' es requerido para el modo stdio.")
+        self._session_cm = ClientSession(read_stream, write_stream)
+        self._session = await self._session_cm.__aenter__()
+        await self._session.initialize()
+        return self._session
 
-                    logger.info(
-                        f"Levantando servidor FastMCP desde: {self.server_script_path}")
-                    python_executable = sys.executable
-                    command = [
-                        python_executable,
-                        "-u",  # Forza stdout/stderr sin buffer
-                        "-m", self.server_script_path
-                    ] if not self.server_script_path.endswith(".py") else [
-                        python_executable,
-                        "-u",  # Forza stdout/stderr sin buffer
-                        self.server_script_path
-                    ]
-                    return Client(command)
+    async def start_server_session(self, timeout: float = 60.0) -> ClientSession:
+        transport_mode = (os.getenv("MCP_TRANSPORT") or "http").lower()
+        logger.info("Starting MCP session in transport mode: %s", transport_mode)
 
-                else:
-                    raise ValueError(
-                        f"Modo de transporte no válido: '{transport_mode}'. Usar 'http' o 'stdio'.")
-
-            self._client = await asyncio.wait_for(_create_client(), timeout=timeout)
-            # Inicializar la sesión
-            # Enter client context to establish the background session and perform
-            # the MCP initialization handshake. Use the public initialize() API.
-            async with self._client:
-                await self._client.initialize()
-            logger.info("Cliente FastMCP conectado y listo.")
-            return self._client
-
-        except asyncio.TimeoutError:
-            logger.critical(
-                f"Timeout durante inicialización FastMCP (>{timeout}s) - el servidor no responde o está bloqueado.")
+        if transport_mode != "http":
             raise RuntimeError(
-                f"Timeout al inicializar FastMCP después de {timeout}s")
+                "Only HTTP transport is supported in the Dockerized core. Set MCP_TRANSPORT=http.")
+
+        host = os.getenv("MCP_SERVER_HOST") or "mcp_server"
+        port = int(os.getenv("MCP_SERVER_PORT") or 8080)
+        url = f"http://{host}:{port}/mcp"
+        logger.info("Configuring MCP client to connect to %s", url)
+
+        try:
+            return await asyncio.wait_for(self._open_http_session(url), timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            raise RuntimeError(f"Timeout initializing MCP session after {timeout}s") from exc
         except Exception as exc:
-            logger.critical(
-                f"Error fatal al conectar con el servidor FastMCP: {str(exc)}", exc_info=True)
-            raise RuntimeError(
-                f"No se pudo inicializar la sesión FastMCP: {str(exc)}") from exc
+            logger.critical("Fatal error connecting to MCP server: %s", exc, exc_info=True)
+            raise RuntimeError(f"Could not initialize MCP session: {exc}") from exc
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Envía una solicitud de ejecución de método al servidor remoto.
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        if not self._session:
+            raise RuntimeError("The MCP client session is not active.")
 
-        Args:
-            tool_name (str): Nombre del método a ejecutar (ej: 'analyze_web_activity').
-            arguments (Dict[str, Any]): Argumentos estructurados requeridos por el método.
-
-        Returns:
-            Dict[str, Any]: Respuesta deserializada del servidor.
-        """
-        if not self._client:
-            raise RuntimeError("El cliente FastMCP no se encuentra activo.")
-
-        logger.info(f"Invocando herramienta MCP remota: {tool_name}")
+        logger.info("Invoking remote MCP tool: %s", tool_name)
         try:
-            async with self._client:
-                result = await self._client.call_tool(tool_name, arguments)
+            result = await self._session.call_tool(tool_name, arguments)
             return result
         except Exception as exc:
-            logger.error(
-                f"Falla al ejecutar call para '{tool_name}': {str(exc)}", exc_info=True)
-            return {"error": f"Excepción en la ejecución de la herramienta remota: {str(exc)}"}
+            logger.error("Failure executing call for '%s': %s", tool_name, exc, exc_info=True)
+            return {"error": f"Exception during remote tool execution: {exc}"}
 
     async def close(self):
-        """
-        Cierra de forma ordenada la conexión con el servidor.
-        """
-        if self._client:
-            logger.info("Cerrando conexión del cliente FastMCP...")
-            await self._client.close()
-            self._client = None
-            logger.info("Conexión FastMCP finalizada correctamente.")
+        if self._session_cm:
+            logger.info("Closing MCP session...")
+            await self._session_cm.__aexit__(None, None, None)
+            self._session_cm = None
+            self._session = None
+        if self._transport_cm:
+            await self._transport_cm.__aexit__(None, None, None)
+            self._transport_cm = None

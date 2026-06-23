@@ -4,15 +4,15 @@ import os
 import sys
 import logging
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from fastmcp.server import FastMCP
 
-# Importar las funciones reales de análisis con heurísticas
+# Import the real analysis functions with heuristics
 from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
 from mcp_servers.log_analysis_server.tools.threat_context import execute_get_threat_context
 
-# --- Configuración de Logging de Grado de Producción ---
+# --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
@@ -26,76 +26,105 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- Inicializar servidor ---
+# --- Initialize server ---
 server = FastMCP("log-analysis-server")
 
-# --- Registrar herramientas reales con heurísticas ---
+# --- Register real tools with heuristics ---
+# pylint: disable=too-many-arguments
 @server.tool()
-async def analyze_web_activity(
+async def analyze_web_activity(  # noqa: PLR0913
         window_id: str,
+        source_id: str,
         source_ip: str,
         window_start_utc: str,
         window_end_utc: str,
         total_requests: int,
         unique_uris_requested: List[str],
-        http_methods_distribution: Dict[str, int],
-        response_codes_distribution: Dict[str, int],
         user_agents_observed: List[str],
-        requests_per_second_avg: float
+        requests_per_second_avg: float,
+        http_methods_distribution: Optional[Dict[str, int]] = None,
+        response_codes_distribution: Optional[Dict[str, int]] = None,
+        critical_payload_features: Optional[List[str]] = None,
+        infra_context: Optional[Dict[str, Any]] = None,
+        security_state_features: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Analiza la telemetría web para detectar amenazas usando heurísticas + LLM.
+    Analyzes web telemetry to detect threats using heuristics + LLM.
 
     Args:
-        window_id: Identificador de la ventana.
-        source_ip: IP de origen bajo análisis.
-        window_start_utc: Timestamp de inicio.
-        window_end_utc: Timestamp de fin.
-        total_requests: Total de peticiones.
-        unique_uris_requested: Lista de URIs consultadas.
-        http_methods_distribution: Distribución de métodos HTTP.
-        response_codes_distribution: Distribución de códigos de respuesta.
-        user_agents_observed: Lista de User-Agents vistos.
-        requests_per_second_avg: Promedio de peticiones por segundo.
+        window_id: Window identifier.
+        source_id: Telemetry source ID.
+        source_ip: Source IP under analysis.
+        window_start_utc: Start timestamp.
+        window_end_utc: End timestamp.
+        total_requests: Total requests.
+        unique_uris_requested: List of requested URIs.
+        http_methods_distribution: HTTP method distribution.
+        response_codes_distribution: Response code distribution.
+        user_agents_observed: List of observed User-Agents.
+        requests_per_second_avg: Average requests per second.
+        critical_payload_features: Sanitized suspicious payload fragments extracted by the backend.
+        infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
+        security_state_features: Session/authentication state features for account-compromise correlation.
     """
-    # Reconstruimos el diccionario 'arguments' que espera tu execute_analyze_web_activity
+    # Rebuild the 'arguments' dictionary expected by execute_analyze_web_activity
     payload = {
         "window_id": window_id,
+        "source_id": source_id,
         "source_ip": source_ip,
         "window_start_utc": window_start_utc,
         "window_end_utc": window_end_utc,
         "total_requests": total_requests,
         "unique_uris_requested": unique_uris_requested,
-        "http_methods_distribution": http_methods_distribution,
-        "response_codes_distribution": response_codes_distribution,
+        "http_methods_distribution": http_methods_distribution or {},
+        "response_codes_distribution": response_codes_distribution or {},
         "user_agents_observed": user_agents_observed,
-        "requests_per_second_avg": requests_per_second_avg
+        "requests_per_second_avg": requests_per_second_avg,
+        "critical_payload_features": critical_payload_features or [],
+        "infra_context": infra_context or {},
+        "security_state_features": security_state_features or {},
     }
 
-    logger.info(f"Herramienta MCP 'analyze_web_activity' invocada exitosamente para IP: {source_ip}")
+    logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")
 
     try:
-        # Se lo enviamos limpio a tu función interna sin tocar nada de tu core
+        # Send it cleanly to the internal function without touching any core code
         return await execute_analyze_web_activity(payload)
     except Exception as e:
-        logger.error(f"Error en la ejecución de la herramienta: {str(e)}", exc_info=True)
+        logger.error(f"Error executing tool: {str(e)}", exc_info=True)
         return {
             "window_id": window_id,
+            "source_id": source_id,
+            "source_ip": source_ip,
             "threat_detected": False,
+            "threat_level": "NONE",
+            "threat_score": 0,
+            "indicators_found": ["analysis_execution_error"],
+            "reasoning_summary": "MCP tool execution failed before producing a valid analytical verdict.",
+            "recommendation": "Review MCP server logs, validate telemetry window payload, and rerun analysis.",
+            "targeted_asset": f"victim-app [simulation_dmz] paths: {unique_uris_requested[:5]}",
+            "mitre_tactic": None,
+            "mitre_tactic_id": None,
+            "mitre_technique": None,
+            "mitre_technique_id": None,
+            "mitre_sub_technique": None,
+            "mitre_sub_technique_id": None,
+            "suggested_mitigations": [],
             "error": str(e)
         }
+
 @server.tool()
 async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str, Any]:
     """
-    Obtiene el historial de amenazas para una IP específica.
+    Retrieves the threat history for a specific IP.
     """
-    logger.info(f"Herramienta MCP 'get_threat_context' invocada para IP: {source_ip}")
+    logger.info(f"MCP tool 'get_threat_context' invoked for IP: {source_ip}")
     try:
-        # Construir argumentos en el formato esperado
+        # Build arguments in the expected format
         arguments = {"source_ip": source_ip, "limit": limit}
         return await execute_get_threat_context(arguments)
     except Exception as e:
-        logger.error(f"Error en get_threat_context: {str(e)}", exc_info=True)
+        logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
         return {
             "source_ip": source_ip,
             "history": [],
@@ -103,11 +132,11 @@ async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str
             "error": str(e)
         }
 
-# --- Lógica de Arranque del Servidor ---
+# --- Server Startup Logic ---
 async def main():
     """
-    Inicializa y corre el servidor MCP, seleccionando el transporte
-    basado en la variable de entorno MCP_TRANSPORT.
+    Initializes and runs the MCP server, selecting the transport
+    based on the MCP_TRANSPORT environment variable.
     """
     transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
     
@@ -129,7 +158,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        # Este log inicial es seguro porque la configuración de logging ya está forzada a stderr.
+        # This initial log is safe because logging is already forced to stderr.
         logger.info("MCP Server process starting.")
         asyncio.run(main())
     except KeyboardInterrupt:

@@ -1,8 +1,8 @@
 """
-Módulo del adaptador Gemini para la interfaz LLM genérica.
+Gemini adapter module for the generic LLM interface.
 
-Implementa LLMProviderInterface para Google Gemini, encapsulando toda la lógica
-específica de Gemini API y manteniéndola agnóstica del resto del sistema.
+Implements LLMProviderInterface for Google Gemini, encapsulating all Gemini
+API-specific logic and keeping it agnostic from the rest of the system.
 """
 
 import asyncio
@@ -27,23 +27,23 @@ logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers.gemini
 
 class GeminiProvider(LLMProviderInterface):
     """
-    Adaptador de Google Gemini para el framework LLM genérico.
+    Google Gemini adapter for the generic LLM framework.
     
-    Encapsula todas las particularidades de la API de Google Gemini,
-    incluyendo autenticación, configuración de generación, y manejo de errores.
+    Encapsulates all particularities of the Google Gemini API,
+    including authentication, generation configuration, and error handling.
     """
 
     _PROVIDER_NAME = "gemini"
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Inicializar el proveedor Gemini con configuración específica.
+        Initialize the Gemini provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Debe contener:
-                - gemini_api_key: Clave de autenticación para Google Gemini
-                - gemini_model: Nombre del modelo (default: gemini-1.5-flash)
-                - gemini_max_output_tokens: Tokens máximos de salida (default: 1024)
+            config (Dict[str, Any]): Must contain:
+                - gemini_api_key: Authentication key for Google Gemini
+                - gemini_model: Model name (default: gemini-1.5-flash)
+                - gemini_max_output_tokens: Maximum output tokens (default: 1024)
         """
         super().__init__(config)
         self._api_key = config.get("gemini_api_key")
@@ -51,31 +51,31 @@ class GeminiProvider(LLMProviderInterface):
         self._max_tokens = config.get("gemini_max_output_tokens", 4160)
         
         if not self._api_key:
-            raise LLMException("gemini_api_key es requerida en la configuración")
+            raise LLMException("gemini_api_key is required in the configuration")
         
-        # Configurar la API de Gemini de forma tardía (lazy)
+        # Configure the Gemini API lazily
         self._model = None
-        logger.info(f"GeminiProvider inicializado para modelo: {self._model_name}")
+        logger.info(f"GeminiProvider initialized for model: {self._model_name}")
 
     def build_analysis_prompt(self, telemetry: Any, history: List[Any]) -> str:
-        """Genera el prompt clásico extendido requerido para Gemini."""
+        """Generates the classic extended prompt required for Gemini."""
         return AnalysisPromptBuilder.build_full_prompt(telemetry, history)
 
     async def call_model(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """
-        Invocar a Google Gemini con el prompt proporcionado.
-        Compatible con especificaciones estrictas de Gemini 2.5+.
+        Invoke Google Gemini with the provided prompt.
+        Compatible with Gemini 2.5+ strict specifications.
         """
-        # 1. Forzar un mínimo saludable de tokens para evitar truncado de JSONs
+        # 1. Force a healthy minimum of tokens to avoid JSON truncation
         current_max_tokens = max_tokens or self._max_tokens
         if current_max_tokens < 2048:
-            current_max_tokens = 4160  # Asignar espacio holgado para el análisis de logs
+            current_max_tokens = 4160  # Assign generous space for log analysis
 
-        # 2. Inicialización limpia y robusta del modelo base
-        if self._model is None:
+        # 2. Clean and robust initialization of the base model
+        if self._model is None or not hasattr(self, "_base_config"):
             genai.configure(api_key=self._api_key)
 
-            # En Gemini 2.5+ es vital definir el mime_type desde la raíz
+            # In Gemini 2.5+ it is vital to define the mime_type from the root
             self._base_config = generation_types.GenerationConfig(
                 temperature=0.1,
                 response_mime_type="application/json",
@@ -84,17 +84,18 @@ class GeminiProvider(LLMProviderInterface):
 
             self._model = genai.GenerativeModel(
                 model_name=self._model_name,
-                generation_config=self._base_config
+                generation_config=self._base_config,
+                system_instruction=AnalysisPromptBuilder.get_system_instructions()
             )
 
         try:
-            logger.debug(f"Enviando prompt a Gemini ({self._model_name})")
+            logger.debug(f"Sending prompt to Gemini ({self._model_name})")
 
-            # 3. Clonar y mutar la configuración exclusivamente para esta llamada
-            runtime_config =copy.copy(self._base_config)
+            # 3. Clone and mutate the configuration exclusively for this call
+            runtime_config = copy.copy(self._base_config)
             runtime_config.max_output_tokens = current_max_tokens
 
-            # 4. Invocación segura usando lambda para prevenir problemas de firma con hilos
+            # 4. Safe invocation using lambda to prevent thread signature issues
             response = await asyncio.to_thread(
                 lambda: self._model.generate_content(
                     prompt,
@@ -103,89 +104,84 @@ class GeminiProvider(LLMProviderInterface):
             )
 
             if not response or not response.text:
-                logger.error("Gemini retornó respuesta vacía")
-                raise LLMException("Respuesta vacía de Gemini API")
+                logger.error("Gemini returned empty response")
+                raise LLMException("Empty response from Gemini API")
 
-            logger.debug("Respuesta recibida de Gemini exitosamente")
+            logger.debug("Response received from Gemini successfully")
             return response.text.strip()
 
         except Exception as exc:
-            logger.error(f"Error en llamada a Gemini API: {str(exc)}", exc_info=True)
-            raise LLMException(f"Falla en Gemini API: {str(exc)}") from exc
+            logger.error(f"Error in Gemini API call: {str(exc)}", exc_info=True)
+            raise LLMException(f"Gemini API failure: {str(exc)}") from exc
 
     async def validate_response(self, response: str) -> LLMResponse:
         """
-        Validar y parsear la respuesta de Gemini.
+        Validate and parse the Gemini response.
         
-        Realiza conversión de JSON string a LLMResponse y maneja casos donde
-        el JSON está malformado.
+        Converts JSON string to LLMResponse and handles cases where
+        the JSON is malformed.
         
         Args:
-            response (str): Respuesta JSON de Gemini
+            response (str): JSON response from Gemini
             
         Returns:
-            LLMResponse: Objeto validado
+            LLMResponse: Validated object
             
         Raises:
-            LLMException: Si hay error de parsing o validación
+            LLMException: If there is a parsing or validation error
         """
         try:
-            """Valida y parsea la respuesta recibida del LLM."""
-
-            # ════════════════════════════════════════════════════════════════════
-            # IMPRESIÓN DE DEPURACIÓN (Añade estas líneas)
-            # ════════════════════════════════════════════════════════════════════
-            print("\n" + "=" * 80)
-            print("RECONOCIMIENTO DE RESPUESTA CRUDA DE GEMINI:")
-            print("=" * 80)
-            # Alternativa elegante usando el logger existente en tu archivo
-            logger.info(f"Contenido crudo recibido de Gemini:\n{response}")
-            print("=" * 80 + "\n")
-            # ════════════════════════════════════════════════════════════════════
             parsed = json.loads(response)
-            logger.debug("JSON parseado exitosamente")
+            logger.debug("JSON parsed successfully")
+
+            # Keep a provider-agnostic contract: only cognitive LLM fields are accepted.
+            filtered = {
+                "threat_score": parsed.get("threat_score", 0),
+                "reasoning_summary": parsed.get("reasoning_summary", ""),
+                "recommendation": parsed.get("recommendation", ""),
+            }
             
-            # Intentar validar con Pydantic
-            validated = LLMResponse(**parsed)
-            logger.debug("Respuesta validada según schema LLMResponse")
+            # Try to validate with Pydantic
+            validated = LLMResponse(**filtered)
+            logger.debug("Response validated against LLMResponse schema")
             return validated
             
         except json.JSONDecodeError as json_err:
-            logger.error(f"Error parseando JSON de Gemini: {str(json_err)}")
-            raise LLMException(f"JSON inválido de Gemini: {str(json_err)}") from json_err
+            logger.error(f"Error parsing Gemini JSON: {str(json_err)}")
+            raise LLMException(f"Invalid JSON from Gemini: {str(json_err)}") from json_err
             
         except ValidationError as val_err:
-            logger.error(f"Error validando schema de respuesta: {str(val_err)}")
-            raise LLMException(f"Respuesta no cumple schema: {str(val_err)}") from val_err
+            logger.error(f"Error validating response schema: {str(val_err)}")
+            raise LLMException(f"Response does not conform to schema: {str(val_err)}") from val_err
             
         except Exception as exc:
-            logger.error(f"Error inesperado en validate_response: {str(exc)}")
-            raise LLMException(f"Error inesperado: {str(exc)}") from exc
+            logger.error(f"Unexpected error in validate_response: {str(exc)}")
+            raise LLMException(f"Unexpected error: {str(exc)}") from exc
 
     @property
     def provider_name(self) -> str:
-        """Retorna 'gemini' como identificador único del proveedor."""
+        """Returns 'gemini' as the unique provider identifier."""
         return self._PROVIDER_NAME
 
     @property
     def model_name(self) -> str:
-        """Retorna el nombre exacto del modelo Gemini siendo usado."""
+        """Returns the exact name of the Gemini model being used."""
         return self._model_name
 
     async def health_check(self) -> bool:
         """
-        Verificar disponibilidad de Gemini API.
+        Verify Gemini API availability.
         
-        Realiza una llamada mínima al modelo para verificar autenticación
-        y disponibilidad del servicio.
+        Makes a minimal call to the model to verify authentication
+        and service availability.
         
         Returns:
-            bool: True si está disponible, False en caso contrario
+            bool: True if available, False otherwise
         """
         try:
-            logger.info("Ejecutando health check de Gemini")
+            logger.info("Running Gemini health check")
             
-            # Inicializar si es necesario
+            # Initialize if necessary
             if self._model is None:
                 genai.configure(api_key=self._api_key)
                 generation_config = {
@@ -198,20 +194,20 @@ class GeminiProvider(LLMProviderInterface):
                     generation_config=generation_config
                 )
             
-            # Realizar llamada mínima
+            # Make minimal call
             test_prompt = '{"test": true}'
             response = await asyncio.to_thread(
                 self._model.generate_content,
-                f'Responde con JSON válido: {test_prompt}'
+                f'Respond with valid JSON: {test_prompt}'
             )
             
             if response and response.text:
-                logger.info("Health check de Gemini exitoso")
+                logger.info("Gemini health check successful")
                 return True
             else:
-                logger.warning("Health check de Gemini: respuesta vacía")
+                logger.warning("Gemini health check: empty response")
                 return False
                 
         except Exception as exc:
-            logger.error(f"Health check de Gemini falló: {str(exc)}")
+            logger.error(f"Gemini health check failed: {str(exc)}")
             return False

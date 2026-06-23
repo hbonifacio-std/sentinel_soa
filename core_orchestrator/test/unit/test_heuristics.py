@@ -17,6 +17,7 @@ now = datetime.now(timezone.utc)
 
 attack_window = WebActivityWindowInput(
     window_id=window_id,
+    source_id="test-source",
     source_ip="10.0.0.66",
     window_start_utc=now,
     window_end_utc=now + timedelta(seconds=60),
@@ -76,6 +77,7 @@ print("=" * 60)
 
 benign_window = WebActivityWindowInput(
     window_id=uuid4(),
+    source_id="test-source",
     source_ip="192.168.1.100",
     window_start_utc=now,
     window_end_utc=now + timedelta(seconds=60),

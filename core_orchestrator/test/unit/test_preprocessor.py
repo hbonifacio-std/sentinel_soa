@@ -27,11 +27,13 @@ def test_parse_valid_combined_log_line():
     assert result is not None
     assert isinstance(result, LogLine)
     assert result.source_ip == "192.168.1.50"
-    assert result.http_method == "GET"
-    assert result.request_uri == "/api/v1/users"  # Sanitizado sin parámetros query
-    assert result.response_code == 200
-    assert result.response_size_bytes == 1024
-    assert result.user_agent == "Mozilla/5.0 (Windows NT 10.0)"
+    assert result.http is not None
+    assert result.http.method == "GET"
+    assert result.http.path == "/api/v1/users"   # Path sin query string
+    assert result.http.query == "id=99"           # Query separada
+    assert result.http.status_code == 200
+    assert result.http.response_size_bytes == 1024
+    assert result.http.user_agent == "Mozilla/5.0 (Windows NT 10.0)"
     assert result.timestamp_utc.tzinfo == timezone.utc
 
 

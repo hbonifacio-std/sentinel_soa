@@ -1,8 +1,8 @@
 """
-Módulo de motor de heurísticas deterministas para análisis de amenazas.
+Deterministic heuristics engine module for threat analysis.
 
-Implementa análisis basado en reglas para detectar patrones de ataque sin depender
-del LLM, proporcionando un baseline de confianza para el scoring de amenazas.
+Implements rule-based analysis to detect attack patterns without relying
+on the LLM, providing a confidence baseline for threat scoring.
 """
 
 import logging
@@ -13,20 +13,20 @@ logger = logging.getLogger(__name__)
 
 
 class ThreatHeuristics:
-    """Motor de análisis heurístico para cálculo de puntuación de riesgo (0-100%)."""
+    """Heuristic analysis engine for risk score calculation (0-100%)."""
     
-    # Diccionarios de indicadores de amenaza
+    # Threat indicator dictionaries
     MALICIOUS_UA_KEYWORDS = {
-        # Herramientas de escaneo de vulnerabilidades
-        "nikto": 30,        # ✅ AUMENTO: Nikto es un escanador muy específico
+        # Vulnerability scanning tools
+        "nikto": 30,        # Nikto is a very specific scanner
         "nmap": 25,
-        "sqlmap": 35,       # ✅ AUMENTO: SQLmap es extremadamente peligroso
+        "sqlmap": 35,       # SQLmap is extremely dangerous
         "dirbuster": 25,
         "masscan": 20,
         "nessus": 20,
         "openvas": 20,
-        "metasploit": 30,   # ✅ AUMENTO
-        "burp": 15,         # Testing pero puede ser malicioso
+        "metasploit": 30,
+        "burp": 15,         # Testing but can be malicious
         "owasp": 8,
         "appscan": 12,
         "acunetix": 15,
@@ -41,70 +41,70 @@ class ThreatHeuristics:
         "whatweb": 20,
         "joomscan": 25,
         "cmsmap": 25,
-        "scanner": 20,      # ✅ NUEVO: Genérico
-        "bot": 8,           # Genérico, bajo riesgo
-        "crawler": 3,       # Legítimo
-        "spider": 3,        # Legítimo
-        "httpx": 25,        # ✅ NUEVO: Herramienta de probing
-        "subfinder": 20,    # ✅ NUEVO: Subdomain enumeration
+        "scanner": 20,      # Generic
+        "bot": 8,           # Generic, low risk
+        "crawler": 3,       # Legitimate
+        "spider": 3,        # Legitimate
+        "httpx": 25,        # Probing tool
+        "subfinder": 20,    # Subdomain enumeration
     }
     
     SENSITIVE_URIS = {
-        # Archivos del sistema operativo
-        "/etc/passwd": 45,      # ✅ AUMENTO
-        "/etc/shadow": 50,      # ✅ AUMENTO
-        "/etc/sudoers": 50,     # ✅ NUEVO
-        "/etc/hosts": 30,       # ✅ NUEVO
-        "/etc/resolv.conf": 30, # ✅ NUEVO
-        # Administrativos y paneles de control
+        # Operating system files
+        "/etc/passwd": 45,
+        "/etc/shadow": 50,
+        "/etc/sudoers": 50,
+        "/etc/hosts": 30,
+        "/etc/resolv.conf": 30,
+        # Administrative panels and control panels
         "/admin": 20,
-        "/wp-admin": 25,        # ✅ AUMENTO
+        "/wp-admin": 25,
         "/wp-login": 18,
-        "/admin/login.php": 25, # ✅ NUEVO
-        "/administrator": 25,   # ✅ NUEVO
-        "/cpanel": 30,          # ✅ NUEVO
-        "/phpmyadmin": 35,      # ✅ NUEVO
-        # Archivos de configuración
-        "/.env": 40,            # ✅ AUMENTO
-        "/.git": 35,            # ✅ AUMENTO
-        "/.git/config": 45,     # ✅ AUMENTO
+        "/admin/login.php": 25,
+        "/administrator": 25,
+        "/cpanel": 30,
+        "/phpmyadmin": 35,
+        # Configuration files
+        "/.env": 40,
+        "/.git": 35,
+        "/.git/config": 45,
         "/config": 25,
         "/.env.local": 40,
-        "/.env.dev": 40,        # ✅ NUEVO
-        "/.env.prod": 40,       # ✅ NUEVO
-        "/web.config": 30,      # ✅ AUMENTO
-        "/.aws": 35,            # ✅ AUMENTO
-        "/.ssh": 40,            # ✅ AUMENTO
-        "/config.php": 30,      # ✅ NUEVO
-        "/settings.json": 25,   # ✅ NUEVO
-        # Archivos de respaldo y bases de datos
+        "/.env.dev": 40,
+        "/.env.prod": 40,
+        "/web.config": 30,
+        "/.aws": 35,
+        "/.ssh": 40,
+        "/config.php": 30,
+        "/settings.json": 25,
+        # Backup and database files
         "/backup": 20,
-        "/backups": 20,         # ✅ NUEVO
+        "/backups": 20,
         "/.sql": 30,
         "/.db": 30,
-        "/database.sql": 35,    # ✅ NUEVO
-        "/dump": 25,            # ✅ NUEVO
+        "/database.sql": 35,
+        "/dump": 25,
         # ASP.NET / PHP
         "/admin.php": 25,
         "/login.php": 12,
-        "/shell.php": 50,       # ✅ AUMENTO
-        "/webshell": 50,        # ✅ NUEVO
-        "/cmd.php": 50,         # ✅ NUEVO
-        "/php.ini": 40,         # ✅ AUMENTO
-        "/.htaccess": 25,       # ✅ AUMENTO
-        # Archivos de proyecto
+        "/shell.php": 50,
+        "/webshell": 50,
+        "/cmd.php": 50,
+        "/php.ini": 40,
+        "/.htaccess": 25,
+        # Project files
         "/composer.json": 15,
         "/package.json": 12,
         "/pom.xml": 12,
-        "/requirements.txt": 15, # ✅ NUEVO
-        # Directorios peligrosos
-        "/var/www": 20,         # ✅ NUEVO
-        "/uploads": 15,         # ✅ NUEVO
-        "/tmp": 15,             # ✅ NUEVO
+        "/requirements.txt": 15,
+        # Dangerous directories
+        "/var/www": 20,
+        "/uploads": 15,
+        "/tmp": 15,
     }
     
     SQL_INJECTION_PATTERNS = [
-        # Patrones básicos
+        # Basic patterns
         "' OR '1'='1",
         "' OR 1=1",
         "' OR 'a'='a",
@@ -113,11 +113,11 @@ class ThreatHeuristics:
         # UNION-based
         "' UNION SELECT",
         "UNION SELECT",
-        # URL-encoded variants para capturar %27
+        # URL-encoded variants to catch %27
         "%27 OR %271%27=%271",
         "%27 OR 1=1",
         "%27 UNION SELECT",
-        # Técnicas avanzadas
+        # Advanced techniques
         "EXEC",
         "EXECUTE",
         "DROP TABLE",
@@ -125,7 +125,7 @@ class ThreatHeuristics:
         "DELETE FROM",
         "SHUTDOWN",
         "WAITFOR",
-        "xp_",  # Stored procedures SQL Server maliciosas
+        "xp_",  # SQL Server malicious stored procedures
         # Boolean-based blind
         "1=1--",
         "1=2--",
@@ -136,7 +136,7 @@ class ThreatHeuristics:
     ]
     
     PATH_TRAVERSAL_PATTERNS = [
-        # Variaciones estándar
+        # Standard variations
         "../",
         "..%2f",
         "..%5c",
@@ -144,13 +144,13 @@ class ThreatHeuristics:
         "%2e%2e%2f",
         "%2e%2e%5c",
         "..;/",
-        "....//",     # ✅ NUEVO: Double encoding
-        "..%252f",    # ✅ NUEVO: Double URL-encoded
+        "....//",     # Double encoding
+        "..%252f",    # Double URL-encoded
         # Windows-specific
         "..\\",
         "..\\\\",
-        # Unicode / encoding alternative
-        "%c0%ae",     # ✅ NUEVO: UTF-8 encoded ..
+        # Unicode / alternative encoding
+        "%c0%ae",     # UTF-8 encoded ..
         "%c1%1c",
         # Null byte injection
         "../%00",
@@ -160,16 +160,16 @@ class ThreatHeuristics:
     @staticmethod
     def analyze(telemetry: WebActivityWindowInput) -> Tuple[int, List[str], str]:
         """
-        Ejecuta análisis heurístico completo sobre una ventana de telemetría.
+        Executes full heuristic analysis on a telemetry window.
         
         Args:
-            telemetry (WebActivityWindowInput): Datos de la ventana a analizar
+            telemetry (WebActivityWindowInput): Data of the window to analyze
             
         Returns:
             Tuple[int, List[str], str]: (threat_score, indicators, reasoning)
-                - threat_score: Puntuación de 0-100
-                - indicators: Lista de indicadores detectados
-                - reasoning: Resumen técnico del análisis
+                - threat_score: Score from 0-100
+                - indicators: List of detected indicators
+                - reasoning: Technical analysis summary
         """
         threat_score = 0
         indicators = []
@@ -179,25 +179,25 @@ class ThreatHeuristics:
         total_requests = telemetry.total_requests
         
         # ============================================================
-        # 1. ANÁLISIS DE USER-AGENT
+        # 1. USER-AGENT ANALYSIS
         # ============================================================
         ua_score, ua_indicators = ThreatHeuristics._analyze_user_agents(telemetry.user_agents_observed)
         if ua_score > 0:
             threat_score += ua_score
             indicators.extend(ua_indicators)
-            reasoning_parts.append(f"User-Agent malicioso (+{ua_score})")
+            reasoning_parts.append(f"Malicious User-Agent (+{ua_score})")
         
         # ============================================================
-        # 2. ANÁLISIS DE URIs SENSIBLES
+        # 2. SENSITIVE URI ANALYSIS
         # ============================================================
         uri_score, uri_indicators = ThreatHeuristics._analyze_sensitive_uris(telemetry.unique_uris_requested)
         if uri_score > 0:
             threat_score += uri_score
             indicators.extend(uri_indicators)
-            reasoning_parts.append(f"URIs sensibles detectadas (+{uri_score})")
+            reasoning_parts.append(f"Sensitive URIs detected (+{uri_score})")
         
         # ============================================================
-        # 3. ANÁLISIS DE CÓDIGOS DE RESPUESTA (404 Ratio)
+        # 3. RESPONSE CODE ANALYSIS (404 Ratio)
         # ============================================================
         error_score, error_indicators = ThreatHeuristics._analyze_response_codes(
             telemetry.response_codes_distribution,
@@ -206,10 +206,10 @@ class ThreatHeuristics:
         if error_score > 0:
             threat_score += error_score
             indicators.extend(error_indicators)
-            reasoning_parts.append(f"Anomalía en códigos de respuesta (+{error_score})")
+            reasoning_parts.append(f"Response code anomaly (+{error_score})")
         
         # ============================================================
-        # 4. ANÁLISIS DE VELOCIDAD (RPS anómalo)
+        # 4. SPEED ANALYSIS (Anomalous RPS)
         # ============================================================
         rps_score, rps_indicators = ThreatHeuristics._analyze_requests_per_second(
             telemetry.requests_per_second_avg,
@@ -218,10 +218,10 @@ class ThreatHeuristics:
         if rps_score > 0:
             threat_score += rps_score
             indicators.extend(rps_indicators)
-            reasoning_parts.append(f"RPS anómalo (+{rps_score})")
+            reasoning_parts.append(f"Anomalous RPS (+{rps_score})")
         
         # ============================================================
-        # 5. ANÁLISIS DE DIVERSIDAD DE MÉTODOS HTTP
+        # 5. HTTP METHOD DIVERSITY ANALYSIS
         # ============================================================
         method_score, method_indicators = ThreatHeuristics._analyze_http_methods(
             telemetry.http_methods_distribution
@@ -229,10 +229,10 @@ class ThreatHeuristics:
         if method_score > 0:
             threat_score += method_score
             indicators.extend(method_indicators)
-            reasoning_parts.append(f"Distribución HTTP anómala (+{method_score})")
+            reasoning_parts.append(f"Anomalous HTTP distribution (+{method_score})")
         
         # ============================================================
-        # 6. ANÁLISIS DE INYECCIÓN SQL / PATH TRAVERSAL
+        # 6. SQL INJECTION / PATH TRAVERSAL ANALYSIS
         # ============================================================
         injection_score, injection_indicators = ThreatHeuristics._analyze_injection_patterns(
             telemetry.unique_uris_requested
@@ -240,26 +240,26 @@ class ThreatHeuristics:
         if injection_score > 0:
             threat_score += injection_score
             indicators.extend(injection_indicators)
-            reasoning_parts.append(f"Patrones de inyección detectados (+{injection_score})")
+            reasoning_parts.append(f"Injection patterns detected (+{injection_score})")
         
         # ============================================================
-        # 7. NORMALIZACIÓN Y LÍMITES (0-100)
+        # 7. NORMALIZATION AND LIMITS (0-100)
         # ============================================================
-        # Normalizar: suma escalada y asimetría
+        # Normalize: scaled sum and asymmetry
         threat_score = min(100, int(threat_score))
         
-        # Generar reasoning sintético
-        reasoning = f"Análisis heurístico de {source_ip}: "
+        # Generate synthetic reasoning
+        reasoning = f"Heuristic analysis of {source_ip}: "
         if reasoning_parts:
             reasoning += "; ".join(reasoning_parts) + "."
         else:
-            reasoning += "No se detectaron indicadores de amenaza."
+            reasoning += "No threat indicators detected."
         
         return threat_score, indicators, reasoning
 
     @staticmethod
     def _analyze_user_agents(user_agents: List[str]) -> Tuple[int, List[str]]:
-        """Detecta User-Agents maliciosos o herramientas de escaneo."""
+        """Detects malicious User-Agents or scanning tools."""
         score = 0
         indicators = []
         
@@ -268,25 +268,24 @@ class ThreatHeuristics:
             for keyword, ua_score in ThreatHeuristics.MALICIOUS_UA_KEYWORDS.items():
                 if keyword in ua_lower:
                     score += ua_score
-                    # ✅ MEJORA: Mensajes más específicos y dicientes
                     tool_name = keyword.upper()
                     if "nikto" in keyword:
-                        indicators.append(f"🔴 Herramienta de escaneo detectada: {tool_name} (Nikto Web Scanner - Enumeración de vulnerabilidades)")
+                        indicators.append(f"🔴 Scanning tool detected: {tool_name} (Nikto Web Scanner - Vulnerability enumeration)")
                     elif "sqlmap" in keyword:
-                        indicators.append(f"🔴 Herramienta especializada detectada: {tool_name} (SQL Injection Tester - Ataque directo a BD)")
+                        indicators.append(f"🔴 Specialized tool detected: {tool_name} (SQL Injection Tester - Direct DB attack)")
                     elif "metasploit" in keyword:
-                        indicators.append(f"🔴 Framework de explotación detectado: {tool_name} (Metasploit - Herramienta ofensiva)")
+                        indicators.append(f"🔴 Exploitation framework detected: {tool_name} (Metasploit - Offensive tool)")
                     elif "nmap" in keyword:
-                        indicators.append(f"🔴 Herramienta de reconocimiento detectada: {tool_name} (Network Mapper - Mapeo de puertos/servicios)")
+                        indicators.append(f"🔴 Reconnaissance tool detected: {tool_name} (Network Mapper - Port/service mapping)")
                     else:
-                        indicators.append(f"🟠 User-Agent sospechoso: {ua} (Herramienta de testing/scanning: {tool_name})")
+                        indicators.append(f"🟠 Suspicious User-Agent: {ua} (Testing/scanning tool: {tool_name})")
                     break
         
         return score, indicators
 
     @staticmethod
     def _analyze_sensitive_uris(uris: List[str]) -> Tuple[int, List[str]]:
-        """Detecta solicitudes a rutas sensibles."""
+        """Detects requests to sensitive paths."""
         score = 0
         indicators = []
         
@@ -295,68 +294,68 @@ class ThreatHeuristics:
             for sensitive_path, path_score in ThreatHeuristics.SENSITIVE_URIS.items():
                 if sensitive_path in uri_lower:
                     score += path_score
-                    indicators.append(f"Solicitud a ruta sensible: {uri}")
+                    indicators.append(f"Request to sensitive path: {uri}")
                     break
         
         return score, indicators
 
     @staticmethod
     def _analyze_response_codes(response_dist: Dict[str, int], total: int) -> Tuple[int, List[str]]:
-        """Analiza la distribución de códigos de respuesta para detectar enumeración."""
+        """Analyzes the response code distribution to detect enumeration."""
         score = 0
         indicators = []
         
-        # Contar 404s
+        # Count 404s
         code_404_count = response_dist.get("404", 0)
         if total > 0:
             error_ratio = code_404_count / total
             
-            # Si más del 60% son 404, es probable enumeración
+            # If more than 60% are 404, it is likely enumeration
             if error_ratio > 0.6:
                 score += 30
-                indicators.append(f"Alto ratio de errores 404: {error_ratio:.1%} ({code_404_count}/{total})")
+                indicators.append(f"High 404 error ratio: {error_ratio:.1%} ({code_404_count}/{total})")
             elif error_ratio > 0.4:
                 score += 15
-                indicators.append(f"Ratio de errores 404 moderado: {error_ratio:.1%}")
+                indicators.append(f"Moderate 404 error ratio: {error_ratio:.1%}")
         
-        # Contar otros códigos de error (5xx)
+        # Count other error codes (5xx)
         code_5xx_count = sum(v for k, v in response_dist.items() if k.startswith("5"))
         if code_5xx_count > 3:
             score += 10
-            indicators.append(f"Múltiples errores del servidor (5xx): {code_5xx_count}")
+            indicators.append(f"Multiple server errors (5xx): {code_5xx_count}")
         
-        # Contar accesos denegados (403)
+        # Count denied access (403)
         code_403_count = response_dist.get("403", 0)
         if code_403_count > 5:
             score += 10
-            indicators.append(f"Múltiples accesos denegados (403): {code_403_count}")
+            indicators.append(f"Multiple access denied (403): {code_403_count}")
         
         return score, indicators
 
     @staticmethod
     def _analyze_requests_per_second(rps: float, total_requests: int) -> Tuple[int, List[str]]:
-        """Detecta velocidades de solicitud anómalas (escaneo rápido o lento)."""
+        """Detects anomalous request rates (fast or slow scanning)."""
         score = 0
         indicators = []
         
-        # RPS elevado (más de 10 req/s es sospechoso para un usuario normal)
+        # High RPS (more than 10 req/s is suspicious for a normal user)
         if rps > 10.0:
             score += 25
-            indicators.append(f"RPS elevado detectado: {rps:.2f} solicitudes/segundo")
+            indicators.append(f"High RPS detected: {rps:.2f} requests/second")
         elif rps > 5.0:
             score += 10
-            indicators.append(f"RPS moderadamente alto: {rps:.2f} solicitudes/segundo")
+            indicators.append(f"Moderately high RPS: {rps:.2f} requests/second")
         
-        # Muchas solicitudes en una ventana corta
+        # Many requests in a short window
         if total_requests > 50 and rps < 5.0:
             score += 15
-            indicators.append(f"Ráfaga de {total_requests} solicitudes en ventana temporal corta")
+            indicators.append(f"Burst of {total_requests} requests in short time window")
         
         return score, indicators
 
     @staticmethod
     def _analyze_http_methods(methods_dist: Dict[str, int]) -> Tuple[int, List[str]]:
-        """Detecta uso inusual de métodos HTTP."""
+        """Detects unusual HTTP method usage."""
         score = 0
         indicators = []
         
@@ -364,40 +363,40 @@ class ThreatHeuristics:
         for method in suspicious_methods:
             if methods_dist.get(method, 0) > 0:
                 score += 10
-                indicators.append(f"Método HTTP sospechoso: {method} ({methods_dist[method]} solicitudes)")
+                indicators.append(f"Suspicious HTTP method: {method} ({methods_dist[method]} requests)")
         
-        # POST sin GET es raro
+        # POST without GET is unusual
         post_count = methods_dist.get("POST", 0)
         get_count = methods_dist.get("GET", 0)
         if post_count > 5 and get_count == 0:
             score += 15
-            indicators.append(f"Distribución inusual: {post_count} POSTs sin GETs")
+            indicators.append(f"Unusual distribution: {post_count} POSTs without GETs")
         
         return score, indicators
 
     @staticmethod
     def _analyze_injection_patterns(uris: List[str]) -> Tuple[int, List[str]]:
-        """Detecta patrones de inyección SQL y path traversal en URIs."""
+        """Detects SQL injection and path traversal patterns in URIs."""
         score = 0
         indicators = []
         
         for uri in uris:
             uri_lower = uri.lower()
-            # URL decode para atrapar patrones codificados
+            # URL decode to catch encoded patterns
             uri_decoded = uri_lower.replace("%27", "'").replace("%20", " ").replace("%2f", "/").replace("%5c", "\\")
             
-            # Detectar path traversal
+            # Detect path traversal
             for pattern in ThreatHeuristics.PATH_TRAVERSAL_PATTERNS:
                 if pattern.lower() in uri_lower or pattern.lower() in uri_decoded:
-                    score += 40  # ✅ AUMENTO: Path traversal es crítico
-                    indicators.append(f"🔴 Patrón de path traversal detectado: {uri}")
+                    score += 40  # Path traversal is critical
+                    indicators.append(f"🔴 Path traversal pattern detected: {uri}")
                     break
             
-            # Detectar inyección SQL
+            # Detect SQL injection
             for pattern in ThreatHeuristics.SQL_INJECTION_PATTERNS:
                 if pattern.lower() in uri_lower or pattern.lower() in uri_decoded:
-                    score += 30  # ✅ AUMENTO: SQL injection detection
-                    indicators.append(f"🔴 Patrón de inyección SQL detectado: {uri}")
+                    score += 30  # SQL injection detection
+                    indicators.append(f"🔴 SQL injection pattern detected: {uri}")
                     break
         
         return score, indicators

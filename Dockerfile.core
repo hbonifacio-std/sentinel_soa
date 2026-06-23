@@ -25,4 +25,5 @@ COPY start_core.sh .
 RUN chmod +x start_core.sh
 
 # Comando por defecto para inicializar el Core Orchestrator con MCP integrado
-CMD ["./start_core.sh"]
+# Se arranca directamente con Python para evitar depender del binario `uvicorn` en PATH.
+CMD ["python", "-m", "uvicorn", "core_orchestrator.main:app", "--host", "0.0.0.0", "--port", "8000"]

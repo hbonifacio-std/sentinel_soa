@@ -1,50 +1,49 @@
-"""Módulo de configuración centralizada del Core Orchestrator.
+"""Centralized configuration module for the Core Orchestrator.
 
-Utiliza pydantic-settings para la ingesta y tipado estricto de variables de entorno
-que regulan los puertos perimetrales REST, los umbrales de las ventanas temporales
-de logs y las rutas de inicialización de subprocesos MCP.
+Uses pydantic-settings for robust ingestion and strict typing of environment variables
+that regulate perimeter REST ports, log time window thresholds,
+and MCP subprocess initialization paths.
 """
 
-import os
 from typing import Optional
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class OrchestratorSettings(BaseSettings):
-    """Estructura de datos tipada para la gestión del entorno operacional del Host.
+    """Typed data structure for managing the Host's operational environment.
 
-    Valida en tiempo de arranque el cumplimiento de variables imperativas de red y
-    lógica de umbrales preventivos.
+    Validates at startup the compliance of imperative network variables and
+    preventive threshold logic.
     """
 
-    # --- Configuración de Red e Interfaces ---
+    # --- Network and Interface Configuration ---
     api_port: int = Field(
         default=8000,
         validation_alias="API_PORT",
-        description="Puerto TCP en el cual se expondrán los endpoints HTTP/REST perimetrales."
+        description="TCP port on which the perimeter HTTP/REST endpoints will be exposed."
     )
 
-    # --- Configuración del Subproceso Interno MCP ---
+    # --- Internal MCP Subprocess Configuration ---
     mcp_log_analysis_server_cmd: str = Field(
         default="python mcp_servers/log_analysis_server/server.py",
         validation_alias="MCP_LOG_ANALYSIS_SERVER_CMD",
-        description="Comando de sistema operativo para ejecutar el servidor MCP local a través de stdio."
+        description="OS command to run the local MCP server via stdio."
     )
 
-    # --- Umbrales de Lógica de Detección y Ventanas ---
+    # --- Detection Logic Thresholds and Windows ---
     window_threshold_requests: int = Field(
-        default=200,
+        default=50,
         validation_alias="WINDOW_THRESHOLD_REQUESTS",
         gt=0,
-        description="Número mínimo de peticiones por ventana temporal de una IP para forzar el análisis de IA."
+        description="Minimum number of requests per time window from an IP to force AI analysis."
     )
 
     window_duration_seconds: int = Field(
         default=60,
         validation_alias="WINDOW_DURATION_SECONDS",
         gt=0,
-        description="Duración en segundos de la ventana de tiempo para el agrupamiento de telemetría."
+        description="Duration in seconds of the time window for telemetry grouping."
     )
 
     max_alerts_in_memory: int = Field(
@@ -52,86 +51,86 @@ class OrchestratorSettings(BaseSettings):
         validation_alias="MAX_ALERTS_IN_MEMORY",
         gt=0,
         le=5000,
-        description="Capacidad límite del búfer circular en memoria RAM para almacenar alertas previas."
+        description="Circular buffer capacity limit in RAM for storing previous alerts."
     )
 
-    # ========== CONFIGURACIÓN MULTI-PROVEEDOR LLM (CENTRALIZADA) ==========
-    # El Core Orchestrator es ahora la única fuente de verdad para la configuración
-    # del proveedor de IA, y la pasará al subproceso MCP a través del entorno.
+    # ========== MULTI-PROVIDER LLM CONFIGURATION (CENTRALIZED) ==========
+    # The Core Orchestrator is now the single source of truth for the AI provider
+    # configuration, and will pass it to the MCP subprocess via the environment.
 
     llm_provider: str = Field(
         default="gemini",
         validation_alias="LLM_PROVIDER",
-        description="Proveedor LLM a utilizar: 'gemini' (default) | 'ollama'"
+        description="LLM provider to use: 'gemini' (default) | 'ollama'"
     )
 
     # --- Gemini (Google) ---
     gemini_api_key: Optional[SecretStr] = Field(
         default=None,
         validation_alias="GEMINI_API_KEY",
-        description="Clave de acceso para la API de Gemini."
+        description="Access key for the Gemini API."
     )
 
     gemini_model: str = Field(
         default="gemini-3.5-flash",
         validation_alias="GEMINI_MODEL",
-        description="Versión del modelo Gemini a invocar."
+        description="Version of the Gemini model to invoke."
     )
 
     gemini_max_output_tokens: int = Field(
         default=1024,
         validation_alias="GEMINI_MAX_OUTPUT_TOKENS",
         gt=0,
-        description="Límite máximo de tokens de salida para Gemini."
+        description="Maximum output token limit for Gemini."
     )
 
     # --- Ollama (Local Docker) ---
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         validation_alias="OLLAMA_BASE_URL",
-        description="URL base del servidor Ollama."
+        description="Base URL of the Ollama server."
     )
 
     ollama_model: str = Field(
         default="mistral",
         validation_alias="OLLAMA_MODEL",
-        description="Nombre del modelo Ollama a utilizar."
+        description="Name of the Ollama model to use."
     )
 
     ollama_timeout_seconds: int = Field(
-        default=300,
+        default=900,
         validation_alias="OLLAMA_TIMEOUT_SECONDS",
         gt=0,
-        description="Timeout en segundos para requests a Ollama."
+        description="Timeout in seconds for requests to Ollama."
     )
 
     @field_validator("mcp_log_analysis_server_cmd")
     @classmethod
     def validate_command_structure(cls, v: str) -> str:
-        """Sanea y valida de forma básica la presencia del ejecutable base."""
+        """Sanitizes and validates the presence of the base executable."""
         cleaned = v.strip()
         if not cleaned:
             raise ValueError(
-                "El comando de ejecución de herramientas MCP no puede estar vacío.")
+                "The MCP tool execution command cannot be empty.")
         return cleaned
 
     @field_validator('llm_provider')
     @classmethod
     def validate_provider(cls, v: str) -> str:
-        """Validar que el proveedor sea uno de los soportados."""
+        """Validates that the provider is one of the supported ones."""
         valid_providers = [
-            'gemini', 'ollama']  # Ampliar a medida que se añadan más
-        v_lower = v.lower().strip()
+            'gemini', 'ollama']  # Extend as more providers are added
+        v_lower = (v or '').lower().strip() or 'ollama'
         if v_lower not in valid_providers:
             raise ValueError(
-                f"LLM_PROVIDER debe ser uno de {valid_providers}, obtuvo: {v}")
+                f"LLM_PROVIDER must be one of {valid_providers}, got: {v}")
         return v_lower
 
     @field_validator('gemini_api_key', mode='before')
     def validate_gemini_key(cls, v, values):
         if values.data.get('llm_provider') == 'gemini' and not v:
             raise ValueError(
-                "GEMINI_API_KEY es requerida cuando LLM_PROVIDER es 'gemini'")
+                "GEMINI_API_KEY is required when LLM_PROVIDER is 'gemini'")
         return v
 
     model_config = SettingsConfigDict(
@@ -141,7 +140,7 @@ class OrchestratorSettings(BaseSettings):
     )
 
 
-# Inicialización de la configuración a nivel de módulo (Fail-Fast activo)
+# Module-level configuration initialization (Fail-Fast active)
 try:
     orchestrator_settings = OrchestratorSettings()
 except Exception as e:
@@ -150,7 +149,6 @@ except Exception as e:
     logging.basicConfig(level=logging.ERROR)
     logger = logging.getLogger("ORCHESTRATOR_CONFIG")
     logger.error(
-        f"Fallo crítico al iniciar Core Orchestrator: Verifique el archivo .env o "
-        f"las variables de entorno requeridas. Detalles: {e}"
-    )
+        f"Critical failure starting Core Orchestrator: Check the .env file or "
+        f"required environment variables. Details: {e}")
     sys.exit(1)

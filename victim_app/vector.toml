@@ -1,61 +1,92 @@
-# Configuración de Vector para el entorno de simulación de Sentinel SOA
-# Reemplaza a filebeat.yml para el envío de logs.
+# ==========================================
+# 1. FUENTES DE DATOS (SOURCES)
+# ==========================================
 
-# --- Fuentes (Inputs) ---
-# Define de dónde Vector debe recolectar los datos.
-[sources.victim_logs]
-  type = "file" # Lee desde archivos.
-  include = ["/var/log/victim_app/activity.log"] # Ruta al archivo de log dentro del contenedor.
-  
-  # Configuración moderna para evitar el WARN de obsolescencia
+# FUENTE 1: Tu app Web FastAPI
+[sources.victim_web_logs]
+  type = "file"
+  include = ["/var/log/victim_app/activity.log"]
   read_from = "beginning"
   ignore_checkpoints = false
 
-# --- Transformaciones (Procesamiento) ---
-# Define cómo se deben procesar los logs antes de enviarlos.
-[transforms.parse_and_enrich]
-  type = "remap" # Permite reestructurar los eventos de log con el lenguaje VRL.
-  inputs = ["victim_logs"] # Aplica esta transformación a los logs de la fuente 'victim_logs'.
-  source = """
-  # 1. Parsea el log (que viene en el campo 'message') como JSON.
-  . = parse_json!(.message)
 
-  # 2. Renombra y mapea los campos al esquema de LogEvent.
-  .timestamp_utc = .timestamp
-  .http_method = .request_method
-  .response_code = .status_code
-  
-  # 3. Combina path y query para formar el URI completo de forma infalible (Elimina el Warning E900).
-  if .request_query != "" && .request_query != null {
-    .request_uri = (string(.request_path) ?? "") + "?" + (string(.request_query) ?? "")
+# FUENTE 2: Logs de Auditoría de MongoDB
+[sources.mongo_db_logs]
+  type = "file"
+  include = ["/var/log/mongodb/mongod.log"]
+  read_from = "beginning"
+  ignore_checkpoints = false
+
+# FUENTE 3: Logs de Sistema del Host Víctima (SSH/Auth)
+[sources.host_syslogs]
+  type = "file"
+  include = ["/var/log/auth.log", "/var/log/secure"]
+  read_from = "beginning"
+  ignore_checkpoints = false
+
+# --- Transformaciones (Procesamiento Capa por Capa) ---
+[transforms.parse_and_enrich]
+  type = "remap"
+  inputs = ["victim_web_logs", "mongo_db_logs", "host_syslogs"]
+  source = """
+  # 1. RESPALDO: Guardamos el mensaje original ANTES de alterar el objeto raíz (.)
+  raw_msg = .message
+
+  # 2. Intentar parsear como JSON
+  parsed, err = parse_json(.message)
+
+  if err == null {
+    # --- ESCENARIO A: Log Estructurado (Web o DB nueva) ---
+    . = merge!(., parsed)
+
+    .source_ip = compact([.network.client_ip, "127.0.0.1"])[0]
+    .timestamp_utc = compact([.timestamp, to_string(now())])[0]
+
+    del(.timestamp)
   } else {
-    .request_uri = .request_path
+    # --- ESCENARIO B: Log Crudo / No-HTTP ---
+    .source_id = "victim-host-infrastructure"
+    .timestamp_utc = to_string(now())
+
+    # Regex protegido para TOML con doble escape
+    ip_regex = r'(?P<ip>(?:[0-9]{1,3}\\.){3}[0-9]{1,3})'
+    extracted, reg_err = parse_regex(.message, ip_regex)
+
+    if reg_err == null && extracted.ip != null {
+       .source_ip = extracted.ip
+    } else {
+       .source_ip = "0.0.0.0"
+    }
   }
 
-  # 4. Elimina los campos originales que ya no son necesarios para limpiar el evento.
-  del(.timestamp)
-  del(.request_method)
-  del(.request_path)
-  del(.request_query)
-  del(.status_code)
-  del(.processing_time_ms)
-  del(.raw_request_body)
+  # ========================================================
+  # INTERSECCIÓN GLOBAL: Campos extra para TODOS los logs
+  # ========================================================
+  if .extra_fields == null {
+    .extra_fields = {}
+  }
+
+
+
+  # ========================================================
+  # LIMPIEZA DE METADATOS INTERNOS
+  # ========================================================
+  del(.message)
+  del(.file)
+  del(.source_type)
   """
 
-# --- Sinks (Outputs) ---
-# Define a dónde se deben enviar los datos procesados.
+# --- Sinks (Outputs en Tiempo Real) ---
 [sinks.sentinel_core_http]
-  type = "http" # Envía los datos a un endpoint HTTP.
-  inputs = ["parse_and_enrich"] # Envía los logs procesados por 'parse_and_enrich'.
-  uri = "http://sentinel_core:8000/api/v1/telemetry/ingest/batch" # Endpoint correcto para ingesta de eventos estructurados.
-  method = "post" # Usa el método POST.
-  encoding.codec = "json" # Codifica el payload de salida como JSON.
-  # Desactivamos el batching para enviar un evento por petición, que es lo que el endpoint espera.
-  batch.max_events = 100 
+  type = "http"
+  inputs = ["parse_and_enrich"]
+  uri = "http://core:8000/api/v1/telemetry/ingest/batch"
+  method = "post"
+  encoding.codec = "json"
+  batch.max_events = 50
   batch.timeout_secs = 60
 
 # --- Sink de Debug ---
-# Imprime los logs procesados a la consola para depuración.
 [sinks.debug_console]
   type = "console"
   inputs = ["parse_and_enrich"]
