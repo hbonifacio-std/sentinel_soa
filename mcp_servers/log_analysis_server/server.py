@@ -45,8 +45,13 @@ async def analyze_web_activity(  # noqa: PLR0913
         http_methods_distribution: Optional[Dict[str, int]] = None,
         response_codes_distribution: Optional[Dict[str, int]] = None,
         critical_payload_features: Optional[List[str]] = None,
+        attempted_usernames: Optional[List[str]] = None,
+        invalid_token_requests_count: int = 0,
+        max_response_size_bytes: int = 0,
+        suspicious_samples: Optional[List[Dict[str, Any]]] = None,
         infra_context: Optional[Dict[str, Any]] = None,
         security_state_features: Optional[Dict[str, Any]] = None,
+        rules_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes web telemetry to detect threats using heuristics + LLM.
@@ -64,8 +69,13 @@ async def analyze_web_activity(  # noqa: PLR0913
         user_agents_observed: List of observed User-Agents.
         requests_per_second_avg: Average requests per second.
         critical_payload_features: Sanitized suspicious payload fragments extracted by the backend.
+        attempted_usernames: Distinct usernames observed in authentication attempts.
+        invalid_token_requests_count: Number of requests with invalid/expired authentication tokens.
+        max_response_size_bytes: Maximum response size observed in the window.
+        suspicious_samples: Sanitized suspicious request samples for context.
         infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
         security_state_features: Session/authentication state features for account-compromise correlation.
+        rules_bundle: Active rules bundle injected by core orchestrator.
     """
     # Rebuild the 'arguments' dictionary expected by execute_analyze_web_activity
     payload = {
@@ -81,8 +91,13 @@ async def analyze_web_activity(  # noqa: PLR0913
         "user_agents_observed": user_agents_observed,
         "requests_per_second_avg": requests_per_second_avg,
         "critical_payload_features": critical_payload_features or [],
+        "attempted_usernames": attempted_usernames or [],
+        "invalid_token_requests_count": invalid_token_requests_count,
+        "max_response_size_bytes": max_response_size_bytes,
+        "suspicious_samples": suspicious_samples or [],
         "infra_context": infra_context or {},
         "security_state_features": security_state_features or {},
+        "rules_bundle": rules_bundle,
     }
 
     logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")

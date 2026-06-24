@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, LayoutDashboard, Terminal } from 'lucide-react';
+import { Activity, AlertTriangle, LayoutDashboard, ShieldCheck, Terminal } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/cn';
 
@@ -6,6 +6,7 @@ const links = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/alerts', label: 'Alert Center', icon: AlertTriangle },
   { to: '/logs', label: 'Log Viewer', icon: Terminal },
+  { to: '/rules', label: 'Rules Management', icon: ShieldCheck },
 ];
 
 export function Sidebar() {

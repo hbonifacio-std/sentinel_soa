@@ -12,11 +12,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from core_orchestrator.api.v1.endpoints import  agent_telemetry, analytics
+from core_orchestrator.api.v1.endpoints import agent_telemetry, analytics, rules_management
 from core_orchestrator.agent.runner import agent_runner
 from core_orchestrator.exeptions.exeptions import validation_exception_handler
 from core_orchestrator.services.database import db
 from core_orchestrator.services.limiter import limiter
+from core_orchestrator.services.rules_engine import get_rules_engine
 
 # Centralized production logging configuration
 logging.basicConfig(
@@ -38,6 +39,10 @@ async def app_lifespan(app: FastAPI):
     # Connect to databases
     await db.connect_to_mongo()
     await db.connect_to_redis()
+
+    # Load heuristic rules from MongoDB / Redis into RulesEngine
+    rules_engine = get_rules_engine()
+    await rules_engine.initialize()
 
     # Lazily start the agent subsystem and MCP stdio tunnels
     await agent_runner.initialize_subsytem()
@@ -88,6 +93,11 @@ app.include_router(
     analytics.router,
     prefix="/api/v1",
     tags=["Analytics"]
+)
+app.include_router(
+    rules_management.router,
+    prefix="/api/v1/rules",
+    tags=["Rules Management"]
 )
 
 

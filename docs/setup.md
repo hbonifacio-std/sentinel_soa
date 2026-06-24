@@ -27,8 +27,26 @@ A continuación, edite el archivo `.env` y configure las siguientes variables:
 | `GEMINI_MODEL` | El modelo específico de Gemini que se va a utilizar. | `gemini-1.5-flash` | Si `LLM_PROVIDER=gemini` |
 | `OLLAMA_BASE_URL` | La URL base del servicio Ollama. | `http://ollama:11434` | Si `LLM_PROVIDER=ollama` |
 | `OLLAMA_MODEL` | El nombre del modelo local que se utilizará en Ollama. | `sentinel-analyst` | Si `LLM_PROVIDER=ollama` |
+| `MONGO_DB_NAME` | Base MongoDB de la aplicación (telemetría, reportes, analytics). | `sentinel_soa` | Sí |
+| `RULES_MONGO_DB_NAME` | Base MongoDB dedicada al CRUD y versionado de reglas heurísticas. | `heuristy` | Recomendado |
+| `REDIS_RULES_DB` | DB lógica de Redis usada para cachear el bundle activo de reglas. | `3` | Recomendado |
+| `RULES_CACHE_TTL_SECONDS` | TTL del bundle de reglas en Redis. | `86400` | No |
 
 **Nota**: Los valores de `OLLAMA_BASE_URL` y `OLLAMA_MODEL` están preconfigurados en `docker-compose.yml` para funcionar dentro del entorno Docker. No es necesario cambiarlos a menos que tengas una configuración personalizada.
+
+### Variables específicas del sistema de reglas
+
+- `MONGO_DB_NAME` y `RULES_MONGO_DB_NAME` **no cumplen el mismo rol**.
+- `MONGO_DB_NAME` aloja datos operativos de la aplicación.
+- `RULES_MONGO_DB_NAME` aloja:
+  - `heuristic_rules`
+  - `rule_versions`
+  - `rule_audit_log`
+- `REDIS_RULES_DB` se usa para cachear el `RulesBundle` activo que luego el core inyecta al MCP server.
+
+Para la documentación funcional completa del subsistema de reglas, consulta:
+
+- **[📄 Guía completa de reglas heurísticas](./rules/README.md)**
 
 ## Ejecución del Proyecto
 

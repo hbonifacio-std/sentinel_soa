@@ -28,7 +28,7 @@ async def save_log_to_db(log_data: Dict[str, Any]):
     """
     try:
         log_data["created_at_utc"] = datetime.now(timezone.utc)
-        await db.mongo_client.sentinel_soa.raw_telemetry.insert_one(log_data)
+        await db.get_app_db().raw_telemetry.insert_one(log_data)
     except Exception as e:
         logger.error(f"Error saving log to MongoDB: {e}", exc_info=True)
 

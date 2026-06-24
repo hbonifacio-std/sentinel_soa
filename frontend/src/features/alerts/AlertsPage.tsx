@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertDrawer } from '@/features/alerts/AlertDrawer';
 import { AlertsFilters } from '@/features/alerts/AlertsFilters';
 import { AlertsTable } from '@/features/alerts/AlertsTable';
-import { Paginator } from '@/components/Paginator';
 import { useAlertAction } from '@/hooks/useAlertAction';
 import { useFilters } from '@/hooks/useFilters';
 import { useThreats } from '@/hooks/useThreats';
@@ -48,19 +47,15 @@ export default function AlertsPage() {
       <p className="text-xs text-slate-400">
         Alert Center: pagina {pageInfo.page}, limite {pageInfo.limit}, total {pageInfo.total_records}
       </p>
-      <AlertsTable threats={filtered} onSelect={selectThreat} />
-      <Paginator
-        page={pageInfo.page}
-        limit={pageInfo.limit}
-        totalRecords={pageInfo.total_records}
-        hasPrev={Boolean(pageInfo.prev_page)}
-        hasNext={Boolean(pageInfo.next_page)}
-        onPageChange={(next) => setPage(Math.max(1, next))}
+      <AlertsTable
+        threats={filtered}
+        onSelect={selectThreat}
+        pageInfo={pageInfo}
+        onPageChange={(next) => setPage(next)}
         onLimitChange={(nextLimit) => {
           setLimit(nextLimit);
           setPage(1);
         }}
-        pageSizeOptions={[10, 20, 50, 100]}
       />
       <AlertDrawer
         threat={selectedThreat}

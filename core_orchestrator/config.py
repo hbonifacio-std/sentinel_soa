@@ -104,6 +104,60 @@ class OrchestratorSettings(BaseSettings):
         description="Timeout in seconds for requests to Ollama."
     )
 
+    # --- OpenAI Configuration ---
+    openai_api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias="OPENAI_API_KEY",
+        description="Access key for the OpenAI API."
+    )
+
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias="OPENAI_MODEL",
+        description="Version of the OpenAI model to invoke."
+    )
+
+    openai_max_output_tokens: int = Field(
+        default=4096,
+        validation_alias="OPENAI_MAX_OUTPUT_TOKENS",
+        gt=0,
+        description="Maximum output token limit for OpenAI."
+    )
+
+    openai_timeout_seconds: int = Field(
+        default=60,
+        validation_alias="OPENAI_TIMEOUT_SECONDS",
+        gt=0,
+        description="Timeout in seconds for OpenAI requests."
+    )
+
+    # --- GROQ Configuration ---
+    groq_api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias="GROQ_API_KEY",
+        description="Access key for the GROQ API."
+    )
+
+    groq_model: str = Field(
+        default="mixtral-8x7b-32768",
+        validation_alias="GROQ_MODEL",
+        description="Version of the GROQ model to invoke."
+    )
+
+    groq_max_output_tokens: int = Field(
+        default=4096,
+        validation_alias="GROQ_MAX_OUTPUT_TOKENS",
+        gt=0,
+        description="Maximum output token limit for GROQ."
+    )
+
+    groq_timeout_seconds: int = Field(
+        default=60,
+        validation_alias="GROQ_TIMEOUT_SECONDS",
+        gt=0,
+        description="Timeout in seconds for GROQ requests."
+    )
+
     @field_validator("mcp_log_analysis_server_cmd")
     @classmethod
     def validate_command_structure(cls, v: str) -> str:
@@ -119,7 +173,7 @@ class OrchestratorSettings(BaseSettings):
     def validate_provider(cls, v: str) -> str:
         """Validates that the provider is one of the supported ones."""
         valid_providers = [
-            'gemini', 'ollama']  # Extend as more providers are added
+            'gemini', 'ollama', 'openai', 'groq']  # Extend as more providers are added
         v_lower = (v or '').lower().strip() or 'ollama'
         if v_lower not in valid_providers:
             raise ValueError(
@@ -131,6 +185,20 @@ class OrchestratorSettings(BaseSettings):
         if values.data.get('llm_provider') == 'gemini' and not v:
             raise ValueError(
                 "GEMINI_API_KEY is required when LLM_PROVIDER is 'gemini'")
+        return v
+
+    @field_validator('openai_api_key', mode='before')
+    def validate_openai_key(cls, v, values):
+        if values.data.get('llm_provider') == 'openai' and not v:
+            raise ValueError(
+                "OPENAI_API_KEY is required when LLM_PROVIDER is 'openai'")
+        return v
+
+    @field_validator('groq_api_key', mode='before')
+    def validate_groq_key(cls, v, values):
+        if values.data.get('llm_provider') == 'groq' and not v:
+            raise ValueError(
+                "GROQ_API_KEY is required when LLM_PROVIDER is 'groq'")
         return v
 
     model_config = SettingsConfigDict(

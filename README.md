@@ -9,6 +9,7 @@
 -   [Arquitectura](#arquitectura)
 -   [Componentes](#componentes)
 -   [Flujo de Información](#flujo-de-información)
+-   [Reglas Heurísticas](#reglas-heurísticas)
 -   [Guía de Implementación](#guía-de-implementación)
 
 ## Visión General
@@ -47,6 +48,13 @@ El procesamiento de datos sigue un flujo lógico, desde la ingesta de telemetrí
 
 Para entender cómo viajan los datos a través del sistema, consulta el documento sobre el flujo de información:
 -   **[📄 Ver Documento de Flujo de Información](./docs/information_flow.md)**
+
+## Reglas Heurísticas
+
+El sistema de detección determinística de Sentinel SOA utiliza reglas heurísticas administrables desde MongoDB/Redis, con versionado, auditoría y activación controlada.
+
+Para entender cómo funcionan las reglas, cómo crear nuevas, cómo versionarlas, activarlas, desactivarlas y cómo extender el sistema con nuevas categorías, consulta:
+-   **[📄 Ver Guía Completa de Reglas Heurísticas](./docs/rules/README.md)**
 
 ## Guía de Implementación
 

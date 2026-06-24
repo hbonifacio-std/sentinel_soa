@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia todo el código fuente.
 COPY mcp_servers/ ./mcp_servers/
+COPY shared/ ./shared/
+COPY data/ ./data/
 
 # El comando por defecto para iniciar el servidor MCP.
 # Este se ejecutará cuando el contenedor arranque.

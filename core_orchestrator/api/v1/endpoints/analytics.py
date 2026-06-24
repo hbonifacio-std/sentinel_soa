@@ -1,11 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query,Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from core_orchestrator.services.limiter import limiter
 from ....services.database import db
-import os
 from datetime import datetime, timezone
 from ....models.feedback import ActionRequest, AlertWorkflowResponse, ActionEntry
-from ....models.analysis_report import AnalysisReportResponse
 from bson.objectid import ObjectId
 
 router = APIRouter()
@@ -37,15 +35,11 @@ def resolve_report_created_at(report: dict) -> str:
             
     return datetime.now(timezone.utc).isoformat()
 
-def get_db_name():
-    return os.getenv("MONGO_DB_NAME", "sentinel_soa")
-
-
 def get_reports_collection():
-    return db.mongo_client[get_db_name()].analysis_reports
+    return db.get_app_db().analysis_reports
 
 def get_raw_telemetry_collection():
-    return db.mongo_client[get_db_name()].raw_telemetry
+    return db.get_app_db().raw_telemetry
 
 def parse_report_object_id(report_id: str) -> ObjectId:
     try:
@@ -211,9 +205,15 @@ async def get_source_ids():
     source_ids = await collection.distinct("source_id")
     return source_ids
 
-@router.get("/analytics/reports", response_model=list[AnalysisReportResponse])
+@router.get("/analytics/reports", response_model=dict)
 @limiter.limit("5/minute")
-async def get_reports(request:Request, source_id: str = None, time_range: str = None):
+async def get_reports(
+    request: Request,
+    source_id: str | None = None,
+    time_range: str | None = None,
+    page: int = Query(default=1, ge=1, description="Numero de pagina (minimo 1)"),
+    limit: int = Query(default=10, ge=1, le=100, description="Cantidad de reportes por pagina (maximo 100)"),
+):
     """
     Get analysis reports, optionally filtered by source_id and time_range.
     """
@@ -223,8 +223,10 @@ async def get_reports(request:Request, source_id: str = None, time_range: str = 
     # TODO: Implement time_range filtering
     
     collection = get_reports_collection()
-    reports_cursor = collection.find(query).sort("_id", 1).limit(100)
-    reports = await reports_cursor.to_list(length=100)
+    skip = (page - 1) * limit
+    total_records = await collection.count_documents(query)
+    reports_cursor = collection.find(query).sort("_id", -1).skip(skip).limit(limit)
+    reports = await reports_cursor.to_list(length=limit)
     
     # Convert ObjectId to string for JSON serialization
     for report in reports:
@@ -237,12 +239,22 @@ async def get_reports(request:Request, source_id: str = None, time_range: str = 
             fallback_created_at = ObjectId(object_id_value).generation_time.isoformat()
 
         report["created_at_utc"] = serialize_timestamp(report.get("created_at_utc"), fallback_created_at)
+        report["resolved_at_utc"] = serialize_timestamp(report.get("resolved_at_utc"))
 
         report["reviewed"] = bool(report.get("reviewed", False))
         report["resolved"] = bool(report.get("resolved", False))
         report["actions"] = normalize_actions(report.get("actions", []))
             
-    return reports
+    return {
+        "info": {
+            "total_records": total_records,
+            "page": page,
+            "limit": limit,
+            "next_page": f"/analytics/reports?page={page + 1}&limit={limit}" if (skip + limit) < total_records else None,
+            "prev_page": f"/analytics/reports?page={page - 1}&limit={limit}" if page > 1 else None,
+        },
+        "results": reports,
+    }
 
 @router.get("/analytics/stats")
 async def get_stats(source_id: str = None, time_range: str = None):

@@ -1,0 +1,635 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  activateVersion,
+  createRule,
+  createVersion,
+  deleteRule,
+  getRulesHealth,
+  listRules,
+  listVersions,
+  updateRule,
+  validateRules,
+} from '@/lib/rulesApi';
+import type {
+  HeuristicRule,
+  HeuristicRuleUpdate,
+  MatchStrategy,
+  RuleCategory,
+  RuleType,
+  RulesHealthResponse,
+  RuleVersion,
+  ValidateRulesResponse,
+} from '@/types/rules';
+
+const ruleTypeOptions: RuleType[] = ['keyword_mapping', 'pattern_list', 'threshold'];
+const categoryOptions: RuleCategory[] = ['user_agent', 'uri', 'injection', 'threshold'];
+const strategyOptions: MatchStrategy[] = ['substring_case_insensitive', 'exact', 'regex'];
+
+type EditorMode = 'create' | 'edit';
+
+interface RuleDraft {
+  rule_id: string;
+  rule_type: RuleType;
+  category: RuleCategory;
+  version: number;
+  is_active: boolean;
+  description: string;
+  match_strategy: MatchStrategy;
+  contentDataText: string;
+  source: string;
+  changed_by: string;
+  change_reason: string;
+  compatibility_version: string;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return 'Error inesperado';
+  }
+
+  const payload = error.message;
+  try {
+    const parsed = JSON.parse(payload) as { detail?: unknown };
+    if (typeof parsed?.detail === 'string') {
+      return parsed.detail;
+    }
+    if (Array.isArray(parsed?.detail)) {
+      return parsed.detail.map((item) => JSON.stringify(item)).join(' | ');
+    }
+    if (parsed?.detail && typeof parsed.detail === 'object') {
+      return JSON.stringify(parsed.detail);
+    }
+  } catch {
+    return payload;
+  }
+
+  return payload;
+}
+
+function buildDefaultDraft(): RuleDraft {
+  return {
+    rule_id: '',
+    rule_type: 'keyword_mapping',
+    category: 'user_agent',
+    version: 1,
+    is_active: true,
+    description: '',
+    match_strategy: 'substring_case_insensitive',
+    contentDataText: '{\n  "example": 20\n}',
+    source: 'frontend',
+    changed_by: 'admin',
+    change_reason: 'Initial creation from UI',
+    compatibility_version: '1.0.0',
+  };
+}
+
+function ruleToDraft(rule: HeuristicRule): RuleDraft {
+  return {
+    rule_id: rule.rule_id,
+    rule_type: rule.rule_type,
+    category: rule.category,
+    version: rule.version,
+    is_active: rule.is_active,
+    description: rule.description,
+    match_strategy: rule.content.match_strategy,
+    contentDataText: JSON.stringify(rule.content.data, null, 2),
+    source: rule.metadata.source,
+    changed_by: rule.metadata.changed_by,
+    change_reason: rule.metadata.change_reason,
+    compatibility_version: rule.metadata.compatibility_version,
+  };
+}
+
+function draftToRule(draft: RuleDraft): HeuristicRule {
+  const contentData = JSON.parse(draft.contentDataText) as Record<string, unknown>;
+  const now = new Date().toISOString();
+
+  return {
+    rule_id: draft.rule_id.trim(),
+    rule_type: draft.rule_type,
+    category: draft.category,
+    version: Math.max(1, Number(draft.version)),
+    is_active: draft.is_active,
+    description: draft.description.trim(),
+    content: {
+      type: draft.rule_type,
+      data: contentData,
+      match_strategy: draft.match_strategy,
+    },
+    metadata: {
+      source: draft.source.trim() || 'frontend',
+      changed_by: draft.changed_by.trim() || 'admin',
+      change_reason: draft.change_reason.trim() || 'Updated from UI',
+      compatibility_version: draft.compatibility_version.trim() || '1.0.0',
+    },
+    validation_rules: {
+      min_score: 0,
+      max_score: 100,
+      required_fields: ['rule_id', 'category'],
+    },
+    created_at: now,
+    updated_at: now,
+  };
+}
+
+function ruleToUpdatePayload(draft: RuleDraft): HeuristicRuleUpdate {
+  const parsed = draftToRule(draft);
+  return {
+    rule_type: parsed.rule_type,
+    category: parsed.category,
+    version: parsed.version,
+    is_active: parsed.is_active,
+    description: parsed.description,
+    content: parsed.content,
+    metadata: parsed.metadata,
+  };
+}
+
+export default function RulesPage() {
+  const [rules, setRules] = useState<HeuristicRule[]>([]);
+  const [versions, setVersions] = useState<RuleVersion[]>([]);
+  const [health, setHealth] = useState<RulesHealthResponse | null>(null);
+  const [validation, setValidation] = useState<ValidateRulesResponse | null>(null);
+
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<EditorMode>('create');
+  const [draft, setDraft] = useState<RuleDraft>(buildDefaultDraft());
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+
+  const [versionRuleIds, setVersionRuleIds] = useState('');
+  const [versionChangelog, setVersionChangelog] = useState('Created from frontend UI');
+  const [versionDeployedBy, setVersionDeployedBy] = useState('admin');
+
+  const activeRules = useMemo(() => rules.filter((rule) => rule.is_active), [rules]);
+
+  const refreshData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [rulesResponse, versionsResponse, healthResponse] = await Promise.all([
+        listRules(includeInactive),
+        listVersions(100),
+        getRulesHealth(),
+      ]);
+      setRules(rulesResponse.rules);
+      setVersions(versionsResponse);
+      setHealth(healthResponse);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [includeInactive]);
+
+  useEffect(() => {
+    void refreshData();
+  }, [refreshData]);
+
+  function openCreateEditor() {
+    setEditorMode('create');
+    setDraft(buildDefaultDraft());
+    setSelectedRuleId(null);
+    setEditorOpen(true);
+  }
+
+  function openEditEditor(rule: HeuristicRule) {
+    setEditorMode('edit');
+    setDraft(ruleToDraft(rule));
+    setSelectedRuleId(rule.rule_id);
+    setEditorOpen(true);
+  }
+
+  async function handleSubmitEditor() {
+    setError(null);
+    setActionMessage(null);
+
+    try {
+      if (!draft.rule_id.trim()) {
+        throw new Error('El campo rule_id es obligatorio.');
+      }
+
+      if (!draft.description.trim()) {
+        throw new Error('El campo description es obligatorio.');
+      }
+
+      if (editorMode === 'create') {
+        const payload = draftToRule(draft);
+        await createRule(payload);
+        setActionMessage(`Regla creada: ${payload.rule_id}`);
+      } else if (selectedRuleId) {
+        const payload = ruleToUpdatePayload(draft);
+        await updateRule(selectedRuleId, payload);
+        setActionMessage(`Regla actualizada: ${selectedRuleId}`);
+      }
+
+      setEditorOpen(false);
+      await refreshData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleDeactivate(ruleId: string) {
+    const reason = window.prompt('Motivo de desactivacion', 'Rule deactivated from frontend');
+    if (!reason) {
+      return;
+    }
+    const user = window.prompt('Usuario que aplica el cambio', 'admin') || 'admin';
+
+    try {
+      await deleteRule(ruleId, user, reason);
+      setActionMessage(`Regla desactivada: ${ruleId}`);
+      await refreshData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleValidateBundle() {
+    try {
+      const result = await validateRules(activeRules);
+      setValidation(result);
+      if (result.valid) {
+        setActionMessage('Validacion exitosa del bundle activo.');
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleCreateVersion() {
+    const rulesIncluded = versionRuleIds
+      .split(',')
+      .map((ruleId) => ruleId.trim())
+      .filter(Boolean);
+
+    if (rulesIncluded.length === 0) {
+      setError('Debes ingresar al menos un rule_id para crear version.');
+      return;
+    }
+
+    try {
+      await createVersion({
+        rules_included: rulesIncluded,
+        changelog: versionChangelog,
+        deployed_by: versionDeployedBy,
+      });
+      setActionMessage('Version creada exitosamente.');
+      await refreshData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  async function handleActivateVersion(versionHash: string) {
+    try {
+      await activateVersion(versionHash);
+      setActionMessage(`Version activada: ${versionHash}`);
+      await refreshData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+
+  function useActiveRulesForVersion() {
+    const ids = activeRules.map((rule) => rule.rule_id).join(', ');
+    setVersionRuleIds(ids);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Rules Management</h2>
+            <p className="text-xs text-slate-400">CRUD de reglas heuristicas y gestion de versiones</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="rounded border border-surface-border px-3 py-1.5 text-sm" onClick={() => void refreshData()}>
+              Refrescar
+            </button>
+            <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={openCreateEditor}>
+              Nueva regla
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-300">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={includeInactive}
+              onChange={(event) => setIncludeInactive(event.target.checked)}
+            />
+            Incluir inactivas
+          </label>
+          {health ? (
+            <>
+              <span>Estado: {health.status}</span>
+              <span>Cache: {health.cached ? 'hit' : 'miss'}</span>
+              <span>Version activa: {health.version_hash}</span>
+              <span>Reglas activas: {health.total_active_rules}</span>
+            </>
+          ) : null}
+        </div>
+
+        {loading ? <p className="mt-2 text-sm text-slate-400">Cargando reglas...</p> : null}
+        {error ? <p className="mt-2 text-sm text-red-400">{error}</p> : null}
+        {actionMessage ? <p className="mt-2 text-sm text-emerald-400">{actionMessage}</p> : null}
+      </div>
+
+      <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Reglas ({rules.length})</h3>
+          <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={() => void handleValidateBundle()}>
+            Validar bundle activo
+          </button>
+        </div>
+
+        {validation ? (
+          <div className="mb-3 rounded border border-surface-border bg-slate-950/40 p-3 text-xs">
+            <p className={validation.valid ? 'text-emerald-300' : 'text-amber-300'}>
+              Validacion: {validation.valid ? 'valida' : 'con errores'}
+              {typeof validation.tests_passed === 'number' && typeof validation.tests_total === 'number'
+                ? ` (${validation.tests_passed}/${validation.tests_total} tests)`
+                : ''}
+            </p>
+            {validation.errors.length > 0 ? <p className="mt-1 text-red-300">Errores: {validation.errors.join(' | ')}</p> : null}
+            {validation.warnings.length > 0 ? <p className="mt-1 text-amber-300">Warnings: {validation.warnings.join(' | ')}</p> : null}
+          </div>
+        ) : null}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="text-slate-400">
+              <tr>
+                <th className="px-2 py-2">rule_id</th>
+                <th className="px-2 py-2">tipo</th>
+                <th className="px-2 py-2">categoria</th>
+                <th className="px-2 py-2">version</th>
+                <th className="px-2 py-2">activo</th>
+                <th className="px-2 py-2">updated_at</th>
+                <th className="px-2 py-2">acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rules.map((rule) => (
+                <tr key={rule.rule_id} className="border-t border-surface-border">
+                  <td className="px-2 py-2 font-mono">{rule.rule_id}</td>
+                  <td className="px-2 py-2">{rule.rule_type}</td>
+                  <td className="px-2 py-2">{rule.category}</td>
+                  <td className="px-2 py-2">{rule.version}</td>
+                  <td className="px-2 py-2">{rule.is_active ? 'si' : 'no'}</td>
+                  <td className="px-2 py-2">{new Date(rule.updated_at).toLocaleString()}</td>
+                  <td className="px-2 py-2">
+                    <div className="flex gap-2">
+                      <button className="rounded border border-surface-border px-2 py-1" onClick={() => openEditEditor(rule)}>
+                        Editar
+                      </button>
+                      <button
+                        className="rounded border border-red-500/40 px-2 py-1 text-red-300 disabled:opacity-50"
+                        onClick={() => void handleDeactivate(rule.rule_id)}
+                        disabled={!rule.is_active}
+                      >
+                        Desactivar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
+          <h3 className="text-sm font-semibold">Crear version</h3>
+          <p className="mt-1 text-xs text-slate-400">Usa `rule_id` separados por coma.</p>
+          <div className="mt-3 space-y-2 text-sm">
+            <textarea
+              className="h-24 w-full rounded border border-surface-border bg-slate-950 px-2 py-2 font-mono text-xs"
+              value={versionRuleIds}
+              onChange={(event) => setVersionRuleIds(event.target.value)}
+              placeholder="malicious_ua_keywords_v1, sensitive_uris_v1"
+            />
+            <div className="flex gap-2">
+              <input
+                className="w-full rounded border border-surface-border bg-slate-950 px-2 py-1"
+                value={versionDeployedBy}
+                onChange={(event) => setVersionDeployedBy(event.target.value)}
+                placeholder="deployed_by"
+              />
+              <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={useActiveRulesForVersion}>
+                Usar activas
+              </button>
+            </div>
+            <input
+              className="w-full rounded border border-surface-border bg-slate-950 px-2 py-1"
+              value={versionChangelog}
+              onChange={(event) => setVersionChangelog(event.target.value)}
+              placeholder="changelog"
+            />
+            <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={() => void handleCreateVersion()}>
+              Crear version
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
+          <h3 className="text-sm font-semibold">Versiones ({versions.length})</h3>
+          <div className="mt-2 max-h-72 space-y-2 overflow-auto pr-1">
+            {versions.map((version) => (
+              <div key={version.version_hash} className="rounded border border-surface-border bg-slate-950/40 p-2 text-xs">
+                <p className="font-mono text-slate-200">{version.version_hash}</p>
+                <p className="text-slate-400">{new Date(version.created_at).toLocaleString()}</p>
+                <p className="text-slate-300">rules: {version.rules_included.join(', ')}</p>
+                <p className="text-slate-300">deployed_by: {version.deployed_by}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className={version.is_active ? 'text-emerald-300' : 'text-slate-400'}>
+                    {version.is_active ? 'Activa' : 'Inactiva'}
+                  </span>
+                  <button
+                    className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
+                    disabled={version.is_active}
+                    onClick={() => void handleActivateVersion(version.version_hash)}
+                  >
+                    Activar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {editorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-lg border border-surface-border bg-slate-950 p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">{editorMode === 'create' ? 'Nueva regla' : `Editar ${selectedRuleId}`}</h3>
+              <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={() => setEditorOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="text-xs">
+                rule_id
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.rule_id}
+                  disabled={editorMode === 'edit'}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, rule_id: event.target.value }))}
+                />
+              </label>
+
+              <label className="text-xs">
+                descripcion
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.description}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))}
+                />
+              </label>
+
+              <label className="text-xs">
+                rule_type
+                <select
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.rule_type}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      rule_type: event.target.value as RuleType,
+                    }))
+                  }
+                >
+                  {ruleTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs">
+                category
+                <select
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.category}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      category: event.target.value as RuleCategory,
+                    }))
+                  }
+                >
+                  {categoryOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs">
+                match_strategy
+                <select
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.match_strategy}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      match_strategy: event.target.value as MatchStrategy,
+                    }))
+                  }
+                >
+                  {strategyOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs">
+                version
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  type="number"
+                  min={1}
+                  value={draft.version}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, version: Number(event.target.value) }))}
+                />
+              </label>
+
+              <label className="text-xs md:col-span-2">
+                <span className="mr-2">is_active</span>
+                <input
+                  type="checkbox"
+                  checked={draft.is_active}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, is_active: event.target.checked }))}
+                />
+              </label>
+
+              <label className="text-xs">
+                source
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.source}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, source: event.target.value }))}
+                />
+              </label>
+
+              <label className="text-xs">
+                changed_by
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.changed_by}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, changed_by: event.target.value }))}
+                />
+              </label>
+
+              <label className="text-xs md:col-span-2">
+                change_reason
+                <input
+                  className="mt-1 w-full rounded border border-surface-border bg-slate-900 px-2 py-1"
+                  value={draft.change_reason}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, change_reason: event.target.value }))}
+                />
+              </label>
+
+              <label className="text-xs md:col-span-2">
+                content.data (JSON)
+                <textarea
+                  className="mt-1 h-52 w-full rounded border border-surface-border bg-slate-900 px-2 py-1 font-mono text-xs"
+                  value={draft.contentDataText}
+                  onChange={(event) => setDraft((prev) => ({ ...prev, contentDataText: event.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded border border-surface-border px-3 py-1.5 text-sm" onClick={() => setEditorOpen(false)}>
+                Cancelar
+              </button>
+              <button
+                className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300"
+                onClick={() => void handleSubmitEditor()}
+              >
+                {editorMode === 'create' ? 'Crear regla' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+

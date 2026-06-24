@@ -1,6 +1,7 @@
 """Regression tests for minimal LLM output contract across providers and orchestration."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -86,4 +87,60 @@ def test_execute_analyze_web_activity_computes_backend_fields_from_minimal_llm(m
     assert result["threat_level"] == "NONE"
     assert isinstance(result["targeted_asset"], str)
     assert result["targeted_asset"]
+
+
+def test_llm_analyzer_appends_provider_model_suffix(monkeypatch):
+    class _FakeProvider:
+        @property
+        def provider_name(self):
+            return "openai"
+
+        @property
+        def model_name(self):
+            return "gpt-4o-mini"
+
+        def build_analysis_prompt(self, telemetry, history):
+            return "prompt"
+
+        async def call_model(self, prompt, max_tokens=None):
+            return '{"threat_score": 55, "reasoning_summary": "Narrative", "recommendation": "Mitigate"}'
+
+        async def validate_response(self, response):
+            return LLMResponse.model_validate(json.loads(response))
+
+    monkeypatch.setattr(LLMAnalyzer, "_provider", _FakeProvider())
+
+    result = asyncio.run(LLMAnalyzer.analyze_with_context(telemetry={}, history=[]))
+
+    assert set(result.keys()) == {"threat_score", "reasoning_summary", "recommendation"}
+    assert result["reasoning_summary"] == "Narrative (openai-gpt-4o-mini)"
+    assert result["recommendation"] == "Mitigate (openai-gpt-4o-mini)"
+
+
+def test_llm_analyzer_does_not_duplicate_suffix(monkeypatch):
+    class _FakeProvider:
+        @property
+        def provider_name(self):
+            return "openai"
+
+        @property
+        def model_name(self):
+            return "gpt-4o-mini"
+
+        def build_analysis_prompt(self, telemetry, history):
+            return "prompt"
+
+        async def call_model(self, prompt, max_tokens=None):
+            return '{"threat_score": 60, "reasoning_summary": "Narrative (openai-gpt-4o-mini)", "recommendation": "Mitigate (openai-gpt-4o-mini)"}'
+
+        async def validate_response(self, response):
+            return LLMResponse.model_validate(json.loads(response))
+
+    monkeypatch.setattr(LLMAnalyzer, "_provider", _FakeProvider())
+
+    result = asyncio.run(LLMAnalyzer.analyze_with_context(telemetry={}, history=[]))
+
+    assert result["reasoning_summary"].count("(openai-gpt-4o-mini)") == 1
+    assert result["recommendation"].count("(openai-gpt-4o-mini)") == 1
+
 

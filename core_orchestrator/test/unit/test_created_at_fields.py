@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from starlette.requests import Request
 
 # Evita validaciones de GEMINI_API_KEY al importar el orquestador en test
 os.environ.setdefault("LLM_PROVIDER", "ollama")
@@ -63,6 +64,8 @@ async def test_get_reports_resolved_at_utc_handling(monkeypatch):
     class MockCursor:
         def sort(self, *args, **kwargs):
             return self
+        def skip(self, *args, **kwargs):
+            return self
         def limit(self, *args, **kwargs):
             return self
         async def to_list(self, length):
@@ -71,6 +74,8 @@ async def test_get_reports_resolved_at_utc_handling(monkeypatch):
     class MockCollection:
         def find(self, *args, **kwargs):
             return MockCursor()
+        async def count_documents(self, *args, **kwargs):
+            return len(mock_reports)
             
     monkeypatch.setattr(
         "core_orchestrator.api.v1.endpoints.analytics.get_reports_collection",
@@ -78,17 +83,20 @@ async def test_get_reports_resolved_at_utc_handling(monkeypatch):
     )
     
     from core_orchestrator.api.v1.endpoints.analytics import get_reports
+
+    request = Request({"type": "http", "method": "GET", "path": "/api/v1/analytics/reports", "headers": []})
+    res = await get_reports.__wrapped__(request=request, source_id="test-app", page=1, limit=10)
+    rows = res["results"]
     
-    res = await get_reports(source_id="test-app")
-    
-    assert len(res) == 2
+    assert len(rows) == 2
+    assert res["info"]["total_records"] == 2
     
     # Check first report (unresolved)
-    assert res[0]["resolved"] is False
-    assert res[0]["resolved_at_utc"] is None
+    assert rows[0]["resolved"] is False
+    assert rows[0]["resolved_at_utc"] is None
     
     # Check second report (resolved)
-    assert res[1]["resolved"] is True
-    assert res[1]["resolved_at_utc"] == "2026-06-21T11:00:00+00:00"
+    assert rows[1]["resolved"] is True
+    assert rows[1]["resolved_at_utc"] == "2026-06-21T11:00:00+00:00"
 
 

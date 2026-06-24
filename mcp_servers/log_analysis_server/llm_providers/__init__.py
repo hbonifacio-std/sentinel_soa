@@ -16,6 +16,8 @@ from mcp_servers.log_analysis_server.llm_providers.base import (
 if TYPE_CHECKING:
     from mcp_servers.log_analysis_server.llm_providers.gemini_provider import GeminiProvider
     from mcp_servers.log_analysis_server.llm_providers.ollama_provider import OllamaProvider
+    from mcp_servers.log_analysis_server.llm_providers.openai_provider import OpenAIProvider
+    from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProvider
 
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers")
 
@@ -28,7 +30,7 @@ def create_llm_provider(provider_name: str, config: Dict[str, Any]) -> LLMProvid
     to instantiate and returns an instance of LLMProviderInterface.
     
     Args:
-        provider_name (str): Provider name ('gemini', 'ollama', 'claude', 'openai')
+        provider_name (str): Provider name ('gemini', 'ollama', 'openai', 'groq')
         config (Dict[str, Any]): Configuration dictionary with environment variables
         
     Returns:
@@ -43,11 +45,17 @@ def create_llm_provider(provider_name: str, config: Dict[str, Any]) -> LLMProvid
         
         >>> config = {'ollama_base_url': 'http://localhost:11434', 'ollama_model': 'mistral'}
         >>> provider = create_llm_provider('ollama', config)
+        
+        >>> config = {'openai_api_key': 'sk-...', 'openai_model': 'gpt-4o-mini'}
+        >>> provider = create_llm_provider('openai', config)
+        
+        >>> config = {'groq_api_key': 'gsk_...', 'groq_model': 'mixtral-8x7b-32768'}
+        >>> provider = create_llm_provider('groq', config)
     """
     
     provider_name_lower = provider_name.lower().strip()
 
-    available = "gemini, ollama"
+    available = "gemini, ollama, openai, groq"
 
     if provider_name_lower == 'gemini':
         from mcp_servers.log_analysis_server.llm_providers.gemini_provider import GeminiProvider
@@ -55,6 +63,12 @@ def create_llm_provider(provider_name: str, config: Dict[str, Any]) -> LLMProvid
     elif provider_name_lower == 'ollama':
         from mcp_servers.log_analysis_server.llm_providers.ollama_provider import OllamaProvider
         provider_class = OllamaProvider
+    elif provider_name_lower == 'openai':
+        from mcp_servers.log_analysis_server.llm_providers.openai_provider import OpenAIProvider
+        provider_class = OpenAIProvider
+    elif provider_name_lower == 'groq':
+        from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProvider
+        provider_class = GroqProvider
     else:
         raise LLMException(
             f"Provider '{provider_name}' not supported. "

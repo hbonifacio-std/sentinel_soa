@@ -6,182 +6,44 @@ on the LLM, providing a confidence baseline for threat scoring.
 """
 
 import logging
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any
 from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
+from mcp_servers.log_analysis_server.models.rules_bundle import RulesBundle
+from shared.rules_seed import build_seed_bundle_payload
 
 logger = logging.getLogger(__name__)
 
 
 class ThreatHeuristics:
     """Heuristic analysis engine for risk score calculation (0-100%)."""
-    
-    # Threat indicator dictionaries
-    MALICIOUS_UA_KEYWORDS = {
-        # Vulnerability scanning tools
-        "nikto": 30,        # Nikto is a very specific scanner
-        "nmap": 25,
-        "sqlmap": 35,       # SQLmap is extremely dangerous
-        "dirbuster": 25,
-        "masscan": 20,
-        "nessus": 20,
-        "openvas": 20,
-        "metasploit": 30,
-        "burp": 15,         # Testing but can be malicious
-        "owasp": 8,
-        "appscan": 12,
-        "acunetix": 15,
-        "wpscan": 20,
-        "paramspider": 20,
-        "nuclei": 25,
-        "zaproxy": 10,
-        "commix": 30,
-        "xssstrike": 30,
-        "wafw00f": 20,
-        "gothumb": 20,
-        "whatweb": 20,
-        "joomscan": 25,
-        "cmsmap": 25,
-        "scanner": 20,      # Generic
-        "bot": 8,           # Generic, low risk
-        "crawler": 3,       # Legitimate
-        "spider": 3,        # Legitimate
-        "httpx": 25,        # Probing tool
-        "subfinder": 20,    # Subdomain enumeration
-    }
-    
-    SENSITIVE_URIS = {
-        # Operating system files
-        "/etc/passwd": 45,
-        "/etc/shadow": 50,
-        "/etc/sudoers": 50,
-        "/etc/hosts": 30,
-        "/etc/resolv.conf": 30,
-        # Administrative panels and control panels
-        "/admin": 20,
-        "/wp-admin": 25,
-        "/wp-login": 18,
-        "/admin/login.php": 25,
-        "/administrator": 25,
-        "/cpanel": 30,
-        "/phpmyadmin": 35,
-        # Configuration files
-        "/.env": 40,
-        "/.git": 35,
-        "/.git/config": 45,
-        "/config": 25,
-        "/.env.local": 40,
-        "/.env.dev": 40,
-        "/.env.prod": 40,
-        "/web.config": 30,
-        "/.aws": 35,
-        "/.ssh": 40,
-        "/config.php": 30,
-        "/settings.json": 25,
-        # Backup and database files
-        "/backup": 20,
-        "/backups": 20,
-        "/.sql": 30,
-        "/.db": 30,
-        "/database.sql": 35,
-        "/dump": 25,
-        # ASP.NET / PHP
-        "/admin.php": 25,
-        "/login.php": 12,
-        "/shell.php": 50,
-        "/webshell": 50,
-        "/cmd.php": 50,
-        "/php.ini": 40,
-        "/.htaccess": 25,
-        # Project files
-        "/composer.json": 15,
-        "/package.json": 12,
-        "/pom.xml": 12,
-        "/requirements.txt": 15,
-        # Dangerous directories
-        "/var/www": 20,
-        "/uploads": 15,
-        "/tmp": 15,
-    }
-    
-    SQL_INJECTION_PATTERNS = [
-        # Basic patterns
-        "' OR '1'='1",
-        "' OR 1=1",
-        "' OR 'a'='a",
-        "admin'--",
-        "admin'#",
-        # UNION-based
-        "' UNION SELECT",
-        "UNION SELECT",
-        # URL-encoded variants to catch %27
-        "%27 OR %271%27=%271",
-        "%27 OR 1=1",
-        "%27 UNION SELECT",
-        # Advanced techniques
-        "EXEC",
-        "EXECUTE",
-        "DROP TABLE",
-        "INSERT INTO",
-        "DELETE FROM",
-        "SHUTDOWN",
-        "WAITFOR",
-        "xp_",  # SQL Server malicious stored procedures
-        # Boolean-based blind
-        "1=1--",
-        "1=2--",
-        # Time-based blind
-        "SLEEP(",
-        "BENCHMARK(",
-        "WAITFOR DELAY",
-    ]
-    
-    PATH_TRAVERSAL_PATTERNS = [
-        # Standard variations
-        "../",
-        "..%2f",
-        "..%5c",
-        "..\\/",
-        "%2e%2e%2f",
-        "%2e%2e%5c",
-        "..;/",
-        "....//",     # Double encoding
-        "..%252f",    # Double URL-encoded
-        # Windows-specific
-        "..\\",
-        "..\\\\",
-        # Unicode / alternative encoding
-        "%c0%ae",     # UTF-8 encoded ..
-        "%c1%1c",
-        # Null byte injection
-        "../%00",
-        "..%00/",
-    ]
 
     @staticmethod
-    def analyze(telemetry: WebActivityWindowInput) -> Tuple[int, List[str], str]:
+    def analyze(
+        telemetry: WebActivityWindowInput,
+        rules_bundle: Optional[RulesBundle] = None,
+    ) -> Tuple[int, List[str], str]:
         """
         Executes full heuristic analysis on a telemetry window.
-        
+
         Args:
             telemetry (WebActivityWindowInput): Data of the window to analyze
-            
+            rules_bundle (RulesBundle, optional): Dynamic rules from MongoDB/Redis.
+                Falls back to class-level defaults when not provided.
+
         Returns:
             Tuple[int, List[str], str]: (threat_score, indicators, reasoning)
-                - threat_score: Score from 0-100
-                - indicators: List of detected indicators
-                - reasoning: Technical analysis summary
         """
+        rules = rules_bundle or ThreatHeuristics._get_default_rules()
         threat_score = 0
         indicators = []
         reasoning_parts = []
-        
+
         source_ip = telemetry.source_ip
         total_requests = telemetry.total_requests
-        
-        # ============================================================
-        # 1. USER-AGENT ANALYSIS
-        # ============================================================
-        ua_score, ua_indicators = ThreatHeuristics._analyze_user_agents(telemetry.user_agents_observed)
+
+        ua_score, ua_indicators = ThreatHeuristics._analyze_user_agents(
+            telemetry.user_agents_observed, rules.malicious_ua_keywords
+        )
         if ua_score > 0:
             threat_score += ua_score
             indicators.extend(ua_indicators)
@@ -190,7 +52,9 @@ class ThreatHeuristics:
         # ============================================================
         # 2. SENSITIVE URI ANALYSIS
         # ============================================================
-        uri_score, uri_indicators = ThreatHeuristics._analyze_sensitive_uris(telemetry.unique_uris_requested)
+        uri_score, uri_indicators = ThreatHeuristics._analyze_sensitive_uris(
+            telemetry.unique_uris_requested, rules.sensitive_uris
+        )
         if uri_score > 0:
             threat_score += uri_score
             indicators.extend(uri_indicators)
@@ -235,7 +99,11 @@ class ThreatHeuristics:
         # 6. SQL INJECTION / PATH TRAVERSAL ANALYSIS
         # ============================================================
         injection_score, injection_indicators = ThreatHeuristics._analyze_injection_patterns(
-            telemetry.unique_uris_requested
+            telemetry.unique_uris_requested,
+            rules.sql_injection_patterns,
+            rules.path_traversal_patterns,
+            rules.sql_injection_score,
+            rules.path_traversal_score,
         )
         if injection_score > 0:
             threat_score += injection_score
@@ -258,14 +126,22 @@ class ThreatHeuristics:
         return threat_score, indicators, reasoning
 
     @staticmethod
-    def _analyze_user_agents(user_agents: List[str]) -> Tuple[int, List[str]]:
+    def _get_default_rules() -> RulesBundle:
+        """Build fallback RulesBundle from the persisted rules seed file."""
+        return RulesBundle.from_cache_dict(build_seed_bundle_payload())
+
+    @staticmethod
+    def _analyze_user_agents(
+        user_agents: List[str],
+        keywords: Dict[str, int],
+    ) -> Tuple[int, List[str]]:
         """Detects malicious User-Agents or scanning tools."""
         score = 0
         indicators = []
-        
+
         for ua in user_agents:
             ua_lower = ua.lower()
-            for keyword, ua_score in ThreatHeuristics.MALICIOUS_UA_KEYWORDS.items():
+            for keyword, ua_score in keywords.items():
                 if keyword in ua_lower:
                     score += ua_score
                     tool_name = keyword.upper()
@@ -284,14 +160,17 @@ class ThreatHeuristics:
         return score, indicators
 
     @staticmethod
-    def _analyze_sensitive_uris(uris: List[str]) -> Tuple[int, List[str]]:
+    def _analyze_sensitive_uris(
+        uris: List[str],
+        sensitive_uris: Dict[str, int],
+    ) -> Tuple[int, List[str]]:
         """Detects requests to sensitive paths."""
         score = 0
         indicators = []
-        
+
         for uri in uris:
             uri_lower = uri.lower()
-            for sensitive_path, path_score in ThreatHeuristics.SENSITIVE_URIS.items():
+            for sensitive_path, path_score in sensitive_uris.items():
                 if sensitive_path in uri_lower:
                     score += path_score
                     indicators.append(f"Request to sensitive path: {uri}")
@@ -375,29 +254,32 @@ class ThreatHeuristics:
         return score, indicators
 
     @staticmethod
-    def _analyze_injection_patterns(uris: List[str]) -> Tuple[int, List[str]]:
+    def _analyze_injection_patterns(
+        uris: List[str],
+        sql_patterns: List[str],
+        traversal_patterns: List[str],
+        sql_score: int = 30,
+        traversal_score: int = 40,
+    ) -> Tuple[int, List[str]]:
         """Detects SQL injection and path traversal patterns in URIs."""
         score = 0
         indicators = []
-        
+
         for uri in uris:
             uri_lower = uri.lower()
-            # URL decode to catch encoded patterns
             uri_decoded = uri_lower.replace("%27", "'").replace("%20", " ").replace("%2f", "/").replace("%5c", "\\")
-            
-            # Detect path traversal
-            for pattern in ThreatHeuristics.PATH_TRAVERSAL_PATTERNS:
+
+            for pattern in traversal_patterns:
                 if pattern.lower() in uri_lower or pattern.lower() in uri_decoded:
-                    score += 40  # Path traversal is critical
+                    score += traversal_score
                     indicators.append(f"🔴 Path traversal pattern detected: {uri}")
                     break
-            
-            # Detect SQL injection
-            for pattern in ThreatHeuristics.SQL_INJECTION_PATTERNS:
+
+            for pattern in sql_patterns:
                 if pattern.lower() in uri_lower or pattern.lower() in uri_decoded:
-                    score += 30  # SQL injection detection
+                    score += sql_score
                     indicators.append(f"🔴 SQL injection pattern detected: {uri}")
                     break
-        
+
         return score, indicators
 

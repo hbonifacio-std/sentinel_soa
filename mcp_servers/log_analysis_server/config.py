@@ -69,6 +69,62 @@ class LogAnalysisServerSettings(BaseSettings):
         description="Timeout in seconds for requests to Ollama"
     )
 
+    # ========== OPENAI CONFIGURATION ==========
+    
+    openai_api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias="OPENAI_API_KEY",
+        description="Secret key for the OpenAI API, inherited."
+    )
+    
+    openai_model: str = Field(
+        default="gpt-4o-mini",
+        validation_alias="OPENAI_MODEL",
+        description="Name of the OpenAI model to use."
+    )
+    
+    openai_max_output_tokens: int = Field(
+        default=4096,
+        validation_alias="OPENAI_MAX_OUTPUT_TOKENS",
+        gt=0,
+        description="Maximum output token limit for OpenAI."
+    )
+
+    openai_timeout_seconds: int = Field(
+        default=60,
+        validation_alias="OPENAI_TIMEOUT_SECONDS",
+        gt=0,
+        description="Timeout in seconds for OpenAI requests."
+    )
+
+    # ========== GROQ CONFIGURATION ==========
+    
+    groq_api_key: Optional[SecretStr] = Field(
+        default=None,
+        validation_alias="GROQ_API_KEY",
+        description="Secret key for the GROQ API, inherited."
+    )
+    
+    groq_model: str = Field(
+        default="mixtral-8x7b-32768",
+        validation_alias="GROQ_MODEL",
+        description="Name of the GROQ model to use."
+    )
+    
+    groq_max_output_tokens: int = Field(
+        default=4096,
+        validation_alias="GROQ_MAX_OUTPUT_TOKENS",
+        gt=0,
+        description="Maximum output token limit for GROQ."
+    )
+
+    groq_timeout_seconds: int = Field(
+        default=60,
+        validation_alias="GROQ_TIMEOUT_SECONDS",
+        gt=0,
+        description="Timeout in seconds for GROQ requests."
+    )
+
     # Internal Pydantic Settings parser configuration
     model_config = SettingsConfigDict(
         # No env_file specified to force reading from the system environment.
@@ -80,7 +136,7 @@ class LogAnalysisServerSettings(BaseSettings):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         """Validates that the provider is one of the supported ones."""
-        valid_providers = ['gemini', 'ollama']
+        valid_providers = ['gemini', 'ollama', 'openai', 'groq']
         v_lower = (v or '').lower().strip() or 'ollama'
         if v_lower not in valid_providers:
             raise ValueError(f"LLM_PROVIDER must be one of {valid_providers}, got: {v}")
@@ -108,6 +164,14 @@ class LogAnalysisServerSettings(BaseSettings):
             'ollama_base_url': self.ollama_base_url,
             'ollama_model': self.ollama_model,
             'ollama_timeout_seconds': self.ollama_timeout_seconds,
+            'openai_api_key': self.openai_api_key.get_secret_value() if self.openai_api_key else None,
+            'openai_model': self.openai_model,
+            'openai_max_output_tokens': self.openai_max_output_tokens,
+            'openai_timeout_seconds': self.openai_timeout_seconds,
+            'groq_api_key': self.groq_api_key.get_secret_value() if self.groq_api_key else None,
+            'groq_model': self.groq_model,
+            'groq_max_output_tokens': self.groq_max_output_tokens,
+            'groq_timeout_seconds': self.groq_timeout_seconds,
         }
         return config
 

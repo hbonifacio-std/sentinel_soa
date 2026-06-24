@@ -24,3 +24,17 @@ class AnalysisReportResponse(BaseModel):
     resolved: bool = False
     actions: list[AnalysisActionEntry] | list[dict[str, Any]] = Field(default_factory=list)
 
+
+class AnalysisReportsPageInfo(BaseModel):
+    total_records: int
+    page: int
+    limit: int
+    next_page: str | None = None
+    prev_page: str | None = None
+
+
+class AnalysisReportsPageResponse(BaseModel):
+    info: AnalysisReportsPageInfo
+    results: list[AnalysisReportResponse]
+
+

@@ -16,6 +16,7 @@ from typing import Dict, Any, List, Optional
 from mcp_servers.log_analysis_server.config import server_settings as settings
 from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput as AnalysisInput
 from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessment as AnalysisOutput
+from mcp_servers.log_analysis_server.models.rules_bundle import RulesBundle
 
 from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
 from mcp_servers.log_analysis_server.store.alert_store import alert_store
@@ -168,6 +169,41 @@ _MITRE_FIELDS: List[str] = [
 ]
 
 _LLM_DECISION_FIELDS = ("threat_score", "reasoning_summary", "recommendation")
+
+
+def _llm_signature_suffix(provider_name: str, model_name: str) -> str:
+    """Builds a normalized suffix signature for LLM-authored text fields."""
+    provider = str(provider_name or "").strip().lower()
+    model = str(model_name or "").strip().lower()
+    if not provider or not model:
+        return ""
+    return f"({provider}-{model})"
+
+
+def _append_llm_signature(text: Any, provider_name: str, model_name: str) -> str:
+    """Appends `(provider-model)` once, preserving the original text contract."""
+    content = str(text or "").strip()
+    suffix = _llm_signature_suffix(provider_name, model_name)
+    if not content or not suffix:
+        return content
+    if content.lower().endswith(suffix.lower()):
+        return content
+    return f"{content} {suffix}"
+
+
+def _extract_rules_bundle(arguments: Dict[str, Any]) -> Optional[RulesBundle]:
+    raw_bundle = arguments.get("rules_bundle")
+    if raw_bundle is None:
+        return None
+    if not isinstance(raw_bundle, dict):
+        logger.warning("Discarding invalid injected rules bundle: expected dict, got %s", type(raw_bundle).__name__)
+        return None
+
+    try:
+        return RulesBundle.from_cache_dict(raw_bundle)
+    except Exception as exc:
+        logger.warning("Failed to parse injected rules bundle: %s", exc)
+        return None
 
 
 def _extract_llm_decision_fields(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -484,7 +520,18 @@ class LLMAnalyzer:
             validated_response = await provider.validate_response(response_text)
 
             # Enforce the cross-provider contract before returning to orchestration logic.
-            return _extract_llm_decision_fields(validated_response.model_dump())
+            decision = _extract_llm_decision_fields(validated_response.model_dump())
+            decision["reasoning_summary"] = _append_llm_signature(
+                decision.get("reasoning_summary"),
+                provider.provider_name,
+                provider.model_name,
+            )
+            decision["recommendation"] = _append_llm_signature(
+                decision.get("recommendation"),
+                provider.provider_name,
+                provider.model_name,
+            )
+            return decision
 
         except Exception as exc:
             logger.error(f"Error in LLMAnalyzer.analyze_with_context: {str(exc)}", exc_info=True)
@@ -496,8 +543,11 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
     Executes heuristic and AI analysis on a suspicious web activity window.
     """
     try:
+        rules_bundle = _extract_rules_bundle(arguments)
+        sanitized_arguments = {k: v for k, v in arguments.items() if k != "rules_bundle"}
+
         # 1. Strict static validation via the Pydantic v2 model
-        analysis_input = AnalysisInput(**arguments)
+        analysis_input = AnalysisInput(**sanitized_arguments)
 
         source_ip = analysis_input.source_ip
         source_id = analysis_input.source_id
@@ -508,7 +558,12 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         # 2. DETERMINISTIC HEURISTIC ANALYSIS (Confidence baseline)
         # ========================================================================
         logger.debug(f"[HEURISTICS] Running deterministic engine for {source_ip}...")
-        heuristic_score, heuristic_indicators, heuristic_reasoning = ThreatHeuristics.analyze(analysis_input)
+        heuristic_score, heuristic_indicators, heuristic_reasoning = ThreatHeuristics.analyze(
+            analysis_input,
+            rules_bundle=rules_bundle,
+        )
+        if rules_bundle is not None:
+            logger.info("[HEURISTICS] Using injected rules bundle version=%s", rules_bundle.version_hash)
         logger.info(f"[HEURISTICS] Score: {heuristic_score}/100 | Indicators: {len(heuristic_indicators)}")
 
         # ========================================================================

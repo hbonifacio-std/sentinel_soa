@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from core_orchestrator.services.database import db
+from core_orchestrator.services.rules_engine import get_rules_engine
 from core_orchestrator.agent.mcp_client import MCPClientManager
 
 logger = logging.getLogger("core_orchestrator.agent.orchestrator")
@@ -171,6 +172,10 @@ class OrchestratorAgent:
                 "total_requests", "unique_uris_requested",
                 "http_methods_distribution", "response_codes_distribution",
                 "user_agents_observed", "requests_per_second_avg",
+                "attempted_usernames",
+                "invalid_token_requests_count",
+                "max_response_size_bytes",
+                "suspicious_samples",
                 "critical_payload_features",
                 "infra_context",
                 "security_state_features",
@@ -181,6 +186,14 @@ class OrchestratorAgent:
                 k: v for k, v in telemetry_payload.items()
                 if k in _ANALYZE_TOOL_FIELDS
             }
+
+            rules_bundle = await get_rules_engine().get_active_rules()
+            tool_arguments["rules_bundle"] = rules_bundle.to_cache_dict()
+            logger.info(
+                "Forwarding telemetry window %s to MCP with rules bundle version=%s",
+                telemetry_payload.get("window_id"),
+                rules_bundle.version_hash,
+            )
 
             raw_analysis_result = await self.mcp_manager.call_tool(
                 tool_name="analyze_web_activity",
@@ -245,7 +258,7 @@ class OrchestratorAgent:
             analysis_result.setdefault("actions", [])
             analysis_result.setdefault("resolved", False)
             analysis_result.setdefault("created_at_utc", datetime.now(timezone.utc))
-            await db.mongo_client.sentinel_soa.analysis_reports.insert_one(analysis_result)
+            await db.get_app_db().analysis_reports.insert_one(analysis_result)
 
             # Save to Redis cache (5 minutes)
             await db.redis_client.set(cache_key, final_report_json, ex=300)

@@ -31,6 +31,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
     # Retorna la respuesta original a FastAPI para no romper el comportamiento de los clientes
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": errors},
     )
