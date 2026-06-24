@@ -1,0 +1,288 @@
+{
+  "heuristic_rules": [
+    {
+      "rule_id": "malicious_ua_keywords_v1",
+      "rule_type": "keyword_mapping",
+      "category": "user_agent",
+      "version": 1,
+      "created_at": "2026-06-23T10:00:00Z",
+      "updated_at": "2026-06-23T10:00:00Z",
+      "is_active": true,
+      "description": "Diccionario de palabras clave maliciosas en User-Agents (herramientas de escaneo y explotación)",
+      "content": {
+        "type": "keyword_mapping",
+        "data": {
+          "nikto": 30,
+          "nmap": 25,
+          "sqlmap": 35,
+          "dirbuster": 25,
+          "masscan": 20,
+          "nessus": 20,
+          "openvas": 20,
+          "metasploit": 30,
+          "burp": 15,
+          "owasp": 8,
+          "appscan": 12,
+          "acunetix": 15,
+          "wpscan": 20,
+          "paramspider": 20,
+          "nuclei": 25,
+          "zaproxy": 10,
+          "commix": 30,
+          "xssstrike": 30,
+          "wafw00f": 20,
+          "gothumb": 20,
+          "whatweb": 20,
+          "joomscan": 25,
+          "cmsmap": 25,
+          "scanner": 20,
+          "bot": 8,
+          "crawler": 3,
+          "spider": 3,
+          "httpx": 25,
+          "subfinder": 20
+        },
+        "match_strategy": "substring_case_insensitive"
+      },
+      "metadata": {
+        "source": "migration_script",
+        "changed_by": "system@migration",
+        "change_reason": "Migración inicial desde ThreatHeuristics.MALICIOUS_UA_KEYWORDS",
+        "compatibility_version": "1.0.0"
+      },
+      "validation_rules": {
+        "min_score": 0,
+        "max_score": 100,
+        "required_fields": ["rule_id", "category"]
+      }
+    },
+    {
+      "rule_id": "sensitive_uris_v1",
+      "rule_type": "keyword_mapping",
+      "category": "uri",
+      "version": 1,
+      "created_at": "2026-06-23T10:00:00Z",
+      "updated_at": "2026-06-23T10:00:00Z",
+      "is_active": true,
+      "description": "Rutas sensibles del sistema, paneles administrativos, configuraciones y archivos críticos",
+      "content": {
+        "type": "keyword_mapping",
+        "data": {
+          "/etc/passwd": 45,
+          "/etc/shadow": 50,
+          "/etc/sudoers": 50,
+          "/etc/hosts": 30,
+          "/etc/resolv.conf": 30,
+          "/admin": 20,
+          "/wp-admin": 25,
+          "/wp-login": 18,
+          "/admin/login.php": 25,
+          "/administrator": 25,
+          "/cpanel": 30,
+          "/phpmyadmin": 35,
+          "/.env": 40,
+          "/.git": 35,
+          "/.git/config": 45,
+          "/config": 25,
+          "/.env.local": 40,
+          "/.env.dev": 40,
+          "/.env.prod": 40,
+          "/web.config": 30,
+          "/.aws": 35,
+          "/.ssh": 40,
+          "/config.php": 30,
+          "/settings.json": 25,
+          "/backup": 20,
+          "/backups": 20,
+          "/.sql": 30,
+          "/.db": 30,
+          "/database.sql": 35,
+          "/dump": 25,
+          "/admin.php": 25,
+          "/login.php": 12,
+          "/shell.php": 50,
+          "/webshell": 50,
+          "/cmd.php": 50,
+          "/php.ini": 40,
+          "/.htaccess": 25,
+          "/composer.json": 15,
+          "/package.json": 12,
+          "/pom.xml": 12,
+          "/requirements.txt": 15,
+          "/var/www": 20,
+          "/uploads": 15,
+          "/tmp": 15
+        },
+        "match_strategy": "substring_case_insensitive"
+      },
+      "metadata": {
+        "source": "migration_script",
+        "changed_by": "system@migration",
+        "change_reason": "Migración inicial desde ThreatHeuristics.SENSITIVE_URIS",
+        "compatibility_version": "1.0.0"
+      },
+      "validation_rules": {
+        "min_score": 0,
+        "max_score": 100,
+        "required_fields": ["rule_id", "category"]
+      }
+    },
+    {
+      "rule_id": "sql_injection_patterns_v1",
+      "rule_type": "pattern_list",
+      "category": "injection",
+      "version": 1,
+      "created_at": "2026-06-23T10:00:00Z",
+      "updated_at": "2026-06-23T10:00:00Z",
+      "is_active": true,
+      "description": "Patrones de inyección SQL en URIs (básicos, UNION, blind, time-based)",
+      "content": {
+        "type": "pattern_list",
+        "data": {
+          "patterns": [
+            "' OR '1'='1",
+            "' OR 1=1",
+            "' OR 'a'='a",
+            "admin'--",
+            "admin'#",
+            "' UNION SELECT",
+            "UNION SELECT",
+            "%27 OR %271%27=%271",
+            "%27 OR 1=1",
+            "%27 UNION SELECT",
+            "EXEC",
+            "EXECUTE",
+            "DROP TABLE",
+            "INSERT INTO",
+            "DELETE FROM",
+            "SHUTDOWN",
+            "WAITFOR",
+            "xp_",
+            "1=1--",
+            "1=2--",
+            "SLEEP(",
+            "BENCHMARK(",
+            "WAITFOR DELAY"
+          ],
+          "pattern_kind": "sql_injection",
+          "score_per_match": 30
+        },
+        "match_strategy": "substring_case_insensitive"
+      },
+      "metadata": {
+        "source": "migration_script",
+        "changed_by": "system@migration",
+        "change_reason": "Migración inicial desde ThreatHeuristics.SQL_INJECTION_PATTERNS",
+        "compatibility_version": "1.0.0"
+      },
+      "validation_rules": {
+        "min_score": 0,
+        "max_score": 100,
+        "required_fields": ["rule_id", "category"]
+      }
+    },
+    {
+      "rule_id": "path_traversal_patterns_v1",
+      "rule_type": "pattern_list",
+      "category": "injection",
+      "version": 1,
+      "created_at": "2026-06-23T10:00:00Z",
+      "updated_at": "2026-06-23T10:00:00Z",
+      "is_active": true,
+      "description": "Patrones de path traversal en URIs (encoding estándar, doble encoding, null byte)",
+      "content": {
+        "type": "pattern_list",
+        "data": {
+          "patterns": [
+            "../",
+            "..%2f",
+            "..%5c",
+            "..\\/",
+            "%2e%2e%2f",
+            "%2e%2e%5c",
+            "..;/",
+            "....//",
+            "..%252f",
+            "..\\",
+            "..\\\\",
+            "%c0%ae",
+            "%c1%1c",
+            "../%00",
+            "..%00/"
+          ],
+          "pattern_kind": "path_traversal",
+          "score_per_match": 40
+        },
+        "match_strategy": "substring_case_insensitive"
+      },
+      "metadata": {
+        "source": "migration_script",
+        "changed_by": "system@migration",
+        "change_reason": "Migración inicial desde ThreatHeuristics.PATH_TRAVERSAL_PATTERNS",
+        "compatibility_version": "1.0.0"
+      },
+      "validation_rules": {
+        "min_score": 0,
+        "max_score": 100,
+        "required_fields": ["rule_id", "category"]
+      }
+    }
+  ],
+  "rule_versions": [
+    {
+      "version_hash": "v1_initial_migrated_rules",
+      "created_at": "2026-06-23T10:00:00Z",
+      "is_active": true,
+      "rules_included": [
+        "malicious_ua_keywords_v1",
+        "sensitive_uris_v1",
+        "sql_injection_patterns_v1",
+        "path_traversal_patterns_v1"
+      ],
+      "changelog": "Versión inicial migrada desde diccionarios hardcodeados de ThreatHeuristics",
+      "deployed_by": "system@migration",
+      "deployment_timestamp": "2026-06-23T10:05:00Z",
+      "rollback_url": null
+    }
+  ],
+  "rule_audit_log": [
+    {
+      "timestamp": "2026-06-23T10:05:00Z",
+      "action": "CREATE",
+      "rule_id": "malicious_ua_keywords_v1",
+      "user": "system@migration",
+      "ip_address": "127.0.0.1",
+      "changes": {
+        "before": null,
+        "after": {
+          "rule_id": "malicious_ua_keywords_v1",
+          "category": "user_agent",
+          "version": 1
+        }
+      },
+      "reason": "Migración inicial de reglas heurísticas a MongoDB",
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-06-23T10:05:00Z",
+      "action": "ACTIVATE",
+      "rule_id": "v1_initial_migrated_rules",
+      "user": "system@migration",
+      "ip_address": "127.0.0.1",
+      "changes": {
+        "before": null,
+        "after": {
+          "version_hash": "v1_initial_migrated_rules",
+          "rules_included": [
+            "malicious_ua_keywords_v1",
+            "sensitive_uris_v1",
+            "sql_injection_patterns_v1",
+            "path_traversal_patterns_v1"
+          ]
+        }
+      },
+      "reason": "Activación de versión inicial post-migración",
+      "status": "success"
+    }
+  ]
+}
