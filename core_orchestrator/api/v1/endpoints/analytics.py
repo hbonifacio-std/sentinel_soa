@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Depends
 
 from core_orchestrator.services.limiter import limiter
 from ....services.database import db
 from datetime import datetime, timezone
 from ....models.feedback import ActionRequest, AlertWorkflowResponse, ActionEntry
+from ....security.dependencies import get_current_user, get_analyst_user
 from bson.objectid import ObjectId
 
 router = APIRouter()
@@ -91,7 +92,8 @@ def build_workflow_response(report: dict) -> AlertWorkflowResponse:
 async def get_logs_row_telemetry(
         request: Request,
         page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
-        limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)")
+        limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
+        _: None = Depends(get_analyst_user)
 ):
     collection = get_raw_telemetry_collection()
 
@@ -117,7 +119,10 @@ async def get_logs_row_telemetry(
     }
 
 @router.patch("/analytics/reports/{report_id}/review", response_model=AlertWorkflowResponse)
-async def mark_report_reviewed(report_id: str):
+async def mark_report_reviewed(
+    report_id: str,
+    _: None = Depends(get_analyst_user)
+):
     collection = get_reports_collection()
     report_object_id = parse_report_object_id(report_id)
 
@@ -137,7 +142,11 @@ async def mark_report_reviewed(report_id: str):
 
 
 @router.post("/analytics/reports/{report_id}/actions", response_model=AlertWorkflowResponse)
-async def add_report_action(report_id: str, request: ActionRequest):
+async def add_report_action(
+    report_id: str,
+    request: ActionRequest,
+    _: None = Depends(get_analyst_user)
+):
     collection = get_reports_collection()
     report_object_id = parse_report_object_id(report_id)
 
@@ -171,7 +180,10 @@ async def add_report_action(report_id: str, request: ActionRequest):
 
 
 @router.patch("/analytics/reports/{report_id}/resolve", response_model=AlertWorkflowResponse)
-async def mark_report_resolved(report_id: str):
+async def mark_report_resolved(
+    report_id: str,
+    _: None = Depends(get_analyst_user)
+):
     collection = get_reports_collection()
     report_object_id = parse_report_object_id(report_id)
 
@@ -197,7 +209,9 @@ async def mark_report_resolved(report_id: str):
 
 
 @router.get("/analytics/source_ids")
-async def get_source_ids():
+async def get_source_ids(
+    _: None = Depends(get_analyst_user)
+):
     """
     Get a list of all unique source_ids from the analysis_reports collection.
     """
@@ -213,6 +227,7 @@ async def get_reports(
     time_range: str | None = None,
     page: int = Query(default=1, ge=1, description="Numero de pagina (minimo 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Cantidad de reportes por pagina (maximo 100)"),
+    _: None = Depends(get_analyst_user)
 ):
     """
     Get analysis reports, optionally filtered by source_id and time_range.
@@ -257,7 +272,11 @@ async def get_reports(
     }
 
 @router.get("/analytics/stats")
-async def get_stats(source_id: str = None, time_range: str = None):
+async def get_stats(
+    source_id: str = None,
+    time_range: str = None,
+    _: None = Depends(get_analyst_user)
+):
     """
     Get aggregated statistics, optionally filtered by source_id and time_range.
     """
@@ -298,7 +317,9 @@ async def get_stats(source_id: str = None, time_range: str = None):
     return stats[0] if stats else {}
 
 @router.get("/analytics/debug_reports")
-async def debug_reports():
+async def debug_reports(
+    _: None = Depends(get_analyst_user)
+):
     """
     Debug endpoint to get a few sample documents from the analysis_reports collection.
     """

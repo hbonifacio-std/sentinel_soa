@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request, status
+from fastapi import APIRouter, Body, HTTPException, Query, Request, status, Depends
 from pydantic import BaseModel, Field
 
 from core_orchestrator.models.rule_schema import (
@@ -23,6 +23,7 @@ from core_orchestrator.services.database import db
 from core_orchestrator.services.limiter import limiter
 from core_orchestrator.services.rule_validator import RuleValidator
 from core_orchestrator.services.rules_engine import get_rules_engine
+from core_orchestrator.security.dependencies import get_admin_user, get_analyst_user
 
 logger = logging.getLogger("core_orchestrator.api.rules")
 
@@ -117,7 +118,8 @@ def _serialize_datetime(value: Any) -> Optional[datetime]:
 # ---------------------------------------------------------------------------
 
 @router.get("/health", response_model=RulesHealthResponse, tags=["Rules Health"])
-async def rules_health():
+async def rules_health(_: None = Depends(get_analyst_user)):
+    """Health check for rules engine (requires analyst/admin role)."""
     engine = get_rules_engine()
     health = await engine.health_check()
     stats = await engine.get_rules_stats()
@@ -136,14 +138,21 @@ async def get_audit_log(
     rule_id: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    _: None = Depends(get_analyst_user)
 ):
+    """Get audit log (requires analyst/admin role)."""
     logs = await db.get_audit_logs(rule_id=rule_id, limit=limit + offset)
     return {"total": len(logs), "offset": offset, "limit": limit, "entries": logs[offset:offset + limit]}
 
 
 @router.post("/validate", response_model=ValidateRulesResponse, tags=["Rules Validation"])
 @limiter.limit("20/minute")
-async def validate_rules(request: Request, body: ValidateRulesRequest = Body(...)):
+async def validate_rules(
+    request: Request,
+    body: ValidateRulesRequest = Body(...),
+    _: None = Depends(get_analyst_user)
+):
+    """Validate rules (requires analyst/admin role)."""
     validation = RuleValidator.validate_rule_bundle(body.rules)
     test_result = RuleValidator.test_rules_with_patterns(body.rules)
     all_valid = validation.valid and test_result.passed
@@ -160,12 +169,20 @@ async def validate_rules(request: Request, body: ValidateRulesRequest = Body(...
 
 
 @router.get("/versions", response_model=List[RuleVersion], tags=["Rule Versions"])
-async def list_versions(limit: int = Query(default=50, ge=1, le=200)):
+async def list_versions(
+    limit: int = Query(default=50, ge=1, le=200),
+    _: None = Depends(get_analyst_user)
+):
+    """List rule versions (requires analyst/admin role)."""
     return await db.list_versions(limit=limit)
 
 
 @router.get("/versions/{version_hash}", response_model=RuleVersion, tags=["Rule Versions"])
-async def get_version(version_hash: str):
+async def get_version(
+    version_hash: str,
+    _: None = Depends(get_analyst_user)
+):
+    """Get specific rule version (requires analyst/admin role)."""
     version = await db.get_version(version_hash)
     if not version:
         raise HTTPException(status_code=404, detail=f"Version not found: {version_hash}")
@@ -179,7 +196,12 @@ async def get_version(version_hash: str):
     tags=["Rule Versions"],
 )
 @limiter.limit("10/minute")
-async def create_version(request: Request, body: CreateVersionRequest = Body(...)):
+async def create_version(
+    request: Request,
+    body: CreateVersionRequest = Body(...),
+    _: None = Depends(get_admin_user)
+):
+    """Create new rule version (requires admin role)."""
     rules = await db.get_rules_by_ids(body.rules_included)
     found = {r.rule_id for r in rules}
     missing = [rid for rid in body.rules_included if rid not in found]
@@ -217,7 +239,12 @@ async def create_version(request: Request, body: CreateVersionRequest = Body(...
     tags=["Rule Versions"],
 )
 @limiter.limit("10/minute")
-async def activate_version(request: Request, version_hash: str):
+async def activate_version(
+    request: Request,
+    version_hash: str,
+    _: None = Depends(get_admin_user)
+):
+    """Activate rule version (requires admin role)."""
     engine = get_rules_engine()
     version = await db.get_version(version_hash)
     if not version:
@@ -255,7 +282,11 @@ async def activate_version(request: Request, version_hash: str):
 # ---------------------------------------------------------------------------
 
 @router.get("", response_model=RulesListResponse, tags=["Rules Management"])
-async def list_rules(include_inactive: bool = Query(default=False)):
+async def list_rules(
+    include_inactive: bool = Query(default=False),
+    _: None = Depends(get_analyst_user)
+):
+    """List all rules (requires analyst/admin role)."""
     rules = await db.list_all_rules(include_inactive=include_inactive)
     active_version = await db.get_active_version()
     version_hash = active_version.version_hash if active_version else hash_version(rules)
@@ -263,7 +294,11 @@ async def list_rules(include_inactive: bool = Query(default=False)):
 
 
 @router.get("/{rule_id}", response_model=HeuristicRule, tags=["Rules Management"])
-async def get_rule(rule_id: str):
+async def get_rule(
+    rule_id: str,
+    _: None = Depends(get_analyst_user)
+):
+    """Get specific rule (requires analyst/admin role)."""
     rule = await db.get_rule(rule_id)
     if not rule:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
@@ -272,7 +307,12 @@ async def get_rule(rule_id: str):
 
 @router.post("", response_model=RuleCreateResponse, status_code=status.HTTP_201_CREATED, tags=["Rules Management"])
 @limiter.limit("10/minute")
-async def create_rule(request: Request, rule: HeuristicRule = Body(...)):
+async def create_rule(
+    request: Request,
+    rule: HeuristicRule = Body(...),
+    _: None = Depends(get_admin_user)
+):
+    """Create new rule (requires admin role)."""
     if await db.rule_exists(rule.rule_id):
         raise HTTPException(status_code=409, detail=f"Rule already exists: {rule.rule_id}")
 
@@ -303,7 +343,13 @@ async def create_rule(request: Request, rule: HeuristicRule = Body(...)):
 
 @router.patch("/{rule_id}", response_model=RuleUpdateResponse, tags=["Rules Management"])
 @limiter.limit("20/minute")
-async def update_rule(request: Request, rule_id: str, updates: HeuristicRuleUpdate = Body(...)):
+async def update_rule(
+    request: Request,
+    rule_id: str,
+    updates: HeuristicRuleUpdate = Body(...),
+    _: None = Depends(get_admin_user)
+):
+    """Update rule (requires admin role)."""
     existing = await db.get_rule(rule_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
@@ -347,7 +393,9 @@ async def delete_rule(
     rule_id: str,
     user: str = Query(default="admin"),
     reason: str = Query(default="Rule deactivated"),
+    _: None = Depends(get_admin_user)
 ):
+    """Delete/deactivate rule (requires admin role)."""
     existing = await db.get_rule(rule_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")

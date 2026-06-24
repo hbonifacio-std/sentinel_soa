@@ -7,10 +7,14 @@ import urllib
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, Request, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Depends, HTTPException, status, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt 
 from pydantic import BaseModel
+import hmac
+import hashlib
+from urllib import request as urllib_request
+from urllib import error as urllib_error
 
 # --- Logging Configuration ---
 # Configures the logger to write to a specific file.
@@ -25,10 +29,19 @@ activity_logger.addHandler(file_handler)
 activity_logger.propagate = False
 
 # --- Unique identifier for this application ---
-SOURCE_ID = "victim-app-01"
+SOURCE_ID = os.getenv("VICTIM_SOURCE_ID", "victim-app-01")
 APP_NAME = os.getenv("APP_NAME", "Core-Banking-API")
 APP_VERSION = os.getenv("APP_VERSION", "2.4.1")
 APP_ENV = os.getenv("APP_ENV", "development")
+
+# --- Telemetry Forwarding Security Configuration ---
+TELEMETRY_FORWARD_URL = os.getenv(
+    "TELEMETRY_FORWARD_URL",
+    "http://core:8000/api/v1/telemetry/ingest/batch",
+)
+TELEMETRY_HMAC_PUBLIC_KEY = os.getenv("TELEMETRY_HMAC_PUBLIC_KEY", "victim-app-key")
+TELEMETRY_HMAC_SECRET = os.getenv("TELEMETRY_HMAC_SECRET", "victim-app-secret-for-telemetry")
+VECTOR_INTERNAL_TOKEN = os.getenv("VECTOR_INTERNAL_TOKEN", "vector-internal-dev-token")
 
 # --- Security and Authentication Configuration ---
 SECRET_KEY = "a_very_secret_key_for_a_vulnerable_app" # Secret key for signing JWT
@@ -223,6 +236,7 @@ async def get_products(token: str = Depends(oauth2_scheme)):
         {"id": 1, "name": "Secure Widget", "price": 100.0},
         {"id": 2, "name": "Vulnerable Gadget", "price": 25.5},
     ]
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -12,12 +12,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from core_orchestrator.api.v1.endpoints import agent_telemetry, analytics, rules_management
+from core_orchestrator.api.v1.endpoints import agent_telemetry, analytics, rules_management, auth
 from core_orchestrator.agent.runner import agent_runner
 from core_orchestrator.exeptions.exeptions import validation_exception_handler
 from core_orchestrator.services.database import db
+from core_orchestrator.services.bootstrap_service import bootstrap_service
 from core_orchestrator.services.limiter import limiter
 from core_orchestrator.services.rules_engine import get_rules_engine
+from core_orchestrator.config import orchestrator_settings
 
 # Centralized production logging configuration
 logging.basicConfig(
@@ -39,6 +41,14 @@ async def app_lifespan(app: FastAPI):
     # Connect to databases
     await db.connect_to_mongo()
     await db.connect_to_redis()
+
+    if orchestrator_settings.bootstrap_on_startup:
+        try:
+            bootstrap_summary = await bootstrap_service.run_startup_bootstrap()
+            logger.info("Startup bootstrap completed: %s", bootstrap_summary.model_dump())
+        except Exception as e:
+            logger.error(f"Startup bootstrap failed: {e}", exc_info=True)
+            raise
 
     # Load heuristic rules from MongoDB / Redis into RulesEngine
     rules_engine = get_rules_engine()
@@ -73,17 +83,25 @@ app = FastAPI(
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.state.limiter = limiter
-# Strict CORS security middleware configuration
+
+# Configurable CORS security middleware
+cors_origins = orchestrator_settings.get_cors_origins()
+logger.info(f"CORS allowed origins: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,  # type: ignore[arg-type]
-    # Parameterize in production via settings.ALLOWED_HOSTS
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 # Injection and inclusion of version 1 endpoint routers
+app.include_router(
+    auth.router,
+    prefix="/api/v1/auth",
+    tags=["Authentication"]
+)
 app.include_router(
     agent_telemetry.router,
     prefix="/api/v1/telemetry",

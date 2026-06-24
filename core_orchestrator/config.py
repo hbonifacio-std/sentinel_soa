@@ -158,6 +158,45 @@ class OrchestratorSettings(BaseSettings):
         description="Timeout in seconds for GROQ requests."
     )
 
+    # --- Security Configuration (HMAC, JWT, CORS) ---
+    hmac_replay_window_seconds: int = Field(
+        default=300,
+        validation_alias="HMAC_REPLAY_WINDOW_SECONDS",
+        gt=0,
+        description="Time window in seconds for HMAC timestamp validation (replay attack prevention)."
+    )
+
+    jwt_secret_key: SecretStr = Field(
+        default=SecretStr("dev-secret-key-change-in-production"),
+        validation_alias="JWT_SECRET_KEY",
+        description="Secret key for JWT token signing and verification."
+    )
+
+    jwt_algorithm: str = Field(
+        default="HS256",
+        validation_alias="JWT_ALGORITHM",
+        description="Algorithm used for JWT token signing."
+    )
+
+    jwt_expiration_minutes: int = Field(
+        default=60,
+        validation_alias="JWT_EXPIRATION_MINUTES",
+        gt=0,
+        description="JWT token expiration time in minutes."
+    )
+
+    allowed_cors_origins: str = Field(
+        default="http://localhost:3000,http://localhost:8000",
+        validation_alias="ALLOWED_CORS_ORIGINS",
+        description="Comma-separated list of allowed CORS origins."
+    )
+
+    bootstrap_on_startup: bool = Field(
+        default=True,
+        validation_alias="BOOTSTRAP_ON_STARTUP",
+        description="Enable idempotent local bootstrap for users and telemetry clients during startup."
+    )
+
     @field_validator("mcp_log_analysis_server_cmd")
     @classmethod
     def validate_command_structure(cls, v: str) -> str:
@@ -200,6 +239,10 @@ class OrchestratorSettings(BaseSettings):
             raise ValueError(
                 "GROQ_API_KEY is required when LLM_PROVIDER is 'groq'")
         return v
+
+    def get_cors_origins(self) -> list[str]:
+        """Parse comma-separated CORS origins from config."""
+        return [origin.strip() for origin in self.allowed_cors_origins.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

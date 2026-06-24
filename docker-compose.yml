@@ -55,9 +55,11 @@ services:
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      BOOTSTRAP_ON_STARTUP: ${BOOTSTRAP_ON_STARTUP:-true}
       # Configuración del MCP Server
       MCP_SERVER_HOST: mcp_server
       MCP_SERVER_PORT: 8080
+      SENTINEL_API_KEY: ${SENTINEL_API_KEY}
     networks:
       - sentinel_net
       - log_net
@@ -121,8 +123,15 @@ services:
     container_name: sentinel_victim_app
     ports:
       - "8001:8001"
+    environment:
+      VICTIM_SOURCE_ID: ${VICTIM_SOURCE_ID:-victim-app-01}
+      TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL:-http://core:8000/api/v1/telemetry/ingest/batch}
+      TELEMETRY_HMAC_PUBLIC_KEY: ${TELEMETRY_HMAC_PUBLIC_KEY:-victim-app-01}
+      TELEMETRY_HMAC_SECRET: ${TELEMETRY_HMAC_SECRET:-sentinel_local_dev_hmac_secret_12345}
+      VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN}
     networks:
       - dmz_net
+      - log_net
     volumes:
       - victim_logs:/var/log/victim_app # Montar volumen para logs
 
@@ -130,6 +139,10 @@ services:
     image: timberio/vector:0.38.0-alpine # Imagen estable y ligera de Vector basada en Alpine
     container_name: sentinel_log_shipper_vector
     command: ["--config", "/etc/vector/vector.toml"] # Forzar el uso del archivo de config .toml
+    environment:
+      TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL}
+      SENTINEL_CLIENT_ID: ${SENTINEL_CLIENT_ID:-victim-app-01}
+      SENTINEL_API_KEY: ${SENTINEL_API_KEY:-sentinel_local_dev_api_key_12345}
     volumes:
       # Mapeo del archivo de configuración nativo TOML desde tu host al contenedor
       - ./victim_app/vector.toml:/etc/vector/vector.toml:ro

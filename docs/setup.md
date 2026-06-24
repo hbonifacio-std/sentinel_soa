@@ -56,6 +56,41 @@ Una vez configurado el archivo `.env`, puedes levantar todos los servicios utili
 docker-compose up --build
 ```
 
+### Bootstrap local automático
+
+Al iniciar `core`, el sistema ahora ejecuta un bootstrap idempotente controlado por `BOOTSTRAP_ON_STARTUP`.
+
+Ese bootstrap deja listo:
+
+- un usuario web inicial desde `data/users_seed.json`;
+- las reglas heurísticas base en la base `heuristy`;
+- los clientes/fuentes autorizadas de telemetría desde `data/telemetry_clients_seed.json`;
+- la caché de clientes autorizados en Redis.
+
+### Credenciales iniciales por defecto
+
+Usuario web inicial:
+
+- usuario: `admin`
+- contraseña: `AdminPassword123!`
+
+Cliente inicial de telemetría para Vector/local:
+
+- `client_id`: `victim-app-01`
+- `source_id`: `victim-app-01`
+- `X-Sentinel-API-Key`: `sentinel_local_dev_api_key_12345`
+- HMAC public key: `victim-app-01`
+
+### Rebootstrap manual
+
+Si necesitas recrear semillas sobre un entorno vacío o volver a hidratar datos manualmente:
+
+```bash
+python scripts/bootstrap_local_data.py
+python scripts/bootstrap_local_data.py --overwrite-existing
+python scripts/bootstrap_local_data.py --force-rules
+```
+
 -   El flag `--build` fuerza la reconstrucción de las imágenes de Docker, lo cual es útil si has realizado cambios en el código o en los `Dockerfile`.
 -   La primera vez que se ejecute, Docker descargará las imágenes base y Ollama descargará el modelo `llama3.2:1b`, lo que puede tardar varios minutos.
 

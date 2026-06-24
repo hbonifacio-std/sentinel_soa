@@ -8,14 +8,25 @@ from datetime import datetime, timezone
 import logging
 import asyncio
 from typing import List, Dict, Any
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 
 from core_orchestrator.agent.runner import agent_runner
+from core_orchestrator.models.telemetry_client import (
+    TelemetryClientAuthContext,
+    TelemetryClientCreate,
+    TelemetryClientResponse,
+)
 from core_orchestrator.models.log_event import LogEvent
 from core_orchestrator.services.preprocessor import LogPreprocessor
+from core_orchestrator.services.telemetry_client_service import telemetry_client_service
 from core_orchestrator.services.window_manager import window_manager
 from core_orchestrator.services.database import db
 from core_orchestrator.config import orchestrator_settings
+from core_orchestrator.security.dependencies import (
+    get_admin_user,
+    verify_hmac_signature_header,
+    verify_api_key_header,
+)
 
 logger = logging.getLogger("core_orchestrator.api.telemetry")
 
@@ -57,10 +68,21 @@ async def _check_and_process_window_if_full(event: LogEvent):
                 await lock.release()
 
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_single_event(event: LogEvent):
+async def ingest_single_event(
+    event: LogEvent,
+    client: TelemetryClientAuthContext = Depends(verify_hmac_signature_header)
+):
     """
     Receives a single telemetry event and routes it to the windows in Redis.
+    
+    Requires valid HMAC signature in headers: X-Public-Key, X-Signature, X-Timestamp
     """
+    if event.source_id != client.source_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The authenticated client '{client.client_id}' is not authorized to send source_id '{event.source_id}'."
+        )
+
     logger.info(
         f"Single event ingestion request received: {event.model_dump_json()}")
 
@@ -75,14 +97,20 @@ async def ingest_single_event(event: LogEvent):
 
     return {
         "status": "accepted",
+        "client_id": client.client_id,
         "event_buffered": event.model_dump()
     }
 
 
 @router.post("/ingest/batch", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_batch_events(events: List[LogEvent]):
+async def ingest_batch_events(
+    events: List[LogEvent],
+    client: TelemetryClientAuthContext = Depends(verify_api_key_header)
+):
     """
     Receives a batch of telemetry events and routes them to the windows in Redis.
+    
+    Requires valid HMAC signature in headers: X-Public-Key, X-Signature, X-Timestamp
     """
     if not events:
         raise HTTPException(
@@ -96,6 +124,12 @@ async def ingest_batch_events(events: List[LogEvent]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="All events in a batch must have the same source_id."
+        )
+
+    if first_source_id != client.source_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"The authenticated client '{client.client_id}' is not authorized to send source_id '{first_source_id}'."
         )
 
     logger.info(
@@ -113,15 +147,21 @@ async def ingest_batch_events(events: List[LogEvent]):
 
     return {
         "status": "accepted",
+        "client_id": client.client_id,
         "processed_records": len(events)
     }
 
 
 @router.post("/ingest/raw", status_code=status.HTTP_202_ACCEPTED)
-async def ingest_raw_logs(lines: List[str]):
+async def ingest_raw_logs(
+    lines: List[str],
+    client: TelemetryClientAuthContext = Depends(verify_hmac_signature_header)
+):
     """
     Receives a massive array of raw log lines (Common/Combined Log Format).
     Performs asynchronous parsing and routes the events to the windows in Redis.
+    
+    Requires valid HMAC signature in headers: X-Public-Key, X-Signature, X-Timestamp
     """
     if not lines:
         raise HTTPException(
@@ -150,9 +190,35 @@ async def ingest_raw_logs(lines: List[str]):
 
     return {
         "status": "accepted",
+        "client_id": client.client_id,
         "processed_records": len(lines),
         "valid_events_buffered": parsed_count
     }
+
+
+@router.get("/clients", response_model=List[TelemetryClientResponse], status_code=status.HTTP_200_OK)
+async def list_authorized_clients(
+    include_inactive: bool = False,
+    _admin = Depends(get_admin_user),
+):
+    clients = await telemetry_client_service.list_clients(include_inactive=include_inactive)
+    return [TelemetryClientResponse.from_db_model(client) for client in clients]
+
+
+@router.post("/clients", response_model=TelemetryClientResponse, status_code=status.HTTP_201_CREATED)
+async def create_authorized_client(
+    payload: TelemetryClientCreate,
+    _admin = Depends(get_admin_user),
+):
+    existing = await telemetry_client_service.get_client_by_client_id(payload.client_id, include_inactive=True)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Telemetry client '{payload.client_id}' already exists."
+        )
+
+    client, _created, _updated = await telemetry_client_service.upsert_client(payload, overwrite_existing=False)
+    return TelemetryClientResponse.from_db_model(client)
 
 
 @router.post("/flush", status_code=status.HTTP_200_OK)

@@ -1,0 +1,10 @@
+[
+  {
+    "username": "admin",
+    "email": "admin@example.com",
+    "password": "AdminPassword123!",
+    "role": "admin",
+    "is_active": true
+  }
+]
+

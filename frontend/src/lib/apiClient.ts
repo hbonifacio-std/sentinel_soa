@@ -1,11 +1,57 @@
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
-export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+export class ApiError extends Error {
+  status: number;
+  detail: unknown;
+  bodyText: string;
+
+  constructor(status: number, message: string, detail: unknown, bodyText: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+    this.bodyText = bodyText;
+  }
+}
+
+interface ApiClientConfig {
+  getAccessToken?: () => string | null;
+  onUnauthorized?: () => void;
+}
+
+export interface ApiFetchOptions extends RequestInit {
+  skipAuth?: boolean;
+  skipJsonContentType?: boolean;
+  skipUnauthorizedHandler?: boolean;
+}
+
+let apiClientConfig: ApiClientConfig = {};
+
+export function configureApiClient(config: ApiClientConfig) {
+  apiClientConfig = config;
+}
+
+function getErrorMessage(status: number, detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+
+  return fallback || `HTTP ${status}`;
+}
+
+export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = path.startsWith('http') ? path : `${baseURL}${path}`;
   const headers = new Headers(options.headers);
 
-  if (options.body && !headers.has('Content-Type')) {
+  if (options.body && !options.skipJsonContentType && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  if (!options.skipAuth && !headers.has('Authorization')) {
+    const accessToken = apiClientConfig.getAccessToken?.();
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
+    }
   }
 
   const response = await fetch(url, {
@@ -14,8 +60,29 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    let detail: unknown = null;
+    let bodyText = '';
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      const body = (await response.json()) as { detail?: unknown; message?: string };
+      detail = body.detail ?? body.message ?? body;
+      bodyText = JSON.stringify(body);
+    } else {
+      bodyText = await response.text();
+      detail = bodyText;
+    }
+
+    if (response.status === 401 && !options.skipUnauthorizedHandler) {
+      apiClientConfig.onUnauthorized?.();
+    }
+
+    throw new ApiError(
+      response.status,
+      getErrorMessage(response.status, detail, bodyText),
+      detail,
+      bodyText,
+    );
   }
 
   if (response.status === 204) {
@@ -24,4 +91,3 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   return (await response.json()) as T;
 }
-

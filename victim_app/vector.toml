@@ -80,9 +80,16 @@
 [sinks.sentinel_core_http]
   type = "http"
   inputs = ["parse_and_enrich"]
-  uri = "http://core:8000/api/v1/telemetry/ingest/batch"
+
+  # 1. Lee la URL de tu Core directamente desde las variables de entorno
+  uri = "${TELEMETRY_FORWARD_URL}"
   method = "post"
   encoding.codec = "json"
+
+  # 2. Inyecta dinámicamente las credenciales que le asignaste al cliente
+  request.headers.X-Sentinel-Client-ID = "${SENTINEL_CLIENT_ID}"
+  request.headers.X-Sentinel-API-Key = "${SENTINEL_API_KEY}"
+
   batch.max_events = 50
   batch.timeout_secs = 60
 

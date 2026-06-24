@@ -10,6 +10,8 @@ import {
   updateRule,
   validateRules,
 } from '@/lib/rulesApi';
+import { ApiError } from '@/lib/apiClient';
+import { useAuthStore } from '@/store/authStore';
 import type {
   HeuristicRule,
   HeuristicRuleUpdate,
@@ -43,6 +45,20 @@ interface RuleDraft {
 }
 
 function getErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (typeof error.detail === 'string' && error.detail.trim()) {
+      return error.detail;
+    }
+
+    if (error.status === 403) {
+      return 'No tienes permisos para esta accion.';
+    }
+
+    if (error.status === 401) {
+      return 'Tu sesion expiro. Inicia sesion nuevamente.';
+    }
+  }
+
   if (!(error instanceof Error)) {
     return 'Error inesperado';
   }
@@ -66,7 +82,7 @@ function getErrorMessage(error: unknown): string {
   return payload;
 }
 
-function buildDefaultDraft(): RuleDraft {
+function buildDefaultDraft(changedBy = 'admin'): RuleDraft {
   return {
     rule_id: '',
     rule_type: 'keyword_mapping',
@@ -77,7 +93,7 @@ function buildDefaultDraft(): RuleDraft {
     match_strategy: 'substring_case_insensitive',
     contentDataText: '{\n  "example": 20\n}',
     source: 'frontend',
-    changed_by: 'admin',
+    changed_by: changedBy,
     change_reason: 'Initial creation from UI',
     compatibility_version: '1.0.0',
   };
@@ -146,6 +162,8 @@ function ruleToUpdatePayload(draft: RuleDraft): HeuristicRuleUpdate {
 }
 
 export default function RulesPage() {
+  const currentUser = useAuthStore((state) => state.user);
+  const isAdmin = currentUser?.role === 'admin';
   const [rules, setRules] = useState<HeuristicRule[]>([]);
   const [versions, setVersions] = useState<RuleVersion[]>([]);
   const [health, setHealth] = useState<RulesHealthResponse | null>(null);
@@ -191,13 +209,23 @@ export default function RulesPage() {
   }, [refreshData]);
 
   function openCreateEditor() {
+    if (!isAdmin) {
+      setError('Solo un admin puede crear reglas.');
+      return;
+    }
+
     setEditorMode('create');
-    setDraft(buildDefaultDraft());
+    setDraft(buildDefaultDraft(currentUser?.username ?? 'admin'));
     setSelectedRuleId(null);
     setEditorOpen(true);
   }
 
   function openEditEditor(rule: HeuristicRule) {
+    if (!isAdmin) {
+      setError('Solo un admin puede editar reglas.');
+      return;
+    }
+
     setEditorMode('edit');
     setDraft(ruleToDraft(rule));
     setSelectedRuleId(rule.rule_id);
@@ -205,6 +233,11 @@ export default function RulesPage() {
   }
 
   async function handleSubmitEditor() {
+    if (!isAdmin) {
+      setError('Solo un admin puede modificar reglas.');
+      return;
+    }
+
     setError(null);
     setActionMessage(null);
 
@@ -235,6 +268,11 @@ export default function RulesPage() {
   }
 
   async function handleDeactivate(ruleId: string) {
+    if (!isAdmin) {
+      setError('Solo un admin puede desactivar reglas.');
+      return;
+    }
+
     const reason = window.prompt('Motivo de desactivacion', 'Rule deactivated from frontend');
     if (!reason) {
       return;
@@ -263,6 +301,11 @@ export default function RulesPage() {
   }
 
   async function handleCreateVersion() {
+    if (!isAdmin) {
+      setError('Solo un admin puede crear versiones.');
+      return;
+    }
+
     const rulesIncluded = versionRuleIds
       .split(',')
       .map((ruleId) => ruleId.trim())
@@ -287,6 +330,11 @@ export default function RulesPage() {
   }
 
   async function handleActivateVersion(versionHash: string) {
+    if (!isAdmin) {
+      setError('Solo un admin puede activar versiones.');
+      return;
+    }
+
     try {
       await activateVersion(versionHash);
       setActionMessage(`Version activada: ${versionHash}`);
@@ -313,9 +361,11 @@ export default function RulesPage() {
             <button className="rounded border border-surface-border px-3 py-1.5 text-sm" onClick={() => void refreshData()}>
               Refrescar
             </button>
-            <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={openCreateEditor}>
-              Nueva regla
-            </button>
+            {isAdmin ? (
+              <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={openCreateEditor}>
+                Nueva regla
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -336,6 +386,7 @@ export default function RulesPage() {
               <span>Reglas activas: {health.total_active_rules}</span>
             </>
           ) : null}
+          {!isAdmin ? <span className="text-amber-300">Modo analyst: solo lectura operativa y validacion.</span> : null}
         </div>
 
         {loading ? <p className="mt-2 text-sm text-slate-400">Cargando reglas...</p> : null}
@@ -387,18 +438,22 @@ export default function RulesPage() {
                   <td className="px-2 py-2">{rule.is_active ? 'si' : 'no'}</td>
                   <td className="px-2 py-2">{new Date(rule.updated_at).toLocaleString()}</td>
                   <td className="px-2 py-2">
-                    <div className="flex gap-2">
-                      <button className="rounded border border-surface-border px-2 py-1" onClick={() => openEditEditor(rule)}>
-                        Editar
-                      </button>
-                      <button
-                        className="rounded border border-red-500/40 px-2 py-1 text-red-300 disabled:opacity-50"
-                        onClick={() => void handleDeactivate(rule.rule_id)}
-                        disabled={!rule.is_active}
-                      >
-                        Desactivar
-                      </button>
-                    </div>
+                    {isAdmin ? (
+                      <div className="flex gap-2">
+                        <button className="rounded border border-surface-border px-2 py-1" onClick={() => openEditEditor(rule)}>
+                          Editar
+                        </button>
+                        <button
+                          className="rounded border border-red-500/40 px-2 py-1 text-red-300 disabled:opacity-50"
+                          onClick={() => void handleDeactivate(rule.rule_id)}
+                          disabled={!rule.is_active}
+                        >
+                          Desactivar
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">Sin permisos de edicion</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -435,9 +490,11 @@ export default function RulesPage() {
               onChange={(event) => setVersionChangelog(event.target.value)}
               placeholder="changelog"
             />
-            <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={() => void handleCreateVersion()}>
-              Crear version
-            </button>
+            {isAdmin ? (
+              <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={() => void handleCreateVersion()}>
+                Crear version
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -454,13 +511,15 @@ export default function RulesPage() {
                   <span className={version.is_active ? 'text-emerald-300' : 'text-slate-400'}>
                     {version.is_active ? 'Activa' : 'Inactiva'}
                   </span>
-                  <button
-                    className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
-                    disabled={version.is_active}
-                    onClick={() => void handleActivateVersion(version.version_hash)}
-                  >
-                    Activar
-                  </button>
+                  {isAdmin ? (
+                    <button
+                      className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
+                      disabled={version.is_active}
+                      onClick={() => void handleActivateVersion(version.version_hash)}
+                    >
+                      Activar
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))}
