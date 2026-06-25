@@ -127,7 +127,7 @@ services:
       VICTIM_SOURCE_ID: ${VICTIM_SOURCE_ID:-victim-app-01}
       TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL:-http://core:8000/api/v1/telemetry/ingest/batch}
       TELEMETRY_HMAC_PUBLIC_KEY: ${TELEMETRY_HMAC_PUBLIC_KEY:-victim-app-01}
-      TELEMETRY_HMAC_SECRET: ${TELEMETRY_HMAC_SECRET:-sentinel_local_dev_hmac_secret_12345}
+      TELEMETRY_HMAC_SECRET: ${TELEMETRY_HMAC_SECRET:-sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n}
       VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN}
     networks:
       - dmz_net
@@ -142,7 +142,7 @@ services:
     environment:
       TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL}
       SENTINEL_CLIENT_ID: ${SENTINEL_CLIENT_ID:-victim-app-01}
-      SENTINEL_API_KEY: ${SENTINEL_API_KEY:-sentinel_local_dev_api_key_12345}
+      SENTINEL_API_KEY: ${SENTINEL_API_KEY:-sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n}
     volumes:
       # Mapeo del archivo de configuración nativo TOML desde tu host al contenedor
       - ./victim_app/vector.toml:/etc/vector/vector.toml:ro

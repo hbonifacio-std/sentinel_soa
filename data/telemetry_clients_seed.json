@@ -5,9 +5,9 @@
     "display_name": "Vector shipper - victim app",
     "description": "Cliente inicial autorizado para enviar lotes de logs desde Vector al core local.",
     "is_active": true,
-    "api_key": "sentinel_local_dev_api_key_12345",
+    "api_key": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n",
     "hmac_public_key": "victim-app-01",
-    "hmac_secret": "sentinel_local_dev_hmac_secret_12345"
+    "hmac_secret": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
   }
 ]
 

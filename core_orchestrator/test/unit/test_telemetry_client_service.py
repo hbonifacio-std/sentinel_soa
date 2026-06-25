@@ -119,7 +119,7 @@ async def test_upsert_and_authorize_api_key_caches_client(fake_db):
         display_name="Vector victim",
         description="seed client",
         is_active=True,
-        api_key="sentinel_local_dev_api_key_12345",
+        api_key="z",
         hmac_public_key="victim-app-01",
         hmac_secret="sentinel_local_dev_hmac_secret_12345",
     )
