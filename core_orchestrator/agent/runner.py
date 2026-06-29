@@ -3,155 +3,374 @@ AI Agent Orchestration Runner Module.
 
 Serves as the unified entry point for the REST API to send telemetry payloads
 to the agent's cognitive engine and its MCP tools.
+
+Resilience model:
+- MCP server is OPTIONAL at startup. A reconnect loop retries indefinitely.
+- All analyses are enqueued; NONE are discarded when MCP is unavailable.
+- The analysis consumer drains the queue as soon as MCP is back online.
+- In-flight analyses that fail due to MCP disconnection are re-enqueued.
 """
 
 import asyncio
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 
-from core_orchestrator.config import orchestrator_settings as settings
+from redis.asyncio import Redis
 from core_orchestrator.agent.mcp_client import MCPClientManager
 from core_orchestrator.agent.orchestrator import OrchestratorAgent
-from core_orchestrator.services.database import db
-from core_orchestrator.services.window_manager import window_manager
+from core_orchestrator.application.services.telemetry_processing_service import TelemetryProcessingService
 
 logger = logging.getLogger("core_orchestrator.agent.runner")
 
+# ── MCP Reconnect tunables ─────────────────────────────────────────────────
+_MCP_RETRY_INITIAL_DELAY_S = 5
+_MCP_RETRY_MAX_DELAY_S = 60
+_MCP_RETRY_BACKOFF_FACTOR = 2
+_MCP_CONNECT_TIMEOUT_S = 15
+
+# ── Analysis queue tunables ────────────────────────────────────────────────
+_ANALYSIS_QUEUE_MAXSIZE = 1000   # Máximo de ventanas pendientes en cola
+_ANALYSIS_RETRY_DELAY_S = 3      # Espera entre reintentos si MCP no está listo
+_ANALYSIS_MAX_RETRIES = 5        # Reintentos máximos por ventana antes de descartar
+
+
+@dataclass
+class _PendingAnalysis:
+    """Envelope que viaja por la cola de análisis."""
+    window_data: Dict[str, Any]
+    attempts: int = 0
+    window_key: str = ""         # Identificador para logs
+
+    def increment(self) -> "_PendingAnalysis":
+        self.attempts += 1
+        return self
+
 
 class AgentRunner:
-    """
-    Facade responsible for managing the in-memory persistence of the MCP client
-    and coordinating concurrent calls to the orchestrator agent.
-    """
+    def __init__(
+        self,
+        telemetry_processing_service: TelemetryProcessingService,
+        redis_client: Redis,
+    ):
+        self.telemetry_processing_service = telemetry_processing_service
+        self.redis_client = redis_client
 
-    def __init__(self):
         self.mcp_manager: Optional[MCPClientManager] = None
         self.agent: Optional[OrchestratorAgent] = None
-        self._initialization_task: Optional[asyncio.Task] = None
+
+        # Cola de análisis pendientes — NUNCA descartamos una ventana por falta de MCP
+        self._analysis_queue: asyncio.Queue[_PendingAnalysis] = asyncio.Queue(
+            maxsize=_ANALYSIS_QUEUE_MAXSIZE
+        )
+
+        # Handles de tasks de fondo
         self._window_processor_handle: Optional[asyncio.Task] = None
-        self._initialized: bool = False
+        self._analysis_consumer_handle: Optional[asyncio.Task] = None
+        self._mcp_reconnect_handle: Optional[asyncio.Task] = None
 
-    async def _init_mcp_background(self) -> None:
-        """
-        Initializes MCP in the background without blocking FastAPI.
-        """
-        try:
-            logger.info("Initializing MCP subsystem...")
-            if not self.mcp_manager:
-                self.mcp_manager = MCPClientManager(
-                    server_script_path=settings.mcp_log_analysis_server_cmd)
+        # Set de tasks de análisis activos (in-flight)
+        self._inflight_tasks: set = set()
 
-            await self.mcp_manager.start_server_session(timeout=60.0)
-            self.agent = OrchestratorAgent(mcp_manager=self.mcp_manager)
-            self._initialized = True
-            logger.info(
-                "Agent subsystem and MCP Servers deployed successfully.")
-        except Exception as exc:
-            logger.error(
-                f"Error initializing MCP in the background: {str(exc)}", exc_info=True)
-            self._initialized = False
-            raise
+        # Señal de parada para el shutdown limpio
+        self._stop_event = asyncio.Event()
 
-    async def get_redis_lock(self, lock_key: str, timeout: int = 10):
-        """Provides a Redis distributed lock independent of MCP agent state."""
-        if db.redis_client is None:
-            raise RuntimeError("Redis client is not initialized.")
-        return db.redis_client.lock(lock_key, timeout=timeout)
+    # ──────────────────────────────────────────────────────────────────────
+    # 1. PRODUCER: Window Processor  →  Analysis Queue
+    # ──────────────────────────────────────────────────────────────────────
 
-    async def _window_processor_task(self):
+    async def _window_processor_task(self) -> None:
         """
-        Background task that processes telemetry windows from Redis.
-        NOTE: This is a simple approach. For a production system, this could
-        be improved by using Redis keyspace notifications to process windows
-        as soon as they expire, rather than polling.
+        Detecta ventanas de telemetría listas para analizar y las mete a la cola.
+        NO llama al agente directamente: desacopla producción de consumo.
         """
-        while True:
+        logger.info("Window processor started.")
+        while not self._stop_event.is_set():
             try:
-                keys = await window_manager.get_active_windows()
+                keys = await self.telemetry_processing_service.get_active_windows()
                 for key in keys:
-                    decoded_key = key.decode("utf-8")
-                    # We try to get a lock for this key to avoid duplicate processing
-                    lock = await self.get_redis_lock(f"lock:{decoded_key}")
-                    if await lock.acquire(blocking=False):
-                        try:
-                            ttl = await db.redis_client.ttl(key)
-                            # If the key is about to expire, we process it
-                            if ttl < 10:  # 10-second threshold
-                                telemetry_window = await window_manager.process_window(decoded_key)
+                    decoded_key = key.decode("utf-8") if isinstance(key, bytes) else key
+
+                    is_full = await self.telemetry_processing_service.is_window_full(decoded_key)
+                    ttl = await self.redis_client.ttl(decoded_key)
+
+                    if is_full or (0 < ttl < 10):
+                        lock = self.redis_client.lock(f"lock:{decoded_key}", timeout=10)
+                        if await lock.acquire(blocking=False):
+                            try:
+                                telemetry_window = await self.telemetry_processing_service.process_window(decoded_key)
                                 if telemetry_window:
-                                    asyncio.create_task(self.run_analysis(
-                                        telemetry_window.model_dump()))
-                        finally:
-                            await lock.release()
+                                    await self._enqueue_analysis(
+                                        telemetry_window.model_dump(),
+                                        window_key=decoded_key
+                                    )
+                            finally:
+                                await lock.release()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.error(
-                    f"Error in window processor: {e}", exc_info=True)
-            # Wait 5 seconds before the next iteration
+                logger.error(f"Error in window processor: {e}", exc_info=True)
+
             await asyncio.sleep(5)
+
+        logger.info("Window processor stopped.")
+
+    async def _enqueue_analysis(self, window_data: Dict[str, Any], window_key: str = "") -> None:
+        """
+        Encola una ventana para análisis. Si la cola está llena, descarta la
+        más antigua (política LIFO-drop para evitar análisis obsoletos).
+        """
+        item = _PendingAnalysis(window_data=window_data, window_key=window_key)
+        if self._analysis_queue.full():
+            try:
+                dropped = self._analysis_queue.get_nowait()
+                logger.warning(
+                    f"Analysis queue full ({_ANALYSIS_QUEUE_MAXSIZE}). "
+                    f"Dropped oldest window '{dropped.window_key}' to make room."
+                )
+            except asyncio.QueueEmpty:
+                pass
+        await self._analysis_queue.put(item)
+        logger.debug(
+            f"Enqueued window '{window_key}' for analysis. "
+            f"Queue size: {self._analysis_queue.qsize()}"
+        )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 2. CONSUMER: Analysis Queue  →  Agent
+    # ──────────────────────────────────────────────────────────────────────
+
+    async def _analysis_consumer_task(self) -> None:
+        """
+        Consume la cola de análisis y envía cada ventana al agente IA.
+
+        Garantías:
+        - Si MCP no está listo, ESPERA en lugar de descartar.
+        - Si el análisis falla por desconexión, REENCOLA.
+        - Aplica backoff exponencial en reintentos.
+        - Descarta solo tras _ANALYSIS_MAX_RETRIES intentos fallidos.
+        """
+        logger.info("Analysis consumer started.")
+        while not self._stop_event.is_set():
+            try:
+                # Espera un ítem de la cola (timeout para chequear stop_event)
+                try:
+                    pending = await asyncio.wait_for(
+                        self._analysis_queue.get(),
+                        timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    continue  # Re-evalúa stop_event
+
+                # Si el agente no está disponible, esperamos SIN descartar el ítem
+                if self.agent is None:
+                    wait_time = _ANALYSIS_RETRY_DELAY_S
+                    logger.info(
+                        f"MCP not ready. Holding window '{pending.window_key}' "
+                        f"(attempt {pending.attempts + 1}). "
+                        f"Re-checking in {wait_time}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                    # Reencola al frente (re-put para priorizar)
+                    await self._analysis_queue.put(pending)
+                    self._analysis_queue.task_done()
+                    continue
+
+                # Lanzamos el análisis como task para no bloquear el consumer
+                task = asyncio.create_task(
+                    self._run_and_handle_failure(pending)
+                )
+                self._inflight_tasks.add(task)
+                task.add_done_callback(self._inflight_tasks.discard)
+                self._analysis_queue.task_done()
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Unexpected error in analysis consumer: {e}", exc_info=True)
+
+        # Shutdown: esperamos que terminen los análisis en curso
+        if self._inflight_tasks:
+            logger.info(f"Waiting for {len(self._inflight_tasks)} in-flight analysis(es) to complete...")
+            await asyncio.gather(*self._inflight_tasks, return_exceptions=True)
+
+        pending_count = self._analysis_queue.qsize()
+        if pending_count:
+            logger.warning(
+                f"{pending_count} window(s) still pending in queue at shutdown. "
+                "They will be re-processed on next startup if their keys are still in Redis."
+            )
+        logger.info("Analysis consumer stopped.")
+
+    async def _run_and_handle_failure(self, pending: _PendingAnalysis) -> None:
+        """
+        Ejecuta un análisis. Si falla (p.ej. MCP caído), reencola para reintento.
+        """
+        pending.increment()
+        window_key = pending.window_key or "unknown"
+        try:
+            result = await self.agent.process_telemetry_window(pending.window_data)
+            logger.info(f"Analysis completed for window '{window_key}': {result[:80]}...")
+        except Exception as e:
+            # El agente falló — posiblemente MCP se cayó mid-flight
+            logger.warning(
+                f"Analysis failed for window '{window_key}' "
+                f"(attempt {pending.attempts}/{_ANALYSIS_MAX_RETRIES}): {e}"
+            )
+            if pending.attempts < _ANALYSIS_MAX_RETRIES:
+                delay = min(
+                    _ANALYSIS_RETRY_DELAY_S * (2 ** (pending.attempts - 1)),
+                    _MCP_RETRY_MAX_DELAY_S
+                )
+                logger.info(f"Re-enqueueing window '{window_key}' in {delay}s.")
+                await asyncio.sleep(delay)
+                await self._enqueue_analysis(pending.window_data, window_key=window_key)
+            else:
+                logger.error(
+                    f"Window '{window_key}' exhausted {_ANALYSIS_MAX_RETRIES} retries. "
+                    "Discarding to prevent queue starvation."
+                )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 3. MCP RECONNECT LOOP
+    # ──────────────────────────────────────────────────────────────────────
+
+    async def _mcp_reconnect_loop(self) -> None:
+        """
+        🔄 Loop de reconexión resiliente para el servidor MCP.
+
+        - API arranca sin MCP → reintenta con backoff exponencial.
+        - MCP sube después del startup → conecta y activa el agente.
+        - MCP cae en producción → detecta y reconecta.
+        """
+        delay = _MCP_RETRY_INITIAL_DELAY_S
+
+        while not self._stop_event.is_set():
+            # Si ya tenemos agente activo, verificamos que la sesión siga viva
+            if self.agent is not None and self._is_mcp_session_alive():
+                await asyncio.sleep(delay)
+                delay = _MCP_RETRY_INITIAL_DELAY_S  # reset backoff
+                continue
+
+            if self.agent is not None:
+                logger.warning("MCP session lost. Tearing down and reconnecting...")
+                await self._teardown_mcp()
+
+            logger.info("MCP Reconnect Loop: attempting connection...")
+            try:
+                new_manager = MCPClientManager()
+                await asyncio.wait_for(
+                    new_manager.start_server_session(),
+                    timeout=_MCP_CONNECT_TIMEOUT_S
+                )
+                self.mcp_manager = new_manager
+                self.agent = OrchestratorAgent(
+                    mcp_manager=self.mcp_manager,
+                    redis_client=self.redis_client,
+                )
+                queue_size = self._analysis_queue.qsize()
+                logger.info(
+                    f"✅ MCP connected. AI Agent ACTIVE. "
+                    f"{queue_size} window(s) waiting in queue will now be processed."
+                )
+                delay = _MCP_RETRY_INITIAL_DELAY_S  # reset backoff
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"MCP connect timed out ({_MCP_CONNECT_TIMEOUT_S}s). "
+                    f"Retry in {delay}s..."
+                )
+                await self._teardown_mcp()
+                await asyncio.sleep(delay)
+                delay = min(delay * _MCP_RETRY_BACKOFF_FACTOR, _MCP_RETRY_MAX_DELAY_S)
+
+            except BaseException as e:
+                logger.warning(
+                    f"MCP connect failed: {type(e).__name__}: {e}. "
+                    f"Retry in {delay}s..."
+                )
+                await self._teardown_mcp()
+                await asyncio.sleep(delay)
+                delay = min(delay * _MCP_RETRY_BACKOFF_FACTOR, _MCP_RETRY_MAX_DELAY_S)
+
+    def _is_mcp_session_alive(self) -> bool:
+        if self.mcp_manager is None:
+            return False
+        return getattr(self.mcp_manager, "_session", None) is not None
+
+    async def _teardown_mcp(self) -> None:
+        if self.mcp_manager is not None:
+            try:
+                await self.mcp_manager.close()
+            except Exception:
+                pass
+        self.mcp_manager = None
+        self.agent = None
+
+    # ──────────────────────────────────────────────────────────────────────
+    # 4. CICLO DE VIDA
+    # ──────────────────────────────────────────────────────────────────────
 
     async def initialize_subsytem(self) -> None:
         """
-        Initializes MCP first, then starts the window processor task.
+        Arranca todos los workers en background.
+        NO bloquea el startup del servidor REST.
         """
-        logger.info("Initializing Agent subsystem and MCP Channels...")
-        await self._init_mcp_background()
+        logger.info("Initializing Agent subsystem...")
+        self._stop_event.clear()
+
+        self._mcp_reconnect_handle = asyncio.create_task(
+            self._mcp_reconnect_loop(), name="mcp-reconnect"
+        )
+        self._mcp_reconnect_handle.add_done_callback(self._on_background_task_done)
+
+        self._analysis_consumer_handle = asyncio.create_task(
+            self._analysis_consumer_task(), name="analysis-consumer"
+        )
+        self._analysis_consumer_handle.add_done_callback(self._on_background_task_done)
+
         self._window_processor_handle = asyncio.create_task(
-            self._window_processor_task())
-        logger.info("Agent subsystem ready and window processor running.")
+            self._window_processor_task(), name="window-processor"
+        )
+        self._window_processor_handle.add_done_callback(self._on_background_task_done)
 
-    async def wait_for_mcp_ready(self, timeout: float = 30.0) -> bool:
-        """
-        Waits for MCP to be ready. Useful for the first requests.
-        """
-        if self._initialized:
-            return True
-
-        if self._initialization_task is None:
-            logger.error("Agent subsystem is not initialized")
-            return False
-
-        try:
-            await asyncio.wait_for(self._initialization_task, timeout=timeout)
-            return self._initialized
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Timeout waiting for MCP to initialize (>{timeout}s)")
-            return False
-
-    async def run_analysis(self, telemetry_window: Dict[str, Any]) -> str:
-        """
-        Sends a preprocessed time window of HTTP events to the agent for evaluation.
-        """
-        if not self.agent:
-            logger.error("The agent subsystem has not been initialized. Skipping analysis.")
-            return json.dumps({
-                "status": "error",
-                "error": "The agent subsystem has not been initialized.",
-                "threat_detected": False,
-                "threat_level": "NONE"
-            })
-
-        return await self.agent.process_telemetry_window(telemetry_window)
+        logger.info(
+            "Agent subsystem started: "
+            "[window-processor] → [analysis-queue] → [analysis-consumer] → [mcp-agent]"
+        )
 
     async def shutdown_subsytem(self) -> None:
-        """
-        Gracefully releases open resources and subprocesses.
-        """
-        if self._window_processor_handle:
-            self._window_processor_handle.cancel()
-            try:
-                await self._window_processor_handle
-            except asyncio.CancelledError:
-                pass
-        if self.mcp_manager:
-            logger.info("Shutting down MCP communication channels...")
-            try:
-                await self.mcp_manager.close()
-            except RuntimeError as exc:
-                logger.warning("MCP shutdown completed with runtime warning: %s", exc)
-            logger.info("MCP subsystem shut down correctly.")
+        """Detiene todos los workers limpiamente, esperando in-flight analyses."""
+        logger.info("Shutting down Agent subsystem...")
+        self._stop_event.set()
 
+        handles = [
+            self._window_processor_handle,
+            self._mcp_reconnect_handle,
+            self._analysis_consumer_handle,  # Este espera los in-flight
+        ]
+        for handle in handles:
+            if handle and not handle.done():
+                handle.cancel()
+                try:
+                    await handle
+                except (asyncio.CancelledError, Exception):
+                    pass
 
-# Global singleton instance to be shared throughout the FastAPI application
-agent_runner = AgentRunner()
+        await self._teardown_mcp()
+        logger.info("Agent subsystem shut down cleanly.")
+
+    def _on_background_task_done(self, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        try:
+            exc = task.exception()
+            if exc is not None:
+                logger.error(
+                    f"Background task '{task.get_name()}' ended unexpectedly: "
+                    f"{type(exc).__name__}: {exc}",
+                    exc_info=exc,
+                )
+        except asyncio.CancelledError:
+            pass

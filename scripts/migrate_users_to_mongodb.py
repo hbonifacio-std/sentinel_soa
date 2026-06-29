@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Migration script to initialize users in MongoDB from seed data.
@@ -15,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core_orchestrator.services.database import db
-from core_orchestrator.services.user_service import UserService
-from core_orchestrator.models.user import UserCreate
+from core_orchestrator.services.database_mongo_service import db
+from core_orchestrator.application.services.user_service import UserService
+from core_orchestrator.domain.models.user import UserCreate
 
 logging.basicConfig(
     level=logging.INFO,

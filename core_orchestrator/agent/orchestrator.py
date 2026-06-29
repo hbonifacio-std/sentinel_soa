@@ -9,9 +9,12 @@ import json
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 
-from core_orchestrator.services.database import db
-from core_orchestrator.services.rules_engine import get_rules_engine
+from redis.asyncio import Redis
+
+from core_orchestrator.domain.models.analysis_report import AnalysisReportResponse
+from core_orchestrator.application.services.rules_engine_service import get_rules_engine
 from core_orchestrator.agent.mcp_client import MCPClientManager
+from core_orchestrator.application.services.telemetry_service import TelemetryService
 
 logger = logging.getLogger("core_orchestrator.agent.orchestrator")
 
@@ -124,18 +127,19 @@ class OrchestratorAgent:
     invocation under the MCP protocol.
     """
 
-    def __init__(self, mcp_manager: MCPClientManager):
+    def __init__(self, mcp_manager: MCPClientManager,redis_client: Redis ,telemetry_service=TelemetryService):
         """
         Initializes the agent and the associated MCP client.
         """
         self.mcp_manager = mcp_manager
-
+        self.redis_client = redis_client
+        self.telemetry_service = telemetry_service
 
     async def get_redis_lock(self, lock_key: str, timeout: int = 10):
         """
         Acquires a distributed lock using Redis.
         """
-        return db.redis_client.lock(lock_key, timeout=timeout)
+        return self.redis_client.lock(lock_key, timeout=timeout)
 
     async def process_telemetry_window(self, telemetry_payload: Dict[str, Any]) -> str:
         """
@@ -148,7 +152,7 @@ class OrchestratorAgent:
         try:
             # --- STEP 0: Check Redis cache ---
             cache_key = f"cache:analysis:{json.dumps(telemetry_payload, sort_keys=True, default=str)}"
-            cached_result = await db.redis_client.get(cache_key)
+            cached_result = await self.redis_client.get(cache_key)
             if cached_result:
                 logger.info(
                     f"Analysis result found in cache for {source_ip}.")
@@ -250,18 +254,17 @@ class OrchestratorAgent:
                     f"Historical context added: {len(context_result.get('history', []))} previous alerts")
 
             # --- STEP 3: Save the result to MongoDB and cache it in Redis ---
-            final_report_json = json.dumps(
-                analysis_result, indent=2, ensure_ascii=False, default=str)
+
 
             # Save to MongoDB — add audit/triage default fields
             analysis_result.setdefault("reviewed", False)
             analysis_result.setdefault("actions", [])
             analysis_result.setdefault("resolved", False)
             analysis_result.setdefault("created_at_utc", datetime.now(timezone.utc))
-            await db.get_app_db().analysis_reports.insert_one(analysis_result)
 
-            # Save to Redis cache (5 minutes)
-            await db.redis_client.set(cache_key, final_report_json, ex=300)
+            final_report_json = json.dumps(
+                analysis_result, indent=2, ensure_ascii=False, default=str)
+            await self.telemetry_service.create_analysis_report(report=AnalysisReportResponse(**final_report_json.__dict__))
 
             logger.debug(
                 f"Returning analysis and saving to the database for {source_ip}")

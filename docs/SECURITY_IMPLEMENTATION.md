@@ -364,7 +364,7 @@ app.add_middleware(
 Para desarrollo local sin Redis real:
 
 ```python
-# core_orchestrator/security/redis_sim.py
+# core_orchestrator/security/redis_secret_store.py
 redis_secrets = RedisSecretStore()
 
 # Test secrets

@@ -7,25 +7,32 @@ and mounts the HTTP routes exposed to the corporate network.
 
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, status
+from pathlib import Path
+
+from fastapi import FastAPI, status, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from core_orchestrator.api.v1.endpoints import agent_telemetry, analytics, rules_management, auth
-from core_orchestrator.agent.runner import agent_runner
-from core_orchestrator.exeptions.exeptions import validation_exception_handler
-from core_orchestrator.services.database import db
-from core_orchestrator.services.bootstrap_service import bootstrap_service
-from core_orchestrator.services.limiter import limiter
-from core_orchestrator.services.rules_engine import get_rules_engine
-from core_orchestrator.config import orchestrator_settings
+from slowapi import Limiter
 
-# Centralized production logging configuration
+from core_orchestrator.agent.runner import AgentRunner
+# Updated imports for new architecture
+from core_orchestrator.infrastructure.api.v1.endpoints import (
+    analytics, auth, clients, rules as refactored_rules_router,
+    telemetry as agent_telemetry, users
+)
+from core_orchestrator.infrastructure.config.config import orchestrator_settings
+from core_orchestrator.exeptions.exeptions import validation_exception_handler
+from core_orchestrator.application.services.rules_engine_service import init_rules_engine
+from core_orchestrator.infrastructure.api import dependencies as deps
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+
 logger = logging.getLogger("core_orchestrator.main")
 
 
@@ -38,35 +45,39 @@ async def app_lifespan(app: FastAPI):
     """
     logger.info("=== STARTING SYSTEM BOOT CONFIGURATION ===")
 
-    # Connect to databases
-    await db.connect_to_mongo()
-    await db.connect_to_redis()
-
-    if orchestrator_settings.bootstrap_on_startup:
-        try:
-            bootstrap_summary = await bootstrap_service.run_startup_bootstrap()
-            logger.info("Startup bootstrap completed: %s", bootstrap_summary.model_dump())
-        except Exception as e:
-            logger.error(f"Startup bootstrap failed: {e}", exc_info=True)
-            raise
-
-    # Load heuristic rules from MongoDB / Redis into RulesEngine
-    rules_engine = get_rules_engine()
-    await rules_engine.initialize()
+    db_manager = deps.get_db_manager()
+    agent_runner = deps.get_agent_runner(
+        telemetry_processing_service=deps.get_telemetry_processing_service(
+            cache_service=deps.get_cache_service(db_manager)
+        ),
+        redis_client=deps.get_redis_client(db_manager)
+    )
 
     # Lazily start the agent subsystem and MCP stdio tunnels
     await agent_runner.initialize_subsytem()
 
+    try:
+        rule_service = deps.get_rule_service(
+            rule_repo=deps.get_rule_repository(db_manager),
+            audit_repo=deps.get_audit_repository(db_manager),
+            redis=deps.get_redis_client(db_manager)
+        )
+        rules_engine = init_rules_engine(rules_service=rule_service)
+        await rules_engine.initialize()
+        logger.info("RulesEngine loaded and ready.")
+    except Exception as e:
+        logger.warning(f"Failed to boot RulesEngine (DB may not be reachable): {e}. Continuing startup...")
+
     logger.info("=== CORE ORCHESTRATOR DEPLOYED AND OPERATIONAL ON PORT ===")
     yield
-
     logger.info("=== INITIATING RESOURCE SHUTDOWN PROCESS ===")
-    # Shut down MCP child server subprocesses to avoid zombie processes in the OS
     await agent_runner.shutdown_subsytem()
 
-    # Disconnect from databases
-    await db.close_mongo_connection()
-    await db.close_redis_connection()
+    db_manager = deps.get_db_manager()
+    if db_manager.mongo_client:
+        await db_manager.mongo_client.close()
+    if db_manager.redis_client:
+        await db_manager.redis_client.close()
 
     logger.info("=== SYSTEM SHUT DOWN CORRECTLY ===")
 
@@ -79,17 +90,26 @@ app = FastAPI(
     lifespan=app_lifespan
 )
 
+@app.middleware("http")
+async def add_limiter_to_state(request: Request, call_next):
+    """
+    Middleware to add the rate limiter to the request state,
+    making it available to the exception handler.
+    """
+    request.state.limiter = deps.get_limiter()
+    response = await call_next(request)
+    return response
+
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
-app.state.limiter = limiter
 
 # Configurable CORS security middleware
 cors_origins = orchestrator_settings.get_cors_origins()
 logger.info(f"CORS allowed origins: {cors_origins}")
 
 app.add_middleware(
-    CORSMiddleware,  # type: ignore[arg-type]
+    CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -103,6 +123,16 @@ app.include_router(
     tags=["Authentication"]
 )
 app.include_router(
+    users.router,
+    prefix="/api/v1/users",
+    tags=["User Management"]
+)
+app.include_router(
+    clients.router,
+    prefix="/api/v1",
+    tags=["Client Management"]
+)
+app.include_router(
     agent_telemetry.router,
     prefix="/api/v1/telemetry",
     tags=["Telemetry Ingestion"]
@@ -113,14 +143,14 @@ app.include_router(
     tags=["Analytics"]
 )
 app.include_router(
-    rules_management.router,
+    refactored_rules_router.router, # ✨ Using the new refactored router
     prefix="/api/v1/rules",
     tags=["Rules Management"]
 )
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
-async def health_check():
+async def health_check(agent_runner: AgentRunner = Depends(deps.get_agent_runner)):
     """
     Basic monitoring endpoint to check the operational availability of the API.
     """

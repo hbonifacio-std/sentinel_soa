@@ -32,19 +32,7 @@ services:
       WINDOW_THRESHOLD_REQUESTS: ${WINDOW_THRESHOLD_REQUESTS}
       WINDOW_DURATION_SECONDS: ${WINDOW_DURATION_SECONDS}
       MAX_ALERTS_IN_MEMORY: ${MAX_ALERTS_IN_MEMORY}
-      LLM_PROVIDER: ${LLM_PROVIDER}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
-      OLLAMA_MODEL: ${OLLAMA_MODEL}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_MODEL: ${OPENAI_MODEL}
-      OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS}
-      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS}
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      GROQ_MODEL: ${GROQ_MODEL}
-      GROQ_MAX_OUTPUT_TOKENS: ${GROQ_MAX_OUTPUT_TOKENS}
-      GROQ_TIMEOUT_SECONDS: ${GROQ_TIMEOUT_SECONDS}
+
       # Configuración de base de datos (ejemplos, ajustar según necesidad)
       MONGO_HOST: ${MONGO_HOST}
       MONGO_PORT: ${MONGO_PORT}
@@ -67,6 +55,9 @@ services:
       - mongo
       - redis
       - mcp_server
+    volumes:
+      # Mapea tu carpeta local con los seeds hacia la ruta interna /data del contenedor
+      - core_data:/data
 
   mcp_server:
     build:
@@ -201,6 +192,7 @@ networks:
     driver: bridge
 
 volumes:
+  core_data:
   victim_logs:
   ollama_data:
   mongo_data:

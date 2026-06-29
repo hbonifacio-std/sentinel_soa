@@ -292,7 +292,7 @@ REDIS_URL=redis://localhost:6379
 ### Ver estado de blacklist
 
 ```python
-from core_orchestrator.security.redis_sim import redis_secrets
+from core_orchestrator.infrastructure.security.redis_secret_store import redis_secrets
 
 # Tamaño de blacklist
 size = redis_secrets.get_blacklist_size()
