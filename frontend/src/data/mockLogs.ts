@@ -2,7 +2,7 @@ import type { LogEntry } from '@/types/logEntry';
 
 export const mockLogs: LogEntry[] = [
   {
-    _id: 'mock-1',
+    id: 'mock-1',
     source_id: 'sensor-alpha',
     source_ip: '10.10.20.5',
     http_method: 'POST',
@@ -13,7 +13,7 @@ export const mockLogs: LogEntry[] = [
     bytes_sent: 923,
   },
   {
-    _id: 'mock-2',
+    id: 'mock-2',
     source_id: 'sensor-alpha',
     source_ip: '172.16.0.8',
     http_method: 'POST',
@@ -24,7 +24,7 @@ export const mockLogs: LogEntry[] = [
     bytes_sent: 1432,
   },
   {
-    _id: 'mock-3',
+    id: 'mock-3',
     source_id: 'sensor-alpha',
     source_ip: '172.16.0.8',
     http_method: 'PUT',
@@ -35,7 +35,7 @@ export const mockLogs: LogEntry[] = [
     bytes_sent: 1188,
   },
   {
-    _id: 'mock-4',
+    id: 'mock-4',
     source_id: 'sensor-alpha',
     source_ip: '192.168.50.44',
     http_method: 'GET',

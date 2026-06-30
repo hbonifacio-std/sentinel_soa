@@ -5,6 +5,13 @@
     "password": "AdminPassword123!",
     "role": "admin",
     "is_active": true
+  },
+  {
+    "username": "analyst",
+    "email": "analyst@example.com",
+    "password": "AnalystPassword123!",
+    "role": "analyst",
+    "is_active": true
   }
 ]
 

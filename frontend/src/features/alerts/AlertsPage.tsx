@@ -22,7 +22,7 @@ export default function AlertsPage() {
   }, [sourceId]);
 
   const filtered = useMemo(() => applyFilters(threats), [threats, applyFilters]);
-  const selectedThreat = filtered.find((threat) => threat._id === selectedThreatId) ?? null;
+  const selectedThreat = filtered.find((threat) => threat.id === selectedThreatId) ?? null;
 
   async function handleReview(id: string) {
     await markAsReviewed(id);

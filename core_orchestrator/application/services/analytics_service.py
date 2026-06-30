@@ -1,8 +1,21 @@
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from bson import ObjectId
 
 from core_orchestrator.domain.ports.analytics_repository import AnalyticsRepository
+
+logger = logging.getLogger(__name__)
+
+from core_orchestrator.domain.models.analysis_report import AnalysisActionEntry
+from pydantic import BaseModel, Field
+
+class ReportResolutionPayload(BaseModel):
+    reviewed: bool = True
+    resolved: bool = True
+    resolved_at_utc: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    )
 
 class AnalyticsService:
     def __init__(self, analytics_repository: AnalyticsRepository):
@@ -17,15 +30,11 @@ class AnalyticsService:
 
         for report in paginated_data.get("results", []):
             if "_id" in report and isinstance(report["_id"], ObjectId):
-                report["_id"] = str(report["_id"])
+                report["id"] = str(report.pop("_id"))
 
         return paginated_data
 
     async def get_report_by_id(self, report_id: str) -> Optional[Dict[str, Any]]:
-        try:
-            ObjectId(report_id)
-        except Exception:
-            return None
         return await self.analytics_repository.get_report_by_id(report_id)
 
     async def mark_report_as_reviewed(self, report_id: str) -> Optional[Dict[str, Any]]:
@@ -50,12 +59,11 @@ class AnalyticsService:
             raise ValueError("Report must be reviewed before adding actions")
         
         comment_text = action_request.get("comment", "").strip()
-        action = {
-            "comment": comment_text,
-            "timestamp": datetime.now(timezone.utc),
-        }
+        action_model = AnalysisActionEntry(comment=comment_text)
+        action_doc = action_model.model_dump(mode="json", by_alias=True)
 
-        await self.analytics_repository.add_action_to_report(report_id, action)
+
+        await self.analytics_repository.add_action_to_report(report_id, action_doc)
         
         updated_report = await self.get_report_by_id(report_id)
         return updated_report
@@ -65,18 +73,18 @@ class AnalyticsService:
         if not report:
             return None
 
-        updates = {
-            "reviewed": True,
-            "resolved": True,
-            "resolved_at_utc": datetime.now(timezone.utc),
-        }
+        resolution_payload = ReportResolutionPayload()
+        updates = resolution_payload.model_dump()
+        
         await self.analytics_repository.update_report(report_id, updates)
         
         updated_report = await self.get_report_by_id(report_id)
         return updated_report
 
     async def get_distinct_source_ids(self) -> List[str]:
-        return await self.analytics_repository.get_distinct_source_ids()
+        source_ids = await self.analytics_repository.get_distinct_source_ids()
+        logger.info(f"Source IDs from repository: {source_ids}")
+        return source_ids
 
     async def get_aggregated_stats(self, source_id: Optional[str] = None) -> Dict[str, Any]:
         pipeline = []

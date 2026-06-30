@@ -127,7 +127,7 @@ class OrchestratorAgent:
     invocation under the MCP protocol.
     """
 
-    def __init__(self, mcp_manager: MCPClientManager,redis_client: Redis ,telemetry_service=TelemetryService):
+    def __init__(self, mcp_manager: MCPClientManager,redis_client: Redis ,telemetry_service:TelemetryService):
         """
         Initializes the agent and the associated MCP client.
         """
@@ -260,11 +260,10 @@ class OrchestratorAgent:
             analysis_result.setdefault("reviewed", False)
             analysis_result.setdefault("actions", [])
             analysis_result.setdefault("resolved", False)
-            analysis_result.setdefault("created_at_utc", datetime.now(timezone.utc))
 
             final_report_json = json.dumps(
                 analysis_result, indent=2, ensure_ascii=False, default=str)
-            await self.telemetry_service.create_analysis_report(report=AnalysisReportResponse(**final_report_json.__dict__))
+            await self.telemetry_service.create_analysis_report(report=AnalysisReportResponse(**analysis_result))
 
             logger.debug(
                 f"Returning analysis and saving to the database for {source_ip}")

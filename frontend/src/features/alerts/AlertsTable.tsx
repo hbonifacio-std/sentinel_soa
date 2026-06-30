@@ -41,9 +41,9 @@ export function AlertsTable({ threats, onSelect, pageInfo, onPageChange, onLimit
             ) : (
               threats.map((threat) => (
                 <tr
-                  key={threat._id}
+                  key={threat.id}
                   className="cursor-pointer border-t border-surface-border text-slate-200 transition hover:bg-slate-900/70"
-                  onClick={() => onSelect(threat._id)}
+                  onClick={() => onSelect(threat.id)}
                 >
                   <td className="px-3 py-2"><ThreatBadge level={threat.threat_level} /></td>
                   <td className="px-3 py-2 text-xs text-slate-300">{threat.kill_chain_phase ?? '-'}</td>

@@ -60,7 +60,6 @@ class BaseRepository(Generic[ModelType]):
         results = []
         for doc in docs:
             dict_doc = cast(Dict[str, Any], doc)
-            dict_doc.pop("_id", None)
             results.append(self.model(**dict_doc))
 
 

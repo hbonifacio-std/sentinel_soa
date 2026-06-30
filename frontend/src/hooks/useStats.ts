@@ -176,7 +176,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
       }));
     }
 
-    const logsByThreatId = new Map(logs.map((log) => [log._id, log]));
+    const logsByThreatId = new Map(logs.map((log) => [log.id, log]));
     const counts = new Map<
       string,
       {
@@ -206,7 +206,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
         entry.techniques.set(techniqueId, { name: techniqueName, id: techniqueId });
       }
 
-      const path = getRequestPath(threat, logsByThreatId.get(threat._id));
+      const path = getRequestPath(threat, logsByThreatId.get(threat.id));
       if (path) {
         entry.pathCounts.set(path, (entry.pathCounts.get(path) ?? 0) + 1);
       }

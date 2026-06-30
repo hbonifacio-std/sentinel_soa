@@ -25,7 +25,7 @@ export interface AlertAction {
 }
 
 export interface Threat {
-  _id: string;
+  id: string;
   source_id?: string;
   source_ip: string;
   threat_level: ThreatLevel;

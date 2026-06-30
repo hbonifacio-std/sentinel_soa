@@ -17,6 +17,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import Limiter
 
 from core_orchestrator.agent.runner import AgentRunner
+from core_orchestrator.domain.ports.telemetry_repository import TelemetryRepository
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
     analytics, auth, clients, rules as refactored_rules_router,
@@ -50,9 +51,13 @@ async def app_lifespan(app: FastAPI):
         telemetry_processing_service=deps.get_telemetry_processing_service(
             cache_service=deps.get_cache_service(db_manager)
         ),
-        redis_client=deps.get_redis_client(db_manager)
+        redis_client=deps.get_redis_client(db_manager),
+        telemetry_service=deps.get_telemetry_service(
+            repo=deps.get_telemetry_repository(
+                db_manager=db_manager
+            )
+        )
     )
-
     # Lazily start the agent subsystem and MCP stdio tunnels
     await agent_runner.initialize_subsytem()
 
@@ -63,7 +68,9 @@ async def app_lifespan(app: FastAPI):
             redis=deps.get_redis_client(db_manager)
         )
         rules_engine = init_rules_engine(rules_service=rule_service)
+
         await rules_engine.initialize()
+
         logger.info("RulesEngine loaded and ready.")
     except Exception as e:
         logger.warning(f"Failed to boot RulesEngine (DB may not be reachable): {e}. Continuing startup...")

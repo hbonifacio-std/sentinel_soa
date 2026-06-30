@@ -54,7 +54,7 @@ export function LogsTable({ logs }: Readonly<LogsTableProps>) {
             if (!log) return null;
             return (
               <div
-                key={log._id ?? virtualRow.index}
+                key={log.id ?? virtualRow.index}
                 style={{
                   position: 'absolute',
                   top: 0,

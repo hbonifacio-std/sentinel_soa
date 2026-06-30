@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from types import SimpleNamespace
 from typing import Optional, List
 from datetime import datetime, timezone
 from core_orchestrator.infrastructure.config.database import DatabaseManager
@@ -46,3 +47,13 @@ class CacheService:
             await pipe.rpush(key, *payloads)
             await pipe.expire(key, expire_seconds)
             await pipe.execute()
+
+
+    async def get_client_by_id(self, client_id: str):
+        if self.redis:
+            data = await self.redis.get(f"client:{client_id}")
+            if data:
+                # Redis devuelve bytes, lo decodificamos y pasamos a objeto de Python
+                client_dict = json.loads(data.decode('utf-8') if isinstance(data, bytes) else data)
+                return SimpleNamespace(**client_dict)  # O tu modelo respectivo
+        return None

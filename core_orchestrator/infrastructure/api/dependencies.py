@@ -136,11 +136,13 @@ def get_telemetry_client_service(
 @lru_cache(maxsize=1)
 def get_agent_runner(
     telemetry_processing_service: TelemetryProcessingService = Depends(get_telemetry_processing_service),
-    redis_client: Optional[Redis] = Depends(get_redis_client)
+    redis_client: Redis = Depends(get_redis_client),
+    telemetry_service:TelemetryService = Depends(get_telemetry_service)
 ) -> AgentRunner:
     agent_runner = AgentRunner(
         telemetry_processing_service=telemetry_processing_service,
-        redis_client=redis_client
+        redis_client=redis_client,
+        telemetry_service=telemetry_service
     )
     return agent_runner
 

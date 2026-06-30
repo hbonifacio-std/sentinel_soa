@@ -12,7 +12,6 @@ Resilience model:
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
@@ -21,6 +20,7 @@ from redis.asyncio import Redis
 from core_orchestrator.agent.mcp_client import MCPClientManager
 from core_orchestrator.agent.orchestrator import OrchestratorAgent
 from core_orchestrator.application.services.telemetry_processing_service import TelemetryProcessingService
+from core_orchestrator.application.services.telemetry_service import TelemetryService
 
 logger = logging.getLogger("core_orchestrator.agent.runner")
 
@@ -53,10 +53,11 @@ class AgentRunner:
         self,
         telemetry_processing_service: TelemetryProcessingService,
         redis_client: Redis,
+        telemetry_service:  TelemetryService
     ):
         self.telemetry_processing_service = telemetry_processing_service
         self.redis_client = redis_client
-
+        self.telemetry_service = telemetry_service
         self.mcp_manager: Optional[MCPClientManager] = None
         self.agent: Optional[OrchestratorAgent] = None
 
@@ -268,6 +269,7 @@ class AgentRunner:
                 self.agent = OrchestratorAgent(
                     mcp_manager=self.mcp_manager,
                     redis_client=self.redis_client,
+                    telemetry_service=self.telemetry_service
                 )
                 queue_size = self._analysis_queue.qsize()
                 logger.info(

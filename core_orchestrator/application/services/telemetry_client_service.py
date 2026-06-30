@@ -3,7 +3,7 @@ import secrets
 from typing import Optional, List
 
 from core_orchestrator.domain.ports.telemetry_client_repository import TelemetryClientRepository
-from core_orchestrator.domain.models.telemetry_client import TelemetryClientAuthContext, TelemetryClientCreate, TelemetryClientInDB, TelemetryClientInDB
+from core_orchestrator.domain.models.telemetry_client import TelemetryClientAuthContext, TelemetryClientCreate, TelemetryClientInDB
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
 from core_orchestrator.infrastructure.security.jwt_utils import verify_hmac_signature
 
