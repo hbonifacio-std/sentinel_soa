@@ -4,9 +4,9 @@ and exposes an in-memory RulesBundle for ThreatHeuristics analysis.
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from core_orchestrator.domain.models.rules import RulesBundle, rules_to_bundle, hash_version, HeuristicRule, build_default_rules_bundle, RuleVersion, RuleAuditLog
 from core_orchestrator.application.services.rule_service import RuleService
@@ -175,28 +175,22 @@ class RulesEngineService:
         return bundle
 
 
-# ------------------------------------------------------------------
-# Contenedor global limpio para inyección manual diferida
-# ------------------------------------------------------------------
-_rules_engine: Optional[RulesEngineService] = None
+_rules_engine_instance: Optional[RulesEngineService] = None
+
+
 def init_rules_engine(rules_service: RuleService) -> RulesEngineService:
-    """
-    🚀 Inicializa el contenedor global del motor usando el servicio inyectado.
-    Se debe llamar al inicio del app_lifespan.
-    """
-    global _rules_engine
-    if _rules_engine is None:
-        _rules_engine = RulesEngineService(rules_service=rules_service)
-    return _rules_engine
+    """Initializes the singleton instance of the rules engine."""
+    global _rules_engine_instance
+    if _rules_engine_instance is None:
+        _rules_engine_instance = RulesEngineService(rules_service)
+        logger.info("RulesEngineService singleton initialized.")
+    return _rules_engine_instance
+
 
 def get_rules_engine() -> RulesEngineService:
-    """
-    🎯 Devuelve la instancia global configurada del motor de reglas.
-    """
-    global _rules_engine
-    if _rules_engine is None:
-        raise RuntimeError(
-            "RulesEngine has not been initialized. "
-            "Ensure init_rules_engine() is invoked during app_lifespan setup."
-        )
-    return _rules_engine
+    """Returns the singleton instance of the rules engine."""
+    if _rules_engine_instance is None:
+        raise RuntimeError("RulesEngineService not initialized. Call init_rules_engine() first.")
+    return _rules_engine_instance
+
+

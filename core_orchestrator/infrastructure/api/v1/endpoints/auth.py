@@ -6,7 +6,6 @@ and endpoints to retrieve current user information, with logout support.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 

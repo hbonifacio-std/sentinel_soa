@@ -1,35 +1,42 @@
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from redis.asyncio import Redis
-
-from core_orchestrator.domain.models.rules import HeuristicRule, RulesBundle, RuleVersion, AuditAction
+from core_orchestrator.domain.models.rules import (
+    HeuristicRule,
+    RulesBundle,
+    RuleVersion,
+    hash_version,
+    rules_to_bundle,
+)
 from core_orchestrator.domain.ports.audit_repository import AuditRepository
 from core_orchestrator.domain.ports.rule_repository import RuleRepository
-
-RULES_CACHE_KEY = "rules:active:all"
-RULES_VERSION_KEY = "rules:metadata:version_hash"
-RULES_UPDATED_KEY = "rules:metadata:last_updated"
-DEFAULT_RULES_TTL = 86400
+from core_orchestrator.domain.ports.rules_bundle_cache import RulesBundleCachePort
+from core_orchestrator.domain.ports.rule_validator_port import RuleValidatorPort
 
 logger = logging.getLogger(__name__)
+
 
 class RuleService:
     def __init__(
         self,
         rule_repository: RuleRepository,
         audit_repository: AuditRepository,
-        redis_rules_client: Optional[Redis] = None
+        rules_bundle_cache: RulesBundleCachePort,
+        rule_validator: RuleValidatorPort,
     ):
+        # All collaborators arrive by dependency inversion (ports), never instantiated here.
         self.repo = rule_repository
         self.audit_repo = audit_repository
-        self.redis = redis_rules_client
+        self.cache = rules_bundle_cache
+        self.validator = rule_validator
 
+    # ------------------------------------------------------------------ #
+    # Rule CRUD
+    # ------------------------------------------------------------------ #
     async def create_rule(self, rule: HeuristicRule) -> HeuristicRule:
         new_rule = await self.repo.create_rule(rule)
-        await self.invalidate_rules_cache()
+        await self.cache.invalidate_bundle()
         return new_rule
 
     async def fetch_rule_by_id(self, rule_id: str) -> Optional[HeuristicRule]:
@@ -44,39 +51,52 @@ class RuleService:
     async def update_rule(self, rule_id: str, updates: Dict[str, Any]) -> bool:
         success = await self.repo.update_rule(rule_id, updates)
         if success:
-            await self.invalidate_rules_cache()
+            await self.cache.invalidate_bundle()
         return success
 
     async def delete_rule(self, rule_id: str) -> bool:
         success = await self.repo.delete_rule(rule_id)
         if success:
-            await self.invalidate_rules_cache()
+            await self.cache.invalidate_bundle()
         return success
 
-    async def get_audit_logs(self, rule_id: Optional[str] = None, limit: int = 50, offset: int = 0) -> List[Dict[str, Any]]:
+    # ------------------------------------------------------------------ #
+    # Audit log
+    # ------------------------------------------------------------------ #
+    async def get_audit_logs(
+        self, rule_id: Optional[str] = None, limit: int = 50, offset: int = 0
+    ) -> List[Dict[str, Any]]:
         return await self.audit_repo.get_logs(rule_id=rule_id, limit=limit, offset=offset)
 
-    async def log_rule_action(self, action: str, rule_id: str, user: str, changes: Dict[str, Any], reason: str, ip_address: str):
+    async def log_rule_action(
+        self,
+        action: str,
+        rule_id: str,
+        user: str,
+        changes: Dict[str, Any],
+        reason: str,
+        ip_address: str,
+    ):
         await self.audit_repo.log_action(
             action=action,
             rule_id=rule_id,
             user=user,
             changes=changes,
             reason=reason,
-            ip_address=ip_address
+            ip_address=ip_address,
         )
-    
-    async def create_new_version(self, rule_ids: List[str], changelog: str, deployed_by: str) -> RuleVersion:
-        from core_orchestrator.application.services.rule_validator import RuleValidator
-        from core_orchestrator.domain.models.rules import hash_version
 
+    # ------------------------------------------------------------------ #
+    # Versioning
+    # ------------------------------------------------------------------ #
+    async def create_new_version(self, rule_ids: List[str], changelog: str, deployed_by: str) -> RuleVersion:
         rules = await self.repo.get_by_ids(rule_ids)
         found_ids = {r.rule_id for r in rules}
         missing_ids = [rid for rid in rule_ids if rid not in found_ids]
         if missing_ids:
             raise ValueError(f"Rules not found: {', '.join(missing_ids)}")
 
-        validation = RuleValidator.validate_rules(rules)
+        validation = self.validator.validate_rules(rules)
         if not validation.valid:
             raise ValueError(f"Validation failed: {validation.errors}")
 
@@ -93,7 +113,7 @@ class RuleService:
 
     async def create_version(self, version: RuleVersion) -> RuleVersion:
         new_version = await self.repo.create_version(version)
-        await self.invalidate_rules_cache()
+        await self.cache.invalidate_bundle()
         return new_version
 
     async def get_version(self, version_hash: str) -> Optional[RuleVersion]:
@@ -108,13 +128,10 @@ class RuleService:
     async def activate_version(self, version_hash: str) -> bool:
         success = await self.repo.activate_version(version_hash)
         if success:
-            await self.invalidate_rules_cache()
+            await self.cache.invalidate_bundle()
         return success
 
     async def deploy_version(self, version_hash: str) -> RulesBundle:
-        from core_orchestrator.application.services.rule_validator import RuleValidator
-        from core_orchestrator.domain.models.rules import rules_to_bundle
-
         version = await self.repo.get_version(version_hash)
         if not version:
             raise ValueError(f"Version not found: {version_hash}")
@@ -125,55 +142,37 @@ class RuleService:
         if missing:
             raise ValueError(f"Rules not found for version: {', '.join(missing)}")
 
-        validation = RuleValidator.validate_rules(rules)
+        validation = self.validator.validate_rules(rules)
         if not validation.valid:
             raise ValueError("; ".join(validation.errors))
 
         await self.repo.activate_version(version_hash)
-        
+
         bundle = rules_to_bundle(rules, version_hash=version_hash)
-        
-        await self.cache_rules(bundle)
-        
+
+        await self.cache.store_bundle(bundle)
+
         return bundle
 
-    async def cache_rules(self, bundle: RulesBundle, ttl_seconds: int = DEFAULT_RULES_TTL) -> bool:
-        """Guarda el bundle de reglas en Redis de forma atómica usando pipeline asíncrono."""
-        if not self.redis:
-            logger.warning("Redis rules client no conectado; saltando la actualización de caché")
-            return False
-
-        payload = json.dumps(bundle.to_cache_dict())
-
-        async with self.redis.pipeline(transaction=True) as pipe:
-            await pipe.set(RULES_CACHE_KEY, payload, ex=ttl_seconds)
-            await pipe.set(RULES_VERSION_KEY, bundle.version_hash, ex=ttl_seconds)
-
-            updated = bundle.last_updated.isoformat() if bundle.last_updated else datetime.now(timezone.utc).isoformat()
-            await pipe.set(RULES_UPDATED_KEY, updated, ex=ttl_seconds)
-
-            await pipe.execute()
-
-        return True
+    # ------------------------------------------------------------------ #
+    # Cache facade (delegates to the RulesBundleCachePort adapter)
+    #
+    # These thin wrappers preserve the public RuleService API consumed by
+    # RulesEngineService, so the cache implementation can change behind the
+    # port without touching the engine.
+    # ------------------------------------------------------------------ #
+    async def cache_rules(self, bundle: RulesBundle, ttl_seconds: Optional[int] = None) -> None:
+        await self.cache.store_bundle(bundle, ttl_seconds=ttl_seconds)
 
     async def get_cached_rules(self) -> Optional[RulesBundle]:
-        """Recupera el bundle de reglas serializado desde la caché de Redis."""
-        if not self.redis:
-            return None
-        raw = await self.redis.get(RULES_CACHE_KEY)
-        if not raw:
-            return None
-        data = json.loads(raw)
-        return RulesBundle.from_cache_dict(data)
+        return await self.cache.get_bundle()
 
-    async def invalidate_rules_cache(self) -> bool:
-        """Deletes linked cache keys to force a clean reload."""
-        if not self.redis:
-            return False
-        await self.redis.delete(RULES_CACHE_KEY, RULES_VERSION_KEY, RULES_UPDATED_KEY)
-        logger.info("Rules cache invalidated.")
-        return True
+    async def invalidate_rules_cache(self) -> None:
+        await self.cache.invalidate_bundle()
 
+    # ------------------------------------------------------------------ #
+    # Internal, non-paginated reads (used by the in-memory rules engine)
+    # ------------------------------------------------------------------ #
     async def list_all_active_rules_internal(self) -> List[HeuristicRule]:
         """Trae absolutamente todas las reglas activas usando cursores (Sin paginación)."""
         return await self.repo.get_all(include_inactive=False)

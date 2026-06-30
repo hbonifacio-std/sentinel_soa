@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 
 # New imports for refactored architecture
 from core_orchestrator.application.services.rule_service import RuleService
-from core_orchestrator.infrastructure.api.dependencies import get_rule_service
+from core_orchestrator.domain.ports.rule_validator_port import RuleValidatorPort
+from core_orchestrator.infrastructure.api.dependencies import get_rule_service, get_rule_validator
 
 from core_orchestrator.domain.models.rules import (
     HeuristicRule,
@@ -23,7 +24,6 @@ from core_orchestrator.domain.models.rules import (
 )
 
 from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.application.services.rule_validator import RuleValidator
 from core_orchestrator.application.services.rules_engine_service import get_rules_engine
 from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user
 
@@ -152,11 +152,12 @@ async def get_audit_log(
 async def validate_rules(
     request: Request,
     body: ValidateRulesRequest = Body(...),
+    validator: RuleValidatorPort = Depends(get_rule_validator),
     _: None = Depends(get_analyst_user)
 ):
     """Validate rules (requires analyst/admin role)."""
-    validation = RuleValidator.validate_rule_bundle(body.rules)
-    test_result = RuleValidator.test_rules_with_patterns(body.rules)
+    validation = validator.validate_rule_bundle(body.rules)
+    test_result = validator.test_rules_with_patterns(body.rules)
     all_valid = validation.valid and test_result.passed
     errors = list(validation.errors)
     if not test_result.passed:
@@ -304,13 +305,14 @@ async def create_rule(
     request: Request,
     rule: HeuristicRule = Body(...),
     rule_service: RuleService = Depends(get_rule_service),
+    validator: RuleValidatorPort = Depends(get_rule_validator),
     _: None = Depends(get_admin_user)
 ):
     """Create new rule (requires admin role)."""
     if await rule_service.rule_exists(rule.rule_id):
         raise HTTPException(status_code=409, detail=f"Rule already exists: {rule.rule_id}")
 
-    validation = RuleValidator.validate_rule(rule)
+    validation = validator.validate_rule(rule)
     if not validation.valid:
         raise HTTPException(status_code=422, detail={"errors": validation.errors})
 
@@ -342,6 +344,7 @@ async def update_rule(
     rule_id: str,
     updates: HeuristicRuleUpdate = Body(...),
     rule_service: RuleService = Depends(get_rule_service),
+    validator: RuleValidatorPort = Depends(get_rule_validator),
     _: None = Depends(get_admin_user)
 ):
     """Update rule (requires admin role)."""
@@ -355,7 +358,7 @@ async def update_rule(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     merged = HeuristicRule.model_validate({**existing.model_dump(), **update_data})
-    validation = RuleValidator.validate_rule(merged)
+    validation = validator.validate_rule(merged)
     if not validation.valid:
         raise HTTPException(status_code=422, detail={"errors": validation.errors})
 

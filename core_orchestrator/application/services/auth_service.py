@@ -4,8 +4,8 @@ from typing import Optional
 
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
 from core_orchestrator.domain.models.user import UserInDB
+from core_orchestrator.domain.ports.user_provider import UserProvider
 from core_orchestrator.domain.ports.token_blacklist_repository import TokenBlacklistRepository
-from core_orchestrator.application.services.user_service import UserService
 from core_orchestrator.infrastructure.security.jwt_utils import create_access_token, get_token_jti
 
 logger = logging.getLogger(__name__)
@@ -13,17 +13,17 @@ logger = logging.getLogger(__name__)
 class AuthService:
     def __init__(
         self,
-        user_service: UserService,
+        user_provider: UserProvider,
         token_blacklist_repository: TokenBlacklistRepository,
     ):
-        self.user_service = user_service
+        self.user_provider = user_provider
         self.token_blacklist_repo = token_blacklist_repository
 
     async def login(self, username: str, password: str) -> Optional[tuple[UserInDB, str]]:
         """
         Authenticates a user and returns the user object and a JWT token.
         """
-        user = await self.user_service.authenticate_user(username, password)
+        user = await self.user_provider.authenticate_user(username, password)
         if not user:
             return None
 

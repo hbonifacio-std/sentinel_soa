@@ -180,3 +180,20 @@ def rules_to_bundle(rules: List[HeuristicRule], version_hash: str = "default") -
         version_hash=version_hash,
     )
     return RulesBundle.from_cache_dict(bundle_payload)
+
+
+@dataclass
+class RuleValidationResult:
+    """Represents the outcome of a rule validation check."""
+    valid: bool
+    errors: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class RuleTestResult:
+    """Represents the outcome of executing the known-payload test suite against a rule bundle."""
+    passed: bool
+    total: int
+    passed_count: int
+    failures: List[str] = field(default_factory=list)

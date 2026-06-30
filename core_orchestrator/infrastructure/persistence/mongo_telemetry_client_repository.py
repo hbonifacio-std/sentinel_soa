@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 from core_orchestrator.domain.ports.telemetry_client_repository import TelemetryClientRepository
-from core_orchestrator.domain.models.telemetry_client import TelemetryClientInDB, TelemetryClientCreate, TelemetryClientInDB
+from core_orchestrator.domain.models.telemetry_client import TelemetryClientCreate, TelemetryClientInDB
 
 logger = logging.getLogger(__name__)
 

@@ -3,12 +3,13 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from bson import ObjectId
 
+from pydantic import BaseModel, Field
+from core_orchestrator.domain.models.analysis_report import AnalysisActionEntry
 from core_orchestrator.domain.ports.analytics_repository import AnalyticsRepository
 
-logger = logging.getLogger(__name__)
+from core_orchestrator.domain.ports.analytics_service_port import AnalyticsServicePort
 
-from core_orchestrator.domain.models.analysis_report import AnalysisActionEntry
-from pydantic import BaseModel, Field
+logger = logging.getLogger(__name__)
 
 class ReportResolutionPayload(BaseModel):
     reviewed: bool = True
@@ -17,7 +18,7 @@ class ReportResolutionPayload(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     )
 
-class AnalyticsService:
+class AnalyticsService(AnalyticsServicePort):
     def __init__(self, analytics_repository: AnalyticsRepository):
         self.analytics_repository = analytics_repository
 
@@ -126,3 +127,11 @@ class AnalyticsService:
 
     async def get_debug_reports(self) -> List[Dict[str, Any]]:
         return await self.analytics_repository.get_debug_reports(limit=5)
+
+    async def create_analysis_report(self, report_data: Dict[str, Any]) -> str:
+        """
+        Creates a new analysis report in the database.
+        """
+        source_ip = report_data.get("source_ip", "UNKNOWN")
+        logger.debug(f"Creating analysis report for {source_ip} in the database.")
+        return await self.analytics_repository.create_report(report_data)

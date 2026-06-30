@@ -8,6 +8,7 @@ coordinating with the persistence layer through the UserRepository port.
 import logging
 from typing import Optional
 
+from core_orchestrator.domain.ports.user_provider import UserProvider
 from core_orchestrator.domain.ports.user_repository import UserRepository
 from core_orchestrator.domain.models.user import UserInDB, UserCreate
 from core_orchestrator.infrastructure.security.password import verify_password
@@ -15,7 +16,7 @@ from core_orchestrator.infrastructure.security.password import verify_password
 logger = logging.getLogger(__name__)
 
 
-class UserService:
+class UserService(UserProvider):
     """Service for managing user business logic."""
 
     def __init__(self, user_repository: UserRepository):

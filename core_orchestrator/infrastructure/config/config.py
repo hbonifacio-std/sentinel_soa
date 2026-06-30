@@ -62,7 +62,6 @@ class OrchestratorSettings(BaseSettings):
     )
 
     jwt_secret_key: SecretStr = Field(
-        default=SecretStr("dev-secret-key-change-in-production"),
         validation_alias="JWT_SECRET_KEY",
         description="Secret key for JWT token signing and verification."
     )

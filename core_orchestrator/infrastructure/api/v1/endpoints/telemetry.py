@@ -1,5 +1,6 @@
 
 import asyncio
+import json
 import logging
 from typing import List, Annotated
 from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks
@@ -19,6 +20,8 @@ from core_orchestrator.application.services.telemetry_processing_service import 
 from core_orchestrator.infrastructure.security.dependencies import (
     verify_api_key_header,
 )
+# Corrected import path for redact_sensitive_data
+from core_orchestrator.infrastructure.security.sanitizer import redact_sensitive_data
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +38,10 @@ async def ingest_single_event(
     agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]
 ):
     
+    event_dict = event.model_dump()
+    sanitized_event_json = json.dumps(redact_sensitive_data(event_dict))
     logger.info(
-        f"Single event ingestion request received: {event.model_dump_json()}")
+        f"Single event ingestion request received: {sanitized_event_json}")
 
     
     background_tasks.add_task(telemetry_service.ingest_log_event, event)
@@ -80,8 +85,12 @@ async def ingest_batch_events(
             detail=f"The authenticated client '{client.client_id}' is not authorized to send source_id '{first_source_id}'."
         )
 
+    # Apply redaction to batch events before logging
+    sanitized_events_info = [json.dumps(redact_sensitive_data(event.model_dump())) for event in events]
     logger.info(
-        f"Batch ingestion request received with {len(events)} events from '{first_source_id}'.")
+        f"Batch ingestion request received with {len(events)} events from '{first_source_id}'. "
+        f"First event (sanitized): {sanitized_events_info[0] if sanitized_events_info else 'N/A'}"
+    )
 
     background_tasks.add_task(telemetry_service.ingest_bulk_logs, events)
     await telemetry_processing_service.add_multiple_logs_events(events)
@@ -110,7 +119,8 @@ async def flush_windows(
     async def process_key(key):
         nonlocal processed_windows
         decoded_key = key.decode('utf-8')
-        lock = agent_runner.redis_client.lock(f"lock:{decoded_key}", timeout=10)
+        # Use agent_runner.cache_service.lock instead of agent_runner.redis_client.lock
+        lock = agent_runner.cache_service.lock(f"lock:{decoded_key}", timeout=10)
         if await lock.acquire(blocking=False):
             try:
                 telemetry_window = await telemetry_processing_service.process_window(decoded_key)

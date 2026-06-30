@@ -140,3 +140,6 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
             if "_id" in report and isinstance(report["_id"], ObjectId):
                 report["_id"] = str(report["_id"])
         return reports
+
+    async def create_report(self, report: Dict[str, Any]) -> str:
+        return await self.insert(report)

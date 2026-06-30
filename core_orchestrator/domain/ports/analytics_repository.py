@@ -68,3 +68,10 @@ class AnalyticsRepository(ABC):
         Retrieves a few sample documents from the analysis_reports collection for debugging.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    async def create_report(self, report: Dict[str, Any]) -> str:
+        """
+        Creates a new analysis report.
+        """
+        raise NotImplementedError

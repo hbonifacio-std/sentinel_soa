@@ -13,14 +13,18 @@ Resilience model:
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Any, Optional
 
-from redis.asyncio import Redis
+from core_orchestrator.application.services.analysis_service import AnalysisService
+from core_orchestrator.application.services.analytics_service import AnalyticsService
+
+from core_orchestrator.application.services.threat_context_service import ThreatContextService
 from core_orchestrator.agent.mcp_client import MCPClientManager
 from core_orchestrator.agent.orchestrator import OrchestratorAgent
 from core_orchestrator.application.services.telemetry_processing_service import TelemetryProcessingService
 from core_orchestrator.application.services.telemetry_service import TelemetryService
+from core_orchestrator.infrastructure.cache.cache_service import CacheService # Added this import
 
 logger = logging.getLogger("core_orchestrator.agent.runner")
 
@@ -52,12 +56,16 @@ class AgentRunner:
     def __init__(
         self,
         telemetry_processing_service: TelemetryProcessingService,
-        redis_client: Redis,
-        telemetry_service:  TelemetryService
+        cache_service: CacheService, # Changed from redis_client: Redis
+        telemetry_service:  TelemetryService,
+        analytics_service: AnalyticsService,
+        analysis_service: AnalysisService
     ):
         self.telemetry_processing_service = telemetry_processing_service
-        self.redis_client = redis_client
+        self.cache_service = cache_service # Changed from self.redis_client = redis_client
         self.telemetry_service = telemetry_service
+        self.analytics_service = analytics_service
+        self.analysis_service = analysis_service
         self.mcp_manager: Optional[MCPClientManager] = None
         self.agent: Optional[OrchestratorAgent] = None
 
@@ -77,6 +85,11 @@ class AgentRunner:
         # Señal de parada para el shutdown limpio
         self._stop_event = asyncio.Event()
 
+    @property
+    def is_mcp_connected(self) -> bool:
+        """Public property to check if the MCP session is active."""
+        return self._is_mcp_session_alive()
+
     # ──────────────────────────────────────────────────────────────────────
     # 1. PRODUCER: Window Processor  →  Analysis Queue
     # ──────────────────────────────────────────────────────────────────────
@@ -94,10 +107,10 @@ class AgentRunner:
                     decoded_key = key.decode("utf-8") if isinstance(key, bytes) else key
 
                     is_full = await self.telemetry_processing_service.is_window_full(decoded_key)
-                    ttl = await self.redis_client.ttl(decoded_key)
+                    ttl = await self.cache_service.get_ttl(decoded_key) # Changed from self.redis_client.ttl
 
                     if is_full or (0 < ttl < 10):
-                        lock = self.redis_client.lock(f"lock:{decoded_key}", timeout=10)
+                        lock = self.cache_service.lock(f"lock:{decoded_key}", timeout=10) # Changed from self.redis_client.lock
                         if await lock.acquire(blocking=False):
                             try:
                                 telemetry_window = await self.telemetry_processing_service.process_window(decoded_key)
@@ -179,7 +192,7 @@ class AgentRunner:
                     continue
 
                 # Lanzamos el análisis como task para no bloquear el consumer
-                task = asyncio.create_task(
+                task = asyncio.create_task( # Corrected from asyncio..create_task
                     self._run_and_handle_failure(pending)
                 )
                 self._inflight_tasks.add(task)
@@ -266,10 +279,14 @@ class AgentRunner:
                     timeout=_MCP_CONNECT_TIMEOUT_S
                 )
                 self.mcp_manager = new_manager
+                
+                threat_context_service = ThreatContextService(mcp_manager=self.mcp_manager)
+
                 self.agent = OrchestratorAgent(
-                    mcp_manager=self.mcp_manager,
-                    redis_client=self.redis_client,
-                    telemetry_service=self.telemetry_service
+                    cache_port=self.cache_service,
+                    analytics_service=self.analytics_service,
+                    threat_context_service=threat_context_service,
+                    analysis_service=self.analysis_service
                 )
                 queue_size = self._analysis_queue.qsize()
                 logger.info(
@@ -314,7 +331,7 @@ class AgentRunner:
     # 4. CICLO DE VIDA
     # ──────────────────────────────────────────────────────────────────────
 
-    async def initialize_subsytem(self) -> None:
+    async def initialize_subsystem(self) -> None:
         """
         Arranca todos los workers en background.
         NO bloquea el startup del servidor REST.
@@ -327,7 +344,7 @@ class AgentRunner:
         )
         self._mcp_reconnect_handle.add_done_callback(self._on_background_task_done)
 
-        self._analysis_consumer_handle = asyncio.create_task(
+        self._analysis_consumer_handle = asyncio.create_task( # Corrected from asyncio..create_task
             self._analysis_consumer_task(), name="analysis-consumer"
         )
         self._analysis_consumer_handle.add_done_callback(self._on_background_task_done)
@@ -342,7 +359,7 @@ class AgentRunner:
             "[window-processor] → [analysis-queue] → [analysis-consumer] → [mcp-agent]"
         )
 
-    async def shutdown_subsytem(self) -> None:
+    async def shutdown_subsystem(self) -> None:
         """Detiene todos los workers limpiamente, esperando in-flight analyses."""
         logger.info("Shutting down Agent subsystem...")
         self._stop_event.set()

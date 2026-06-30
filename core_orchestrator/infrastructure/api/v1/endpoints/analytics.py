@@ -1,6 +1,6 @@
 import logging
-from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core_orchestrator.application.services.analytics_service import AnalyticsService
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service

@@ -1,3 +1,12 @@
+import re
+import uuid
+from collections import Counter
+from datetime import datetime, timezone
+from uuid import UUID
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
+
+from core_orchestrator.domain.models.log_event import LogEvent, InfrastructureContext
 """
 Aggregated Telemetry Model Module (TelemetryWindow).
 
@@ -10,16 +19,6 @@ Aggregated Telemetry Model Module (TelemetryWindow).
 Defines the data schema that consolidates the behavioral metrics
 of an IP address during a specific time interval with matrix correlation.
 """
-import re
-import uuid
-from collections import Counter
-from datetime import datetime, timezone
-from uuid import UUID
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
-
-from core_orchestrator.domain.models.log_event import LogEvent, InfrastructureContext
-
 
 class SuspiciousPayloadSample(BaseModel):
     """Representa una muestra de tráfico sospechoso detectado por el backend."""
@@ -227,10 +226,12 @@ def build_web_activity_window(raw_logs: List[LogEvent]) -> TelemetryWindow:
         status_str = status or "000"
         ua_str = user_agent or "Unknown-Agent"
 
-        if uri: uris_list.append(uri)
+        if uri:
+            uris_list.append(uri)
         method_counters[method_str] += 1
         status_counters[status_str] += 1
-        if user_agent: user_agents_set.add(user_agent)
+        if user_agent:
+            user_agents_set.add(user_agent)
 
         # 🔥 ALIMENTAR MATRIZ CORRELACIONADA
         matrix_key = (path_str, method_str, status_str)
@@ -295,7 +296,8 @@ def build_web_activity_window(raw_logs: List[LogEvent]) -> TelemetryWindow:
 
         elif path_traversal_pattern.search(path_str) or path_traversal_pattern.search(full_payload_text):
             weight = 90 if is_200 else 70
-            if query_params: extracted_critical_payloads.add(str(query_params)[:120])
+            if query_params:
+                extracted_critical_payloads.add(str(query_params)[:120])
 
             _register_sample(weight, SuspiciousPayloadSample(
                 uri=uri_with_context,
