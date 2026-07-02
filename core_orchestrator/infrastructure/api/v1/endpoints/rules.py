@@ -12,11 +12,16 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request, status, Depe
 from pydantic import BaseModel, Field
 
 # New imports for refactored architecture
-from core_orchestrator.application.services.rule_service import RuleService
-from core_orchestrator.domain.ports.rule_validator_port import RuleValidatorPort
-from core_orchestrator.infrastructure.api.dependencies import get_rule_service, get_rule_validator
+from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
+from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
+from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
+from core_orchestrator.infrastructure.api.dependencies import (
+    get_rule_service,
+    get_rule_validator,
+    get_rules_engine_service,
+)
 
-from core_orchestrator.domain.models.rules import (
+from core_orchestrator.domain.models.rule_engine.rules import (
     HeuristicRule,
     HeuristicRuleUpdate,
     RuleVersion,
@@ -24,7 +29,6 @@ from core_orchestrator.domain.models.rules import (
 )
 
 from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.application.services.rules_engine_service import get_rules_engine
 from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user
 
 logger = logging.getLogger("core_orchestrator.api.rules")
@@ -119,11 +123,13 @@ def _serialize_datetime(value: Any) -> Optional[datetime]:
 # ============================================================================
 
 @router.get("/health", response_model=RulesHealthResponse, tags=["Rules Health"])
-async def rules_health(_: None = Depends(get_analyst_user)):
+async def rules_health(
+    rules_engine_service: RulesEngineService = Depends(get_rules_engine_service),
+    _: None = Depends(get_analyst_user),
+):
     """Health check for rules engine (requires analyst/admin role)."""
-    engine = get_rules_engine()
-    health = await engine.health_check()
-    stats = await engine.get_rules_stats()
+    health = await rules_engine_service.health_check()
+    stats = await rules_engine_service.get_rules_stats()
     return RulesHealthResponse(
         status=health.status,
         cached=health.cached,

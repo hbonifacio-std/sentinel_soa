@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from core_orchestrator.services.database_mongo_service import db
-from core_orchestrator.application.services.user_service import UserService
-from core_orchestrator.domain.models.user import UserCreate
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
+from core_orchestrator.domain.models.auth.user import UserCreate
 
 logging.basicConfig(
     level=logging.INFO,

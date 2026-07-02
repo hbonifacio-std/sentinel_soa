@@ -1,7 +1,7 @@
 from typing import List, Optional
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.models.rules import RuleVersion
-from core_orchestrator.domain.ports.version_repository import VersionRepository
+from core_orchestrator.domain.models.rule_engine.rules import RuleVersion
+from core_orchestrator.domain.ports.shared.version_repository import VersionRepository
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
 class MongoVersionRepository(BaseRepository[RuleVersion], VersionRepository):

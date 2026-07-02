@@ -13,17 +13,17 @@ from fastapi.security import OAuth2PasswordBearer
 # Asegúrate de que la ruta de importación coincida con la estructura de tu proyecto.
 # Si tu archivo anterior se llama 'dependencies.py' en la raíz de 'core_orchestrator', sería así:
 
-from core_orchestrator.application.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.application.services.user_service import UserService
-from core_orchestrator.domain.models.telemetry_client import TelemetryClientAuthContext
-from core_orchestrator.domain.models.user import UserInDB
+from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
+from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
+from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.infrastructure.api.dependencies import get_telemetry_client_service, get_user_service
 from core_orchestrator.infrastructure.security.jwt_utils import get_token_jti, is_token_blacklisted, decode_token
 
 # Nota: Asegúrate de tener importados tus modelos/contextos o ajusta según tus archivos:
 # from core_orchestrator.domain.models import TelemetryClientAuthContext, UserInDB
 # from core_orchestrator.infrastructure.security.jwt import get_token_jti, is_token_blacklisted, decode_token
-# from core_orchestrator.application.services.user_service import UserService
+# from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 
 logger = logging.getLogger("core_orchestrator.security.dependencies")
 

@@ -2,10 +2,13 @@ import asyncio
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
+from pydantic import BaseModel
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.ports.analytics_repository import AnalyticsRepository
+from core_orchestrator.domain.ports.analysis.analytics_repository import AnalyticsRepository
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
+
+GROUP_STAGE = "$group"
 
 class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsRepository):
 
@@ -15,24 +18,24 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         self.db = db_manager.get_telemetry_db()
         super().__init__(self.db["analysis_reports"], dict)
         self.analysis_reports_collection = self.collection
-        self.logs_collection = self.db["logs"]
+        self.logs_collection = self.db["raw_telemetry"]
 
     async def get_summary_stats(self) -> Dict[str, Any]:
         threat_levels_pipeline = [
-            {"$group": {"_id": "$threat_level", "count": {"$sum": 1}}}
+            {GROUP_STAGE: {"_id": "$threat_level", "count": {"$sum": 1}}}
         ]
         kill_chain_phases_pipeline = [
             {"$unwind": "$kill_chain_phase"},
-            {"$group": {"_id": "$kill_chain_phase", "count": {"$sum": 1}}}
+            {GROUP_STAGE: {"_id": "$kill_chain_phase", "count": {"$sum": 1}}}
         ]
         top_attackers_pipeline = [
-            {"$group": {"_id": "$source_ip", "count": {"$sum": 1}}},
+            {GROUP_STAGE: {"_id": "$source_ip", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
             {"$limit": 10}
         ]
         mitre_tactics_pipeline = [
             {"$unwind": "$mitre_tactics"},
-            {"$group": {"_id": "$mitre_tactics", "count": {"$sum": 1}}}
+            {GROUP_STAGE: {"_id": "$mitre_tactics", "count": {"$sum": 1}}}
         ]
 
         threat_levels_cursor = await self.collection.aggregate(threat_levels_pipeline)
@@ -62,7 +65,10 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         }
 
     async def get_paginated_reports(self, query: dict, page: int, limit: int) -> dict:
-        return await self.find_paginated(query=query, page=page, limit=limit)
+        paginated = await self.find_paginated(query=query, page=page, limit=limit)
+        raw_results = paginated.get("results", [])
+        paginated["results"] = [self._normalize_document_id(report) for report in raw_results]
+        return paginated
 
     async def get_report_by_id(self, report_id: str) -> Optional[dict]:
         try:
@@ -72,8 +78,9 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         
         doc = await self.collection.find_one({"_id": obj_id})
         if doc and "_id" in doc:
+            doc = dict(doc)
             doc["id"] = str(doc.pop("_id"))
-        return doc
+        return dict(doc) if doc else None
 
     async def update_report(self, report_id: str, updates: dict) -> bool:
         try:
@@ -99,7 +106,8 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
 
     async def get_aggregated_stats(self, pipeline: list) -> List[dict]:
         cursor = await self.collection.aggregate(pipeline)
-        return await cursor.to_list(length=None)
+        raw_stats = await cursor.to_list(length=None)
+        return self._normalize_aggregation_stats([dict(group) for group in raw_stats])
 
     async def get_paginated_logs(self, query: Dict[str, Any], page: int, limit: int) -> Dict[str, Any]:
         filter_query = query or {}
@@ -134,12 +142,34 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
 
     async def get_debug_reports(self, limit: int) -> List[Dict[str, Any]]:
         reports_cursor = self.analysis_reports_collection.find({}).limit(limit)
-        reports = await reports_cursor.to_list(length=limit)
+        reports = [dict(report) for report in await reports_cursor.to_list(length=limit)]
 
         for report in reports:
             if "_id" in report and isinstance(report["_id"], ObjectId):
                 report["_id"] = str(report["_id"])
         return reports
 
-    async def create_report(self, report: Dict[str, Any]) -> str:
-        return await self.insert(report)
+    async def create_report(self, report: BaseModel) -> str:
+        result = await self.collection.insert_one(report.model_dump(by_alias=True))
+        return str(result.inserted_id)
+
+    @staticmethod
+    def _normalize_document_id(document: Dict[str, Any]) -> Dict[str, Any]:
+        doc_copy = dict(document)
+        if "_id" in doc_copy:
+            doc_copy["id"] = str(doc_copy.pop("_id"))
+        return doc_copy
+
+    def _normalize_aggregation_stats(self, stats: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        normalized_stats = [dict(group) for group in stats]
+        for stat_group in normalized_stats:
+            self._normalize_nested_ids(stat_group)
+        return normalized_stats
+
+    def _normalize_nested_ids(self, node: Dict[str, Any]) -> None:
+        for value in node.values():
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        self._normalize_document_id(item)
+

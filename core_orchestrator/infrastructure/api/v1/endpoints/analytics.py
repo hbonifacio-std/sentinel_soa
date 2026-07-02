@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from core_orchestrator.application.services.analytics_service import AnalyticsService
+from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
 from core_orchestrator.infrastructure.security.dependencies import get_analyst_user
 
@@ -16,15 +16,16 @@ router = APIRouter()
 
 @router.get("/analytics/logs_row_telemetry")
 async def get_logs_row_telemetry(
+    source_id: str | None = None,
     page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
-    analytics_service: AnalyticsService = Depends(get_analytics_service),
+    analytics_service: ReportTelemetryService = Depends(get_analytics_service),
     _: None = Depends(get_analyst_user)
 ):
     """
     Get paginated raw telemetry logs.
     """
-    paginated_data = await analytics_service.get_paginated_logs(page=page, limit=limit)
+    paginated_data = await analytics_service.get_paginated_logs(page=page, limit=limit,query={"source_id": source_id})
 
     info = paginated_data.get("info", {})
     total_records = info.get("total_records", 0)
@@ -45,7 +46,7 @@ async def get_logs_row_telemetry(
 @router.patch("/analytics/reports/{report_id}/review")
 async def mark_report_reviewed(
         report_id: str,
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     report = await analytics_service.mark_report_as_reviewed(report_id)
@@ -59,7 +60,7 @@ async def mark_report_reviewed(
 async def add_report_action(
         report_id: str,
         action_request: Dict[str, Any],
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     try:
@@ -74,7 +75,7 @@ async def add_report_action(
 @router.patch("/analytics/reports/{report_id}/resolve")
 async def mark_report_resolved(
         report_id: str,
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     report = await analytics_service.mark_report_as_resolved(report_id)
@@ -86,7 +87,7 @@ async def mark_report_resolved(
 
 @router.get("/analytics/source_ids")
 async def get_source_ids(
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     """
@@ -101,7 +102,7 @@ async def get_reports(
         source_id: str | None = None,
         page: int = Query(default=1, ge=1, description="Numero de pagina (minimo 1)"),
         limit: int = Query(default=10, ge=1, le=100, description="Cantidad de reportes por pagina (maximo 100)"),
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     """
@@ -130,7 +131,7 @@ async def get_reports(
 @router.get("/analytics/stats")
 async def get_stats(
         source_id: str = None,
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     """
@@ -142,7 +143,7 @@ async def get_stats(
 
 @router.get("/analytics/debug_reports")
 async def debug_reports(
-        analytics_service: AnalyticsService = Depends(get_analytics_service),
+        analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     """

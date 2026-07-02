@@ -6,8 +6,8 @@ from typing import Optional
 
 from redis.asyncio import Redis
 
-from core_orchestrator.domain.models.rules import RulesBundle
-from core_orchestrator.domain.ports.rules_bundle_cache import RulesBundleCachePort
+from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.domain.ports.rules.rules_bundle_cache import RulesBundleCachePort
 
 logger = logging.getLogger(__name__)
 

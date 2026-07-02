@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from core_orchestrator.agent.runner import AgentRunner
+from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.container import get_container
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
@@ -21,7 +21,7 @@ from core_orchestrator.infrastructure.api.v1.endpoints import (
     telemetry as agent_telemetry, users
 )
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
-from core_orchestrator.exceptions.exceptions import validation_exception_handler
+from core_orchestrator.infrastructure.handlers.exceptions import validation_exception_handler
 from core_orchestrator.infrastructure.api import dependencies as deps
 
 

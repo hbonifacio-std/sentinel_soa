@@ -10,6 +10,7 @@ const useMockData = String(import.meta.env.VITE_MOCK_DATA ?? 'false').toLowerCas
 interface UseLogsOptions {
   page?: number;
   limit?: number;
+  sourceId?: string;
 }
 
 const defaultPageInfo: PageInfo = {
@@ -48,7 +49,7 @@ export function useLogs(sourceId: string | null, options: UseLogsOptions = {}) {
     setError(null);
 
     try {
-      const query = new URLSearchParams({ page: String(page), limit: String(limit) }).toString();
+      const query = new URLSearchParams({ source_id: String(sourceId) , page: String(page), limit: String(limit) }).toString();
       const payload = await apiFetch<unknown>(`/api/v1/analytics/logs_row_telemetry?${query}`);
       const parsed = parseTelemetryPage(payload, page, limit);
       const filteredRows = parsed.results.filter((log) => !sourceId || log.source_id === sourceId);

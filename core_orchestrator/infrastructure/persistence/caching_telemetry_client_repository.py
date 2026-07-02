@@ -1,11 +1,10 @@
 # core_orchestrator/infrastructure/persistence/caching_telemetry_client_repository.py
-import json
 import logging
 from typing import List, Optional
 
-from core_orchestrator.domain.models.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
-from core_orchestrator.domain.ports.cache_port import CachePort
-from core_orchestrator.domain.ports.telemetry_client_repository import TelemetryClientRepository
+from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
+from core_orchestrator.domain.ports.shared.cache_port import CachePort
+from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
 
 logger = logging.getLogger(__name__)
 

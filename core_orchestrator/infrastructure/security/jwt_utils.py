@@ -12,12 +12,13 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from core_orchestrator.infrastructure.security.redis_secret_store import redis_secrets
 
 # 1. Importamos PyJWT
 import jwt
 
 from core_orchestrator.infrastructure.config.config import orchestrator_settings as settings
-from core_orchestrator.domain.models.user import TokenPayload
+from core_orchestrator.domain.models.auth.user import TokenPayload
 
 logger = logging.getLogger("core_orchestrator.security.jwt_utils")
 
@@ -144,19 +145,16 @@ def blacklist_token(jti: str, expires_at: datetime) -> None:
     """
     Add token to blacklist (revocation list).
     """
-    from core_orchestrator.infrastructure.security.redis_secret_store import redis_secrets
     redis_secrets.blacklist_token(jti, expires_at)
     logger.info(f"Token added to blacklist: {jti}")
 
 
-def is_token_blacklisted(jti: Optional[str]) -> bool:
+async def is_token_blacklisted(jti: Optional[str]) -> bool:
     """
     Check if token has been blacklisted.
     """
     if not jti:
         return False
-
-    from core_orchestrator.infrastructure.security.redis_secret_store import redis_secrets
-    return redis_secrets.is_token_blacklisted(jti)
+    return await redis_secrets.is_token_blacklisted(jti)
 
 

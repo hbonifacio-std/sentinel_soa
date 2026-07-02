@@ -10,22 +10,23 @@ from fastapi import Depends
 from core_orchestrator.infrastructure.api.container import Container, get_container
 
 # Import types for type hinting
-from core_orchestrator.agent.runner import AgentRunner
-from core_orchestrator.application.services.analytics_service import AnalyticsService
-from core_orchestrator.application.services.auth_service import AuthService
-from core_orchestrator.application.services.rule_service import RuleService
-from core_orchestrator.domain.ports.rule_validator_port import RuleValidatorPort
-from core_orchestrator.application.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.application.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.application.services.telemetry_service import TelemetryService
-from core_orchestrator.application.services.user_service import UserService
+from core_orchestrator.infrastructure.agent.runner import AgentRunner
+from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
+from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
+from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
+from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
+from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
+from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
+from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
+from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 
 
 def get_db_manager(container: Container = Depends(get_container)) -> DatabaseManager:
     return container.db_manager
 
-def get_analytics_service(container: Container = Depends(get_container)) -> AnalyticsService:
+def get_analytics_service(container: Container = Depends(get_container)) -> ReportTelemetryService:
     return container.analytics_service
 
 def get_auth_service(container: Container = Depends(get_container)) -> AuthService:
@@ -33,6 +34,10 @@ def get_auth_service(container: Container = Depends(get_container)) -> AuthServi
 
 def get_rule_service(container: Container = Depends(get_container)) -> RuleService:
     return container.rule_service
+
+
+def get_rules_engine_service(container: Container = Depends(get_container)) -> RulesEngineService:
+    return container.rules_engine_service
 
 def get_rule_validator(container: Container = Depends(get_container)) -> RuleValidatorPort:
     return container.rule_validator

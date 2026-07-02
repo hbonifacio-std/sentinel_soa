@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from redis.asyncio.lock import Lock
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.models.rules import RulesBundle
+from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import logging
 from redis.asyncio import Redis
 
-from core_orchestrator.domain.ports.token_blacklist_repository import TokenBlacklistRepository
+from core_orchestrator.domain.ports.auth.token_blacklist_repository import TokenBlacklistRepository
 
 logger = logging.getLogger(__name__)
 

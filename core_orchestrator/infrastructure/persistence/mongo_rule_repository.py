@@ -2,8 +2,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.models.rules import HeuristicRule, RuleVersion
-from core_orchestrator.domain.ports.rule_repository import RuleRepository as RuleRepositoryPort
+from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion
+from core_orchestrator.domain.ports.rules.rule_repository import RuleRepository as RuleRepositoryPort
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
 

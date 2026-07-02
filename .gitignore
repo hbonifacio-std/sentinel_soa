@@ -26,3 +26,7 @@ dist/
 .DS_Store
 Thumbs.db
 /frontend/node_modules/
+/.github/copilot-instructions.md
+/.github/project-context.json
+/.github/repomix-output.json
+/.repomixignore

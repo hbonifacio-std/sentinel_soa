@@ -7,8 +7,8 @@ from typing import List, Optional
 from uuid import uuid4
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.ports.user_repository import UserRepository
-from core_orchestrator.domain.models.user import UserInDB, UserCreate
+from core_orchestrator.domain.ports.auth.user_repository import UserRepository
+from core_orchestrator.domain.models.auth.user import UserInDB, UserCreate
 from core_orchestrator.infrastructure.security.password import hash_password
 
 logger = logging.getLogger(__name__)

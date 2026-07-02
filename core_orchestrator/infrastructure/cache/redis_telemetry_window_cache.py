@@ -4,7 +4,7 @@ from typing import List, Any, Optional
 
 from redis.asyncio import Redis
 
-from core_orchestrator.domain.ports.telemetry_window_cache import TelemetryWindowCachePort
+from core_orchestrator.domain.ports.telemetry.telemetry_window_cache import TelemetryWindowCachePort
 
 logger = logging.getLogger(__name__)
 

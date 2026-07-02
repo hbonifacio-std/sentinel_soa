@@ -95,7 +95,7 @@ class ThreatAssessment(BaseModel):
     )
     reasoning_summary: str = Field(
         ...,
-        max_length=700,
+        max_length=5000,
         description="Synthesis of the AI agent's heuristic reasoning in a maximum of 100 words."
     )
     recommendation: str = Field(

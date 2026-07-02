@@ -13,27 +13,29 @@ import asyncio
 import json
 import logging
 import sys
-import types
 from pathlib import Path
 from typing import Optional, cast, Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core_orchestrator.domain.models.user import UserCreate
-from core_orchestrator.domain.models.telemetry_client import TelemetryClientCreate, TelemetryBootstrapSummary
+from core_orchestrator.domain.models.auth.user import UserCreate
+from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientCreate, TelemetryBootstrapSummary
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
-from core_orchestrator.application.services.user_service import UserService
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import \
     MongoTelemetryClientRepository
-from core_orchestrator.application.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.infrastructure.cache.cache_service import CacheService
-from core_orchestrator.application.services.rules_engine_service import init_rules_engine
+from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
+from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
+from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
+from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
-from core_orchestrator.application.services.rule_service import RuleService
+from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
+from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
+from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
 
 logger = logging.getLogger("bootstrap_local_data")
 DEFAULT_RULES_SEED = ROOT / "data" / "mongodb" / "heuristic_rules.json"
@@ -44,17 +46,6 @@ DEFAULT_TELEMETRY_CLIENTS_SEED = ROOT / "data" / "telemetry_clients_seed.json"
 def _load_seed(path: Path) -> Any:
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
-
-
-# === PARCHE EN TIEMPO DE EJECUCIÓN PARA EL CACHE_SERVICE ===
-async def _patched_cache_client(self, client: Any, ttl_seconds: int = 86400) -> bool:
-    if not self.redis:
-        return False
-    key = f"client:{client.client_id}"
-    payload = client.model_dump_json() if hasattr(client, "model_dump_json") else json.dumps(client.__dict__,
-                                                                                             default=str)
-    await self.redis.set(key, payload, ex=ttl_seconds)
-    return True
 
 
 async def seed_users(user_service: UserService, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
@@ -114,34 +105,35 @@ async def bootstrap(
     result: Optional[TelemetryBootstrapSummary] = None
 
     try:
+        if db_manager.redis_client is None:
+            raise RuntimeError("Redis client is not connected")
+
         user_repo = MongoUserRepository(db_manager)
         user_service = UserService(user_repository=user_repo)
 
-        cache_service = CacheService(db_manager=db_manager)
+        redis_cache = RedisCache(redis_client=db_manager.redis_client)
 
-        # === INYECCIÓN DINÁMICA DEL PARCHE DE CACHÉ ===
-        cache_service.cache_client = types.MethodType(_patched_cache_client, cache_service)
-
-        telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
+        mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
+        telemetry_client_repo = CachingTelemetryClientRepository(
+            primary_repository=mongo_telemetry_client_repo,
+            cache=redis_cache,
+        )
         telemetry_client_service = TelemetryClientService(
             telemetry_client_repository=telemetry_client_repo,
-            cache_service=cache_service
         )
-
-        # === PARCHE PARA EVITAR ERRORES EN WARM_CACHE ===
-        async def mock_warm_cache():
-            return 0
-
-        telemetry_client_service.warm_cache = mock_warm_cache
 
         rule_repo = MongoRuleRepository(db_manager)
         audit_repo = MongoAuditRepository(db_manager)
-        rule_service = RuleService(rule_repository=rule_repo, audit_repository=audit_repo,
-                                   redis_rules_client=db_manager.redis_client)
+        rule_service = RuleService(
+            rule_repository=rule_repo,
+            audit_repository=audit_repo,
+            rules_bundle_cache=RedisRulesBundleCache(redis_client=db_manager.redis_client),
+            rule_validator=DefaultRuleValidatorService(),
+        )
 
         # Corregido: Llamar a los índices a través de los repositorios
         await user_repo.ensure_indexes()
-        await telemetry_client_repo.ensure_indexes()
+        await mongo_telemetry_client_repo.ensure_indexes()
 
         users_summary = await seed_users(user_service, users_seed, overwrite_existing)
         clients_summary = await seed_telemetry_clients(telemetry_client_service, clients_seed, overwrite_existing)
@@ -159,11 +151,9 @@ async def bootstrap(
             existing_rules = 0
             logger.info("Existing heuristic rules cleared before reseed.")
 
-        rules_engine = init_rules_engine(rules_service=rule_service)
+        rules_engine = RulesEngineService(rules_service=rule_service)
         await rules_engine.initialize()
         total_rules = await rules_collection.count_documents({})
-
-        cache_warmed_clients = await telemetry_client_service.warm_cache()
 
         result = TelemetryBootstrapSummary(
             users_created=users_summary.users_created,
@@ -173,7 +163,7 @@ async def bootstrap(
             clients_skipped=clients_summary.clients_skipped,
             clients_updated=clients_summary.clients_updated,
             rules_seeded=existing_rules == 0 and total_rules > 0,
-            cache_warmed_clients=cache_warmed_clients,
+            cache_warmed_clients=0,
         )
 
         logger.info("Bootstrap completed successfully.")

@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 from redis.asyncio import Redis
 
-from core_orchestrator.domain.ports.cache_port import CachePort
+from core_orchestrator.domain.ports.shared.cache_port import CachePort
 
 logger = logging.getLogger(__name__)
 

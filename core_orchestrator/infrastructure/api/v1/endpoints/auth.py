@@ -9,9 +9,9 @@ import logging
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 
-from core_orchestrator.application.services.auth_service import AuthService
+from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
 from core_orchestrator.infrastructure.api.dependencies import get_auth_service
-from core_orchestrator.domain.models.user import TokenResponse, UserResponse
+from core_orchestrator.domain.models.auth.user import TokenResponse, UserResponse
 from core_orchestrator.infrastructure.security.dependencies import get_current_user
 
 logger = logging.getLogger("core_orchestrator.api.auth")

@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.ports.audit_repository import AuditRepository
+from core_orchestrator.domain.ports.rules.audit_repository import AuditRepository
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
 # Using a generic dictionary for the model since audit logs can be flexible

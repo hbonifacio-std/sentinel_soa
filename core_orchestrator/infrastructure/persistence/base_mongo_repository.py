@@ -1,10 +1,9 @@
 from typing import TypeVar, Generic, List, Optional, Dict, Any, cast
-from pydantic import BaseModel
 from pymongo import InsertOne
 from pymongo.asynchronous.collection import AsyncCollection
 import asyncio
 
-ModelType = TypeVar("ModelType", bound=BaseModel)
+ModelType = TypeVar("ModelType")
 
 
 class BaseRepository(Generic[ModelType]):
@@ -12,7 +11,7 @@ class BaseRepository(Generic[ModelType]):
         self.collection = collection
         self.model = model
 
-    async def insert(self, model_instance: BaseModel, alternative_collection: AsyncCollection = None) -> str:
+    async def insert(self, model_instance: Any, alternative_collection: Optional[AsyncCollection] = None) -> str:
         coll = alternative_collection or self.collection
         doc = model_instance.model_dump(mode="json")
         result = await coll.insert_one(doc)
@@ -32,7 +31,7 @@ class BaseRepository(Generic[ModelType]):
 
 
     async def find_paginated(
-            self, query: Optional[Dict[str, Any]] = None, page: int = 1, limit: int = 10, sort_by: str = None, descending: bool = True
+            self, query: Optional[Dict[str, Any]] = None, page: int = 1, limit: int = 10, sort_by: Optional[str] = None, descending: bool = True
     ) -> Dict[str, Any]:
         """
         Devuelve los resultados usando la estructura exacta de la interfaz frontend:
@@ -47,6 +46,7 @@ class BaseRepository(Generic[ModelType]):
 
         should_paginate = page is not None and limit is not None
         if should_paginate:
+            assert limit is not None
             skip = (page - 1) * limit
             cursor = cursor.skip(skip).limit(limit)
 
@@ -121,7 +121,7 @@ class BaseRepository(Generic[ModelType]):
         return await self.update_partial(query, soft_updates)
 
 
-    async def bulk_insert(self, model_instances: List[BaseModel]) -> int:
+    async def bulk_insert(self, model_instances: List[Any]) -> int:
         """Inserta cientos o miles de documentos en un solo viaje de red (Muy eficiente)."""
         if not model_instances:
             return 0

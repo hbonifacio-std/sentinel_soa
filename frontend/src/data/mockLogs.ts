@@ -3,7 +3,7 @@ import type { LogEntry } from '@/types/logEntry';
 export const mockLogs: LogEntry[] = [
   {
     id: 'mock-1',
-    source_id: 'sensor-alpha',
+    source_id: 'victim-app-01',
     source_ip: '10.10.20.5',
     http_method: 'POST',
     request_uri: '/admin/login',
