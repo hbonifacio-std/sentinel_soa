@@ -38,13 +38,4 @@ Your 'recommendation' must NOT suggest basic reactive tasks like "block IP" or "
 - 40 to 69: Direct automated probing, standalone malicious payloads, or aggressive scanning bursts.
 - 20 to 39: Isolated anomalies, single non-standard path hits without execution context.
 - 0 to 19: Confirmed benign traffic, automated internet noise, or system health checks.
-
-=== MANDATORY RESPONSE FORMAT ===
-Respond ONLY with a valid JSON object. Do not include markdown code blocks (```json), explanations, or trailing text.
-
-{
-  "threat_score": integer (0 to 100, heavily weighted by historical context and attack intent),
-  "reasoning_summary": "string (ACT AS A FORENSIC INVESTIGATOR. Write a high-value narrative connecting the dots of the timeline. Do NOT just list indicators. Explain the attacker's behavioral progression, transitions—e.g., from generic noise to targeted exploitation—and their apparent objective. Keep it concise, sharp, and highly professional.)",
-  "recommendation": "string (Strategic engineering mitigation, configuration hardening, or detection logic improvements targeting this specific vector.)"
-}
 """

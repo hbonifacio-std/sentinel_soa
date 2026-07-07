@@ -6,6 +6,7 @@ and mounts the HTTP routes exposed to the corporate network.
 """
 import logging
 from contextlib import asynccontextmanager
+from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, status, Request, Depends
 from fastapi.exceptions import RequestValidationError
@@ -17,7 +18,7 @@ from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.container import get_container
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
-    analytics, auth, clients, rules as refactored_rules_router,
+    analytics, auth, clients, forensic, rules as refactored_rules_router,
     telemetry as agent_telemetry, users
 )
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
@@ -64,7 +65,7 @@ app = FastAPI(
 )
 
 @app.middleware("http")
-async def add_limiter_to_state(request: Request, call_next):
+async def add_limiter_to_state(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
     """
     Middleware to add the rate limiter to the request state,
     making it available to the exception handler.
@@ -117,6 +118,11 @@ app.include_router(
     analytics.router,
     prefix="/api/v1",
     tags=["Analytics"]
+)
+app.include_router(
+    forensic.router,
+    prefix="/api/v1/forensic",
+    tags=["Forensic"],
 )
 app.include_router(
     refactored_rules_router.router, # ✨ Using the new refactored router

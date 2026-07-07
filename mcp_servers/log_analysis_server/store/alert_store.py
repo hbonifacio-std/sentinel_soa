@@ -6,8 +6,7 @@ to retain early processed alerts and allow fast history queries.
 
 import threading
 from collections import defaultdict
-from typing import Dict, List, Optional
-from uuid import UUID
+from typing import Dict, List
 
 from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessment
 

@@ -35,6 +35,8 @@ from core_orchestrator.infrastructure.persistence.mongo_rule_repository import M
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
+from core_orchestrator.infrastructure.security.signature_verifier import HmacSignatureVerifier
+from core_orchestrator.infrastructure.security.password_hasher import BcryptPasswordHasher
 from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
 
 logger = logging.getLogger("bootstrap_local_data")
@@ -46,6 +48,36 @@ DEFAULT_TELEMETRY_CLIENTS_SEED = ROOT / "data" / "telemetry_clients_seed.json"
 def _load_seed(path: Path) -> Any:
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+async def create_forensic_reader_user(db_manager: DatabaseManager) -> None:
+    """Ensures the forensic_reader user exists with read-only permissions on the telemetry DB."""
+    admin_db = db_manager.mongo_client.get_database("admin")
+    forensic_user = "forensic_reader"
+    # Using a fixed password for local bootstrap. In production, this would be an env var.
+    forensic_password = "supersecretforensicpassword" 
+
+    try:
+        # Check if user already exists (this method might vary based on pymongo version)
+        # A more robust check might query system.users collection
+        user_info = await admin_db.command("usersInfo", forensic_user)
+        if user_info and user_info.get("users"):
+            logger.info("MongoDB user '%s' already exists.", forensic_user)
+            return
+        
+        await admin_db.command({
+            "createUser": forensic_user,
+            "pwd": forensic_password,
+            "roles": [{ "role": "read", "db": "telemetry" }]
+        })
+        logger.info("MongoDB user '%s' created successfully with read-only access to 'telemetry' DB.", forensic_user)
+    except Exception as e:
+        logger.error("Failed to create MongoDB user '%s': %s", forensic_user, e)
+        # If user already exists, a command error might be raised, handle it.
+        if "already exists" in str(e):
+            logger.info("MongoDB user '%s' creation skipped as it already exists.", forensic_user)
+        else:
+            raise
 
 
 async def seed_users(user_service: UserService, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
@@ -102,6 +134,8 @@ async def bootstrap(
     db_manager = DatabaseManager()
     db_manager.connect()
 
+    await create_forensic_reader_user(db_manager)
+
     result: Optional[TelemetryBootstrapSummary] = None
 
     try:
@@ -109,7 +143,8 @@ async def bootstrap(
             raise RuntimeError("Redis client is not connected")
 
         user_repo = MongoUserRepository(db_manager)
-        user_service = UserService(user_repository=user_repo)
+        password_hasher = BcryptPasswordHasher()
+        user_service = UserService(user_repository=user_repo, password_hasher=password_hasher)
 
         redis_cache = RedisCache(redis_client=db_manager.redis_client)
 
@@ -118,8 +153,10 @@ async def bootstrap(
             primary_repository=mongo_telemetry_client_repo,
             cache=redis_cache,
         )
+        signature_verifier = HmacSignatureVerifier()
         telemetry_client_service = TelemetryClientService(
             telemetry_client_repository=telemetry_client_repo,
+            signature_verifier=signature_verifier,
         )
 
         rule_repo = MongoRuleRepository(db_manager)

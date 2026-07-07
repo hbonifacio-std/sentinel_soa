@@ -6,7 +6,7 @@ on the LLM, providing a confidence baseline for threat scoring.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
 from mcp_servers.log_analysis_server.models.rules_bundle import RulesBundle
 from shared.rules_seed import build_seed_bundle_payload

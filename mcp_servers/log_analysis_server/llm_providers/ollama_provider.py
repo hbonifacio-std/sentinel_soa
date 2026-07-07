@@ -11,6 +11,7 @@ import re
 from typing import Any, Dict, Optional, List
 
 import httpx
+from httpx import Timeout
 from pydantic import ValidationError
 
 from mcp_servers.log_analysis_server.llm_providers.base import (
@@ -38,22 +39,24 @@ class OllamaProvider(LLMProviderInterface):
     _PROVIDER_NAME = "ollama"
     _TIMEOUT_SECONDS = 900  # 15 minutes by default
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, *, model_name: str, base_url: str, timeout: Optional[int] = None):
         """
         Initialize the Ollama provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Must contain:
-                - ollama_base_url: Ollama base URL (default: http://localhost:11434)
-                - ollama_model: Model name (default: mistral)
-                - ollama_timeout_seconds: Request timeout (default: 300)
+            model_name: The specific Ollama model to use (e.g., 'mistral').
+            base_url: The base URL of the Ollama server.
+            timeout: Optional request timeout in seconds.
         """
-        super().__init__(config)
-        self._base_url = config.get("ollama_base_url", "http://localhost:11434").rstrip("/")
-        self._model_name = config.get("ollama_model", "mistral")
-        self._timeout = config.get("ollama_timeout_seconds", self._TIMEOUT_SECONDS)
+        super().__init__()
+        self._base_url = (base_url or "http://localhost:11434").rstrip("/")
+        self._model_name = model_name or "mistral"
+        self._timeout = timeout or self._TIMEOUT_SECONDS
         self._client = None
         
+        if not self._model_name:
+            raise LLMException("Ollama model name is required.")
+
         logger.info(f"OllamaProvider initialized for model: {self._model_name} at {self._base_url}")
 
     def _get_client(self) -> httpx.AsyncClient:
@@ -63,13 +66,14 @@ class OllamaProvider(LLMProviderInterface):
         Returns:
             httpx.AsyncClient: Client with configured timeout
         """
-        if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
-        return self._client
+        structured_timeout = Timeout(
+            timeout=float(self._timeout),
+            read=float(self._timeout),
+            connect=10.0
+        )
 
-    def build_analysis_prompt(self, telemetry: Any, history: List[Any]) -> str:
-        """Generates the ultra-reduced JSON payload leveraging the pre-loaded Modelfile."""
-        return AnalysisPromptBuilder.build_optimized_json_prompt(telemetry, history)
+        self._client = httpx.AsyncClient(timeout=structured_timeout)
+        return self._client
 
     @staticmethod
     def _extract_json_object(raw_text: str) -> Dict[str, Any]:

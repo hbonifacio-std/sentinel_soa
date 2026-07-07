@@ -208,7 +208,7 @@ class AnalysisPromptBuilder:
 
     @staticmethod
     def build_optimized_json_prompt(telemetry: Any, history: List[Any]) -> str:
-        """OPTIMIZED and minimalist Prompt (For Ollama with Modelfile)."""
+        """OPTIMIZED and minimalist Prompt (For Ollama with ModelfileForensic)."""
         data = AnalysisPromptBuilder._extract_telemetry_data(telemetry, history)
 
         ollama_payload = {

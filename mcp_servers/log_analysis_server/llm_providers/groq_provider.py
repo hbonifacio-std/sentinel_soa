@@ -5,7 +5,6 @@ Implements LLMProviderInterface for GROQ, encapsulating all GROQ
 API-specific logic and keeping it agnostic from the rest of the system.
 """
 
-import asyncio
 import json
 import logging
 from typing import Any, Dict, Optional, List
@@ -33,25 +32,26 @@ class GroqProvider(LLMProviderInterface):
 
     _PROVIDER_NAME = "groq"
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, *, model_name: str, api_key: str, max_output_tokens: Optional[int] = None, timeout: Optional[int] = None, max_input_tokens: Optional[int] = None):
         """
         Initialize the GROQ provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Must contain:
-                - groq_api_key: Authentication key for GROQ
-                - groq_model: Model name (default: mixtral-8x7b-32768)
-                - groq_max_output_tokens: Maximum output tokens (default: 4096)
-                - groq_timeout_seconds: Request timeout (default: 60)
+            model_name: The specific GROQ model to use (e.g., 'mixtral-8x7b-32768').
+            api_key: The API key for GROQ authentication.
+            max_output_tokens: Optional maximum number of tokens for the response.
+            timeout: Optional request timeout in seconds.
+            max_input_tokens: Optional maximum number of tokens for the input prompt.
         """
-        super().__init__(config)
-        self._api_key = config.get("groq_api_key")
-        self._model_name = config.get("groq_model", "mixtral-8x7b-32768")
-        self._max_tokens = config.get("groq_max_output_tokens", 4096)
-        self._timeout = config.get("groq_timeout_seconds", 60)
+        super().__init__()
+        self._api_key = api_key
+        self._model_name = model_name or "mixtral-8x7b-32768"
+        self._max_tokens = max_output_tokens or 4096
+        self._timeout = timeout or 60
+        self._max_input_tokens = max_input_tokens or 8192
         
         if not self._api_key:
-            raise LLMException("groq_api_key is required in the configuration")
+            raise LLMException("GROQ API key is required.")
         
         # Initialize GROQ async client
         self._client = AsyncGroq(
@@ -69,6 +69,14 @@ class GroqProvider(LLMProviderInterface):
         Invoke GROQ with the provided prompt.
         """
         try:
+            # Rough token estimation: 1 token ~= 4 characters
+            estimated_tokens = len(prompt) / 4
+            if self._max_input_tokens and estimated_tokens > self._max_input_tokens:
+                raise LLMException(
+                    f"Input prompt exceeds max input tokens ({self._max_input_tokens}). "
+                    f"Estimated tokens: {int(estimated_tokens)}"
+                )
+
             current_max_tokens = max_tokens or self._max_tokens
             if current_max_tokens < 2048:
                 current_max_tokens = 4096

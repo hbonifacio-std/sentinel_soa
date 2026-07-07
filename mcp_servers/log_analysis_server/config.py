@@ -6,9 +6,17 @@ This module does not load its own .env file, ensuring that configuration
 is centralized in the orchestrator.
 """
 
-from typing import Optional
-from pydantic import Field, SecretStr, field_validator
+from typing import Optional, Dict
+from pydantic import Field, SecretStr, field_validator, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class ModelDefinition(BaseModel):
+    """Defines the structure for a single LLM model in the catalog."""
+    provider: str
+    model_name: str
+    max_output_tokens: Optional[int] = None
+    max_input_tokens: Optional[int] = None
 
 
 class LogAnalysisServerSettings(BaseSettings):
@@ -18,15 +26,28 @@ class LogAnalysisServerSettings(BaseSettings):
     starting it as a subprocess.
     """
 
-    # ========== LLM PROVIDER CONFIGURATION ==========
+    # ========== MODEL CATALOG CONFIGURATION ==========
     
-    llm_provider: str = Field(
-        default="gemini",
-        validation_alias="LLM_PROVIDER",
-        description="LLM provider to use, inherited from the orchestrator."
+    default_model_id: str = Field(
+        default="qwen2_5_coder7",
+        validation_alias="DEFAULT_MODEL_ID",
+        description="ID of the model from the catalog to use by default."
     )
-    
-    # ========== GEMINI CONFIGURATION (Default) ==========
+
+    available_models: Dict[str, ModelDefinition] = Field(
+        default={
+            "qwen2_5_coder7": ModelDefinition(provider="ollama", model_name="qwen2.5-coder:7b"),
+            "sentinel-analyst": ModelDefinition(provider="ollama", model_name="sentinel-analyst"),
+            "sentinel-translator-mongodb": ModelDefinition(provider="ollama", model_name="sentinel-translator-mongodb", max_output_tokens=8192),
+            "gemini-3.5-flash": ModelDefinition(provider="gemini", model_name="gemini-3.5-flash", max_output_tokens=8192),
+            "gemini-3.2-flash": ModelDefinition(provider="gemini", model_name="gemini-3.2-flash",max_output_tokens=8192),
+            "openai-gpt3_5-turbo": ModelDefinition(provider="openai", model_name="gpt-3.5-turbo-instruct-0914", max_output_tokens=8192),
+            "groq-llama-3_3-70b-versatile": ModelDefinition(provider="groq", model_name="llama-3.3-70b-versatile",max_output_tokens=12000, max_input_tokens=8192)
+        },
+        description="Catalog of available LLM models for analysis."
+    )
+
+    # ========== LLM PROVIDER CONFIGURATION ==========
     
     # Using SecretStr prevents the API key from being accidentally exposed in logs
     gemini_api_key: Optional[SecretStr] = Field(
@@ -34,11 +55,10 @@ class LogAnalysisServerSettings(BaseSettings):
         validation_alias="GEMINI_API_KEY",
         description="Secret key for the Google Gemini API, inherited."
     )
-    
-    gemini_model: str = Field(
+    gemini_model_name: str = Field(
         default="gemini-3.5-flash",
         validation_alias="GEMINI_MODEL",
-        description="Exact version of the Gemini model to invoke for heuristics."
+        description="Name of the Gemini model to use for analysis."
     )
     
     gemini_max_output_tokens: int = Field(
@@ -56,12 +76,6 @@ class LogAnalysisServerSettings(BaseSettings):
         description="Base URL of the Ollama server, inherited."
     )
     
-    ollama_model: str = Field(
-        default="mistral",
-        validation_alias="OLLAMA_MODEL",
-        description="Name of the Ollama model to use (e.g., mistral, llama2, neural-chat)"
-    )
-    
     ollama_timeout_seconds: int = Field(
         default=900,
         validation_alias="OLLAMA_TIMEOUT_SECONDS",
@@ -75,12 +89,6 @@ class LogAnalysisServerSettings(BaseSettings):
         default=None,
         validation_alias="OPENAI_API_KEY",
         description="Secret key for the OpenAI API, inherited."
-    )
-    
-    openai_model: str = Field(
-        default="gpt-4o-mini",
-        validation_alias="OPENAI_MODEL",
-        description="Name of the OpenAI model to use."
     )
     
     openai_max_output_tokens: int = Field(
@@ -105,12 +113,6 @@ class LogAnalysisServerSettings(BaseSettings):
         description="Secret key for the GROQ API, inherited."
     )
     
-    groq_model: str = Field(
-        default="mixtral-8x7b-32768",
-        validation_alias="GROQ_MODEL",
-        description="Name of the GROQ model to use."
-    )
-    
     groq_max_output_tokens: int = Field(
         default=4096,
         validation_alias="GROQ_MAX_OUTPUT_TOKENS",
@@ -131,16 +133,6 @@ class LogAnalysisServerSettings(BaseSettings):
         # This is crucial so it inherits configuration from the parent process.
         extra="ignore"
     )
-    
-    @field_validator('llm_provider')
-    @classmethod
-    def validate_provider(cls, v: str) -> str:
-        """Validates that the provider is one of the supported ones."""
-        valid_providers = ['gemini', 'ollama', 'openai', 'groq']
-        v_lower = (v or '').lower().strip() or 'ollama'
-        if v_lower not in valid_providers:
-            raise ValueError(f"LLM_PROVIDER must be one of {valid_providers}, got: {v}")
-        return v_lower
 
     @field_validator('ollama_base_url')
     @classmethod
@@ -157,23 +149,18 @@ class LogAnalysisServerSettings(BaseSettings):
         Returns:
             dict: Provider-specific configuration
         """
-        config = {
+        return {
             'gemini_api_key': self.gemini_api_key.get_secret_value() if self.gemini_api_key else None,
-            'gemini_model': self.gemini_model,
             'gemini_max_output_tokens': self.gemini_max_output_tokens,
             'ollama_base_url': self.ollama_base_url,
-            'ollama_model': self.ollama_model,
             'ollama_timeout_seconds': self.ollama_timeout_seconds,
             'openai_api_key': self.openai_api_key.get_secret_value() if self.openai_api_key else None,
-            'openai_model': self.openai_model,
             'openai_max_output_tokens': self.openai_max_output_tokens,
             'openai_timeout_seconds': self.openai_timeout_seconds,
             'groq_api_key': self.groq_api_key.get_secret_value() if self.groq_api_key else None,
-            'groq_model': self.groq_model,
             'groq_max_output_tokens': self.groq_max_output_tokens,
             'groq_timeout_seconds': self.groq_timeout_seconds,
         }
-        return config
 
 
 # Unique singleton instance exposed for centralized resource access on the server

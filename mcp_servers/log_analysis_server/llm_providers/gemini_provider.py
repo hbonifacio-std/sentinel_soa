@@ -9,7 +9,7 @@ import asyncio
 import copy
 import json
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional, List
 
 import google.generativeai as genai
 from google.generativeai.types import generation_types
@@ -35,23 +35,22 @@ class GeminiProvider(LLMProviderInterface):
 
     _PROVIDER_NAME = "gemini"
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, *, model_name: str, api_key: str, max_output_tokens: Optional[int] = None):
         """
         Initialize the Gemini provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Must contain:
-                - gemini_api_key: Authentication key for Google Gemini
-                - gemini_model: Model name (default: gemini-1.5-flash)
-                - gemini_max_output_tokens: Maximum output tokens (default: 1024)
+            model_name: The specific Gemini model to use (e.g., 'gemini-1.5-flash').
+            api_key: The API key for Google Gemini authentication.
+            max_output_tokens: Optional maximum number of tokens for the response.
         """
-        super().__init__(config)
-        self._api_key = config.get("gemini_api_key")
-        self._model_name = config.get("gemini_model", "gemini-3.5-flash")
-        self._max_tokens = config.get("gemini_max_output_tokens", 4160)
+        super().__init__()
+        self._api_key = api_key
+        self._model_name = model_name
+        self._max_tokens = max_output_tokens or 4160
         
         if not self._api_key:
-            raise LLMException("gemini_api_key is required in the configuration")
+            raise LLMException("Gemini API key is required.")
         
         # Configure the Gemini API lazily
         self._model = None

@@ -17,6 +17,7 @@ from core_orchestrator.application.modules.telemetry.services.telemetry_service 
 from core_orchestrator.application.modules.analysis_reports.services.threat_context_service import ThreatContextService
 from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
+from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
 
 # Repositories and their Implementations
 from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsRepository
@@ -27,9 +28,11 @@ from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repos
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
 from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepository
 from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
+from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
 
 # Core Infrastructure
 from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
 from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
@@ -69,6 +72,7 @@ class Container:
         self.token_blacklist_repository = None
         self.user_repository = None
         self.rules_bundle_cache = None
+        self.forensic_repository = None
         self.rule_validator = None
         self.password_hasher = None
         self.token_service = None
@@ -82,6 +86,8 @@ class Container:
         self.telemetry_service = None
         self.telemetry_client_service = None
         self.telemetry_processing_service = None
+        self.forensic_service = None
+        self.forensic_intelligence_adapter = None
         self.agent_runner = None
 
     async def startup(self):
@@ -112,6 +118,7 @@ class Container:
         self.telemetry_repository = MongoTelemetryRepository(db_manager=self.db_manager)
         self.token_blacklist_repository = RedisTokenBlacklistRepository(redis_client=redis_client)
         self.user_repository = MongoUserRepository(db_manager=self.db_manager)
+        self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
 
         # Services
         self.analytics_service = ReportTelemetryService(analytics_repository=self.analytics_repository)
@@ -148,6 +155,11 @@ class Container:
             window_cache=self.telemetry_window_cache,
             window_duration_seconds=orchestrator_settings.window_duration_seconds,
             window_threshold_requests=orchestrator_settings.window_threshold_requests,
+        )
+        self.forensic_intelligence_adapter = MCPForensicIntelligenceAdapter(mcp_manager=self.mcp_client_manager)
+        self.forensic_service = ForensicService(
+            forensic_repository=self.forensic_repository,
+            forensic_intelligence_port=self.forensic_intelligence_adapter,
         )
 
         # Agent Runner — agent_factory centraliza el wiring MCP en cada reconexión

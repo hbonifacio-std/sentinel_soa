@@ -1,0 +1,57 @@
+"""Forensic endpoints for ad-hoc investigation and report history."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from core_orchestrator.domain.models.forensic.forensic_analysis import (
+    ForensicAnalyzeRequest,
+    ForensicAnalysisRecord,
+    ForensicHistoryQuery,
+    ForensicHistoryResponse,
+)
+from core_orchestrator.domain.ports.forensic import ForensicServicePort
+from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
+from core_orchestrator.infrastructure.security.dependencies import get_analyst_user
+
+router = APIRouter()
+
+
+@router.post("/analyze", status_code=status.HTTP_201_CREATED)
+async def run_forensic_analysis(
+    request: ForensicAnalyzeRequest,
+    forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
+    _: Annotated[object, Depends(get_analyst_user)],
+) -> ForensicAnalysisRecord:
+    """Run a forensic query and persist the generated report."""
+
+    return await forensic_service.analyze_activity(request)
+
+
+@router.get("/history")
+async def get_forensic_history(
+    forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
+    _: Annotated[object, Depends(get_analyst_user)],
+    source_id: str | None = None,
+    page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
+    limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
+) -> ForensicHistoryResponse:
+    """List paginated forensic reports."""
+
+    history_query = ForensicHistoryQuery(source_id=source_id, page=page, limit=limit)
+    return await forensic_service.get_analysis_history(history_query)
+
+
+@router.get("/history/{analysis_id}")
+async def get_forensic_report(
+    analysis_id: str,
+    forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
+    _: Annotated[object, Depends(get_analyst_user)],
+) -> ForensicAnalysisRecord:
+    """Return one forensic report by id."""
+
+    report = await forensic_service.get_analysis_by_id(analysis_id)
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Forensic report not found")
+    return report
+

@@ -6,7 +6,7 @@ and allow dynamic selection based on configuration.
 """
 
 import logging
-from typing import Any, Dict, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from mcp_servers.log_analysis_server.llm_providers.base import (
     LLMProviderInterface,
@@ -22,7 +22,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers")
 
 
-def create_llm_provider(provider_name: str, config: Dict[str, Any]) -> LLMProviderInterface:
+def create_llm_provider(
+    provider_name: str, 
+    model_name: str, 
+    max_output_tokens: Optional[int],
+    config: Dict[str, Any],
+    max_input_tokens: Optional[int] = None
+) -> LLMProviderInterface:
     """
     Factory function that returns the correct LLM provider instance.
     
@@ -31,53 +37,66 @@ def create_llm_provider(provider_name: str, config: Dict[str, Any]) -> LLMProvid
     
     Args:
         provider_name (str): Provider name ('gemini', 'ollama', 'openai', 'groq')
-        config (Dict[str, Any]): Configuration dictionary with environment variables
+        model_name (str): The specific model name to use (e.g., 'gemini-1.5-flash').
+        max_output_tokens (int): The maximum number of output tokens for the model.
+        config (Dict[str, Any]): Configuration dictionary with environment variables.
+        max_input_tokens (Optional[int]): The maximum number of input tokens for the model.
         
     Returns:
-        LLMProviderInterface: Instance of the requested provider
+        LLMProviderInterface: Instance of the requested provider.
         
     Raises:
-        LLMException: If the provider is not recognized or configuration is invalid
-        
-    Examples:
-        >>> config = {'gemini_api_key': 'sk-...', 'gemini_model': 'gemini-1.5-flash'}
-        >>> provider = create_llm_provider('gemini', config)
-        
-        >>> config = {'ollama_base_url': 'http://localhost:11434', 'ollama_model': 'mistral'}
-        >>> provider = create_llm_provider('ollama', config)
-        
-        >>> config = {'openai_api_key': 'sk-...', 'openai_model': 'gpt-4o-mini'}
-        >>> provider = create_llm_provider('openai', config)
-        
-        >>> config = {'groq_api_key': 'gsk_...', 'groq_model': 'mixtral-8x7b-32768'}
-        >>> provider = create_llm_provider('groq', config)
+        LLMException: If the provider is not recognized or configuration is invalid.
     """
     
     provider_name_lower = provider_name.lower().strip()
-
     available = "gemini, ollama, openai, groq"
 
-    if provider_name_lower == 'gemini':
-        from mcp_servers.log_analysis_server.llm_providers.gemini_provider import GeminiProvider
-        provider_class = GeminiProvider
-    elif provider_name_lower == 'ollama':
-        from mcp_servers.log_analysis_server.llm_providers.ollama_provider import OllamaProvider
-        provider_class = OllamaProvider
-    elif provider_name_lower == 'openai':
-        from mcp_servers.log_analysis_server.llm_providers.openai_provider import OpenAIProvider
-        provider_class = OpenAIProvider
-    elif provider_name_lower == 'groq':
-        from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProvider
-        provider_class = GroqProvider
-    else:
-        raise LLMException(
-            f"Provider '{provider_name}' not supported. "
-            f"Available providers: {available}"
-        )
-    
     try:
-        logger.info(f"Creating LLM provider instance: {provider_name_lower}")
-        provider_instance = provider_class(config)
+        logger.info(f"Creating LLM provider instance: {provider_name_lower} with model {model_name}")
+
+        if provider_name_lower == 'gemini':
+            from mcp_servers.log_analysis_server.llm_providers.gemini_provider import GeminiProvider
+            init_args = {
+                "model_name": model_name,
+                "api_key": config.get('gemini_api_key'),
+                "max_output_tokens": max_output_tokens or config.get('gemini_max_output_tokens')
+            }
+            provider_instance = GeminiProvider(**init_args)
+        elif provider_name_lower == 'ollama':
+            from mcp_servers.log_analysis_server.llm_providers.ollama_provider import OllamaProvider
+            init_args = {
+                "model_name": model_name,
+                "base_url": config.get('ollama_base_url'),
+                "timeout": config.get('ollama_timeout_seconds')
+            }
+            provider_instance = OllamaProvider(**init_args)
+        elif provider_name_lower == 'openai':
+            from mcp_servers.log_analysis_server.llm_providers.openai_provider import OpenAIProvider
+            init_args = {
+                "model_name": model_name,
+                "api_key": config.get('openai_api_key'),
+                "max_output_tokens": max_output_tokens or config.get('openai_max_output_tokens'),
+                "timeout": config.get('openai_timeout_seconds')
+            }
+            provider_instance = OpenAIProvider(**init_args)
+        elif provider_name_lower == 'groq':
+            from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProvider
+            init_args = {
+                "model_name": model_name,
+                "api_key": config.get('groq_api_key'),
+                "max_output_tokens": max_output_tokens or config.get('groq_max_output_tokens'),
+                "timeout": config.get('groq_timeout_seconds')
+            }
+            if max_input_tokens is not None:
+                init_args["max_input_tokens"] = max_input_tokens
+            provider_instance = GroqProvider(**init_args)
+        else:
+            raise LLMException(
+                f"Provider '{provider_name}' not supported. "
+                f"Available providers: {available}"
+            )
+        
         logger.debug(f"Provider {provider_name_lower} initialized successfully")
         return provider_instance
         

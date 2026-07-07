@@ -20,6 +20,8 @@ from mcp_servers.log_analysis_server.models.rules_bundle import RulesBundle
 
 from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
 from mcp_servers.log_analysis_server.store.alert_store import alert_store
+from mcp_servers.log_analysis_server.services.prompt_factory import build_web_activity_prompt
+from mcp_servers.log_analysis_server.services.prompt_factory import build_web_activity_prompt
 from mcp_servers.log_analysis_server.llm_providers import create_llm_provider
 
 # Local logger configuration
@@ -352,26 +354,26 @@ def _generate_recommendation(threat_level: str, source_ip: str, indicators: list
             f"**Level 1 (Immediately - 0-5 minutes):**\n"
         )
         if has_shell:
-            recommendation += f"• BLOCK IMMEDIATELY in WAF/Firewall. Evidence of webshell attempt detected.\n"
+            recommendation += "• BLOCK IMMEDIATELY in WAF/Firewall. Evidence of webshell attempt detected.\n"
         elif has_sql_injection:
-            recommendation += f"• BLOCK IMMEDIATELY in WAF/Firewall. SQL injection attack in progress.\n"
+            recommendation += "• BLOCK IMMEDIATELY in WAF/Firewall. SQL injection attack in progress.\n"
         elif has_path_traversal:
-            recommendation += f"• BLOCK IMMEDIATELY in WAF/Firewall. Attempt to access sensitive system files.\n"
+            recommendation += "• BLOCK IMMEDIATELY in WAF/Firewall. Attempt to access sensitive system files.\n"
         else:
             recommendation += f"• BLOCK IMMEDIATELY IP {source_ip} at all entry points (WAF/Firewall).\n"
 
         recommendation += (
-            f"• Verify if the attack was successful (check 200/500 response codes).\n"
-            f"• Prepare incident response team.\n\n"
-            f"**Level 2 (In parallel - 5-30 minutes):**\n"
-            f"• Run forensic analysis: review access logs from the last 24 hours.\n"
-            f"• Correlate with other suspicious IPs or similar patterns.\n"
-            f"• Verify server file integrity (web.config, .env, etc.).\n"
-            f"• Review file modification events in ACLs.\n\n"
-            f"**Level 3 (Escalation - 30+ minutes):**\n"
-            f"• Escalate to cybersecurity team and IT leadership.\n"
-            f"• Consider server snapshot for malware analysis.\n"
-            f"• Begin potential compromise investigation.\n"
+            "• Verify if the attack was successful (check 200/500 response codes).\n"
+            "• Prepare incident response team.\n\n"
+            "**Level 2 (In parallel - 5-30 minutes):**\n"
+            "• Run forensic analysis: review access logs from the last 24 hours.\n"
+            "• Correlate with other suspicious IPs or similar patterns.\n"
+            "• Verify server file integrity (web.config, .env, etc.).\n"
+            "• Review file modification events in ACLs.\n\n"
+            "**Level 3 (Escalation - 30+ minutes):**\n"
+            "• Escalate to cybersecurity team and IT leadership.\n"
+            "• Consider server snapshot for malware analysis.\n"
+            "• Begin potential compromise investigation.\n"
         )
     elif threat_level == "HIGH":
         recommendation = (
@@ -381,18 +383,18 @@ def _generate_recommendation(threat_level: str, source_ip: str, indicators: list
             f"• Temporarily block IP {source_ip} in WAF/Firewall for 24 hours.\n"
         )
         if has_scanner:
-            recommendation += f"• Implement more aggressive rate-limiting. Enumeration/scanning pattern detected.\n"
+            recommendation += "• Implement more aggressive rate-limiting. Enumeration/scanning pattern detected.\n"
         if has_admin_access:
-            recommendation += f"• Urgently review access to administrative panels.\n"
+            recommendation += "• Urgently review access to administrative panels.\n"
         recommendation += (
-            f"\n**Level 2 (Next 2 hours):**\n"
-            f"• Audit all resources requested by this IP.\n"
-            f"• Review logs from the last 24 hours for this source.\n"
-            f"• Verify that administrative endpoints are protected (authentication + 2FA).\n"
-            f"• Confirm that WAF rules are active for SQL injection/XSS.\n\n"
-            f"**Level 3 (Ongoing monitoring):**\n"
-            f"• Monitor future behavior of this IP for the next 7 days.\n"
-            f"• Consider permanent block if attempts persist.\n"
+            "\n**Level 2 (Next 2 hours):**\n"
+            "• Audit all resources requested by this IP.\n"
+            "• Review logs from the last 24 hours for this source.\n"
+            "• Verify that administrative endpoints are protected (authentication + 2FA).\n"
+            "• Confirm that WAF rules are active for SQL injection/XSS.\n\n"
+            "**Level 3 (Ongoing monitoring):**\n"
+            "• Monitor future behavior of this IP for the next 7 days.\n"
+            "• Consider permanent block if attempts persist.\n"
         )
     elif threat_level == "MEDIUM":
         recommendation = (
@@ -407,10 +409,10 @@ def _generate_recommendation(threat_level: str, source_ip: str, indicators: list
         )
     else:
         recommendation = (
-            f"🟢 **LOW/BENIGN LEVEL**\n"
-            f"Traffic classified as benign or very low suspicion. "
-            f"Continue with standard routine monitoring.\n"
-            f"No immediate action required.\n"
+            "🟢 **LOW/BENIGN LEVEL**\n"
+            "Traffic classified as benign or very low suspicion. "
+            "Continue with standard routine monitoring.\n"
+            "No immediate action required.\n"
         )
 
     return recommendation
@@ -485,51 +487,75 @@ class LLMAnalyzer:
     """
     Encapsulates the LLM provider invocation logic.
 
-    Supports multiple providers (Gemini, Ollama, etc.) based on configuration.
-    Provides an agnostic analysis method that works with any provider.
+    This class is instantiated with a specific model definition and provides
+    an agnostic analysis method that works with any configured provider.
     """
 
-    _provider = None
+    def __init__(self, model_id: str):
+        """
+        Initializes the analyzer with a specific model from the catalog.
 
-    @classmethod
-    def _get_provider(cls):
-        """Get or create the configured LLM provider."""
-        if cls._provider is None:
-            config = settings.get_provider_config()
-            cls._provider = create_llm_provider(settings.llm_provider, config)
-            logger.info(f"LLM provider initialized: {settings.llm_provider}")
-        return cls._provider
+        Args:
+            model_id: The identifier of the model to use (e.g., "ollama-mistral").
 
-    @classmethod
-    async def analyze_with_context(cls, telemetry: Any, history: list) -> Dict[str, Any]:
+        Raises:
+            ValueError: If the model_id is not found in the configuration.
+        """
+        requested_model_id = model_id or settings.default_model_id
+        model_def = settings.available_models.get(requested_model_id)
+
+        if not model_def:
+            logger.warning(
+                f"Model ID '{requested_model_id}' not found. "
+                f"Falling back to default model '{settings.default_model_id}'."
+            )
+            requested_model_id = settings.default_model_id
+            model_def = settings.available_models.get(requested_model_id)
+            if not model_def:
+                raise ValueError(f"Default model ID '{settings.default_model_id}' not found in catalog.")
+
+        config = settings.get_provider_config()
+        self._provider = create_llm_provider(
+            provider_name=model_def.provider,
+            model_name=model_def.model_name,
+            max_output_tokens=model_def.max_output_tokens,
+            max_input_tokens=model_def.max_input_tokens,
+            config=config,
+        )
+        logger.info(f"LLMAnalyzer initialized with provider: {self._provider.provider_name}, model: {self._provider.model_name}")
+
+    async def analyze_with_context(self, telemetry: Any, history: list) -> Dict[str, Any]:
         """
         Performs the analysis by requesting the specific prompt from the active provider
         and calling the model.
         """
         try:
-            provider = cls._get_provider()
-            logger.debug(f"Sending analysis to provider: {provider.provider_name}")
+            logger.debug(f"Sending analysis to provider: {self._provider.provider_name}")
 
             # KEY CHANGE: The provider generates its own situational prompt polymorphically
-            prompt = provider.build_analysis_prompt(telemetry, history)
-            print(prompt)
+            prompt = build_web_activity_prompt(
+                telemetry,
+                history,
+                provider_name=self._provider.provider_name
+            )
+
             # Invoke the provider with the generated prompt
-            response_text = await provider.call_model(prompt)
-            print(response_text)
+            response_text = await self._provider.call_model(prompt)
+
             # Validate response
-            validated_response = await provider.validate_response(response_text)
+            validated_response = await self._provider.validate_response(response_text)
 
             # Enforce the cross-provider contract before returning to orchestration logic.
             decision = _extract_llm_decision_fields(validated_response.model_dump())
             decision["reasoning_summary"] = _append_llm_signature(
                 decision.get("reasoning_summary"),
-                provider.provider_name,
-                provider.model_name,
+                self._provider.provider_name,
+                self._provider.model_name,
             )
             decision["recommendation"] = _append_llm_signature(
                 decision.get("recommendation"),
-                provider.provider_name,
-                provider.model_name,
+                self._provider.provider_name,
+                self._provider.model_name,
             )
             return decision
 
@@ -543,6 +569,7 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
     Executes heuristic and AI analysis on a suspicious web activity window.
     """
     try:
+        model_id = arguments.pop("model_id", None)
         rules_bundle = _extract_rules_bundle(arguments)
         sanitized_arguments = {k: v for k, v in arguments.items() if k != "rules_bundle"}
 
@@ -575,14 +602,17 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         # ========================================================================
         # 4. DIRECT DATA SUBMISSION TO LLM PROVIDER (Internal logic delegated)
         # ========================================================================
-        logger.debug(f"Sending telemetry payload from {source_ip} to {settings.llm_provider} API.")
-
+        
         # Try LLM analysis, fallback to pure heuristics if it fails
         raw_assessment = None
         try:
+            # Instantiate the analyzer with the selected model
+            analyzer = LLMAnalyzer(model_id=model_id)
+            logger.debug(f"Sending telemetry payload from {source_ip} to analyzer.")
+
             # KEY CHANGE: We no longer build the prompt here. We delegate the telemetry and
             # history directly to LLMAnalyzer so the provider decides how to package it.
-            raw_assessment = await LLMAnalyzer.analyze_with_context(
+            raw_assessment = await analyzer.analyze_with_context(
                 telemetry=analysis_input,
                 history=threat_history
             )

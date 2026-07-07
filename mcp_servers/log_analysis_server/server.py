@@ -9,8 +9,10 @@ from typing import Dict, Any, List, Optional
 from fastmcp.server import FastMCP
 
 # Import the real analysis functions with heuristics
+from mcp_servers.log_analysis_server.config import server_settings
 from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
-from mcp_servers.log_analysis_server.tools.threat_context import execute_get_threat_context
+from mcp_servers.log_analysis_server.tools.forensic_nlq import build_forensic_mongo_query, generate_forensic_report
+from mcp_servers.log_analysis_server.tools.threat_context import ThreatContextRequest, execute_get_threat_context
 
 # --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
@@ -28,6 +30,23 @@ logger = logging.getLogger(__name__)
 
 # --- Initialize server ---
 server = FastMCP("log-analysis-server")
+
+# --- System Tools ---
+
+@server.tool()
+async def get_available_models() -> Dict[str, Any]:
+    """Returns a dictionary of available models from the server configuration."""
+    models = {
+        model_id: {
+            "provider": model_def.provider,
+            "model_name": model_def.model_name
+        }
+        for model_id, model_def in server_settings.available_models.items()
+    }
+    return {
+        "default_model_id": server_settings.default_model_id,
+        "available_models": models
+    }
 
 # --- Register real tools with heuristics ---
 # pylint: disable=too-many-arguments
@@ -72,6 +91,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         attempted_usernames: Distinct usernames observed in authentication attempts.
         invalid_token_requests_count: Number of requests with invalid/expired authentication tokens.
         max_response_size_bytes: Maximum response size observed in the window.
+        model_id: The identifier for the analysis model to use.
         suspicious_samples: Sanitized suspicious request samples for context.
         infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
         security_state_features: Session/authentication state features for account-compromise correlation.
@@ -129,15 +149,70 @@ async def analyze_web_activity(  # noqa: PLR0913
         }
 
 @server.tool()
+async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = None) -> Dict[str, Any]:
+    """Translate a natural-language forensic question into a safe Mongo filter plan.
+
+    This tool receives an analyst-style query (for example: "show failed login bursts from
+    10.0.0.7 in admin endpoints") and produces a deterministic Mongo filter using bounded
+    parsing rules for IPs, status codes, URI patterns, and keywords.
+
+    Args:
+        query: Natural-language forensic intent from SOC analysts.
+        source_id: Optional telemetry source scope. When present, the resulting filter is
+            constrained to that specific source.
+
+    Returns:
+        A dictionary containing the generated `mongo_filter` and extracted intelligence terms.
+    """
+    return await build_forensic_mongo_query({"query": query, "source_id": source_id})
+
+
+@server.tool()
+async def generate_forensic_report_from_logs(
+    query: str,
+    total_matches: int,
+    rows: List[Dict[str, Any]],
+    source_id: Optional[str] = None,
+    model_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate structured forensic insights and markdown from queried telemetry rows.
+
+    The tool transforms raw log samples into analyst-friendly output that includes prioritized
+    highlights, risk estimation, and an evidence section with normalized event excerpts.
+
+    Args:
+        query: Original analyst query used to gather telemetry.
+        total_matches: Total number of matching records for the query.
+        rows: Telemetry samples returned by the orchestrator repository.
+        source_id: Optional source identifier used for filtering.
+        model_id: The identifier for the analysis model to use.
+
+    Returns:
+        A dictionary with `highlights`, `markdown_report`, and risk metadata.
+    """
+    
+    final_model_id = model_id or server_settings.default_model_id
+
+    return await generate_forensic_report(
+        {
+            "query": query,
+            "source_id": source_id,
+            "total_matches": total_matches,
+            "rows": rows,
+            "model_id": final_model_id,
+        }
+    )
+
+
+@server.tool()
 async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str, Any]:
     """
     Retrieves the threat history for a specific IP.
     """
     logger.info(f"MCP tool 'get_threat_context' invoked for IP: {source_ip}")
     try:
-        # Build arguments in the expected format
-        arguments = {"source_ip": source_ip, "limit": limit}
-        return await execute_get_threat_context(arguments)
+        request_payload = ThreatContextRequest(source_ip=source_ip, limit=limit)
+        return await execute_get_threat_context(request_payload)
     except Exception as e:
         logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
         return {

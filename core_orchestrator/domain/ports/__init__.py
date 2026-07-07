@@ -16,6 +16,11 @@ from core_orchestrator.domain.ports.auth import (
     UserProvider,
     UserRepository,
 )
+from core_orchestrator.domain.ports.forensic import (
+    ForensicAnalysisRepositoryPort,
+    ForensicIntelligencePort,
+    ForensicServicePort,
+)
 from core_orchestrator.domain.ports.rules import (
     RuleRepository,
     RuleValidatorPort,
@@ -35,6 +40,9 @@ __all__ = [
     "ReportTelemetryServicePort",
     "AuditRepository",
     "CachePort",
+    "ForensicAnalysisRepositoryPort",
+    "ForensicIntelligencePort",
+    "ForensicServicePort",
     "LlmAnalysisPort",
     "PasswordHasherPort",
     "RuleRepository",

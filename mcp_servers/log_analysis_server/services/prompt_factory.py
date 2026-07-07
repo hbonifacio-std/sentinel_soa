@@ -1,0 +1,249 @@
+# mcp_servers/log_analysis_server/services/prompt_factory.py
+import json
+from typing import Any, Dict, List, Optional
+
+from mcp_servers.log_analysis_server.services.prompt_builder import AnalysisPromptBuilder
+
+# --- Default Output Schemas ---
+DEFAULT_WEB_ACTIVITY_SCHEMA = {
+    "threat_score": "integer (0 to 100)",
+    "reasoning_summary": "string (max 100 words)",
+    "recommendation": "string"
+}
+DEFAULT_FORENSIC_SCHEMA = {
+    "markdown_report": "string markdown",
+    "highlights": ["string", "string"],
+}
+DEFAULT_NLQ_MONGO_SCHEMA = {
+  "mongo_filter": {"$and": [{"source_ip": "192.168.1.100"}, {"http.status_code": 404}]},
+  "detected_terms": ["string"],
+  "detected_ips": ["string"],
+  "detected_status_codes": ["integer"]
+}
+
+# --- Prompt Templates ---
+
+# Full template for API-based providers (Gemini, OpenAI, etc.)
+FULL_PROMPT_TEMPLATE = """
+You are a senior cybersecurity analyst at a SOC. Your specialty is early threat detection through telemetry analysis. Your goal is to evaluate the input data, identify attack indicators, and respond ONLY with a valid JSON object matching the requested schema. You must not add explanatory text or use markdown code blocks.
+
+You base your analysis on OWASP Top 10 attack patterns and the MITRE ATT&CK framework.
+- **Historical Correlation**: If the `historical_alerts_context` shows previous alerts, you must increase the `threat_score`.
+- **Strategic Recommendation**: The `recommendation` must be a medium-to-long-term action (e.g., "Implement MFA"), not reactive (e.g., "block IP").
+- **Scoring**: 70+ (Critical/High), 40-69 (Medium), 20-39 (Low), <20 (Informational).
+
+### Task: {task_name}
+{task_instructions}
+
+INPUT_PAYLOAD:
+{input_payload}
+
+Respond ONLY with a valid JSON object with this exact schema:
+SCHEMA:
+{output_schema}
+"""
+
+# Optimized template for Ollama (which uses a detailed Modelfile)
+OPTIMIZED_PROMPT_TEMPLATE = """
+### Task: {task_name}
+
+INPUT_PAYLOAD:
+{input_payload}
+
+Respond ONLY with a valid JSON object with this exact schema:
+SCHEMA:
+{output_schema}
+"""
+
+# --- Public Constructors ---
+
+def build_web_activity_prompt(telemetry: Any, history: List[Any], provider_name: str) -> str:
+    """Builds the prompt for web activity analysis, adapted to the provider."""
+
+    data = AnalysisPromptBuilder._extract_telemetry_data(telemetry, history)
+    task_details = {
+        "task_name": "Web Activity Analysis",
+        "task_instructions": "Analyze the following HTTP telemetry window. Evaluate the behavior, look for attack patterns, and generate a threat verdict.",
+        "input_payload": json.dumps(data, ensure_ascii=False),
+        "output_schema": json.dumps(DEFAULT_WEB_ACTIVITY_SCHEMA, ensure_ascii=False)
+    }
+    if provider_name == 'ollama':
+        return OPTIMIZED_PROMPT_TEMPLATE.format(**task_details)
+    return FULL_PROMPT_TEMPLATE.format(**task_details)
+
+
+def build_forensic_prompt(
+    payload: Any,
+    rows: list[dict[str, Any]],
+    provider_name: str,
+    system_context_note: Optional[str] = None,
+    max_input_tokens: Optional[int] = None,
+) -> str:
+    """Builds the prompt for the forensic report, adapted to the provider.
+    
+    When max_input_tokens is set, the prompt is progressively trimmed
+    by reducing the number of log rows until it fits within the budget.
+    """
+
+    def _clean_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Extract only essential fields from rows using compact keys."""
+        cleaned = []
+        for row in raw_rows:
+            http_data = row.get("http", {})
+            net_data = row.get("network", {})
+            user_data = row.get("extra_fields", {}).get("user", {})
+
+            essential_row = {
+                "ts": row.get("timestamp_utc"),
+                "src_ip": row.get("source_ip") or net_data.get("client_ip"),
+                "method": http_data.get("method"),
+                "path": http_data.get("path"),
+                "status": http_data.get("status_code"),
+                "ua": http_data.get("user_agent"),
+                "user_try": user_data.get("attempted_username"),
+                "auth_id": user_data.get("authenticated_id"),
+                "body": http_data.get("payload")
+            }
+            cleaned.append({k: v for k, v in essential_row.items() if v is not None})
+        return cleaned
+
+    def _estimate_tokens(text: str) -> int:
+        """Rough token estimate: ~4 characters per token."""
+        return len(text) // 4
+
+    forensic_instructions = """
+        You are a senior cybersecurity analyst. Your primary goal is to analyze the user's query and the provided log evidence to generate a comprehensive, professional forensic report in markdown. Your analysis must be deep, insightful, and directly guided by the user's original query.
+
+        **CRITICAL**: The `user_query` is the most important instruction. You MUST prioritize it to guide your analysis and structure your report.
+
+        **SYSTEM CONTEXT NOTE**:
+        If a `system_context_note` is present, it provides critical context about the provided logs. You must read it and factor it into your analysis. For example, it may state that the logs are a filtered sample from a much larger dataset.
+
+        **LOG GLOSSARY FOR ANALYSIS**:
+        The `sample_rows` use compact keys to save tokens:
+        - `ts`: UTC Timestamp of the event.
+        - `src_ip`: Attacker/Source IP.
+        - `path`: Target URI/Endpoint.
+        - `status`: HTTP Status code.
+        - `ua`: User-Agent string.
+        - `user_try`: Attempted username during auth.
+        - `auth_id`: Token or Session validation status.
+        - `body`: Plaintext payload sent in POST requests.
+
+        **CRITICAL RISK SCORING RULES**:
+        1. (CRITICAL - 90+) EXPOSURE: Any HTTP 200 OK response to paths containing system directories, configuration files, or credentials (e.g., /etc/, .env, config, backup, admin endpoints) must be classified as Critical Risk. It implies successful data leakage.
+        2. (HIGH - 75+) INTENT: Any manual or automated attempt to fuzz, guess, or brute force authentication endpoints (like /login, /auth) or access unauthorized resources, regardless of the HTTP status code.
+        3. (MEDIUM - 40+) RECONNAISSANCE: High volume of rapid requests (directory busting/scanning) causing anomalies or spikes, even if they return 404 or 200.
+
+        The markdown report MUST be structured with the following sections:
+
+        - **Executive Summary**: A concise, high-level overview of the incident. State the primary threat activity, the key findings, and the overall risk assessment, all in the context of the `user_query`.
+
+        - **Timeline of Events**: This is the most critical section. Create a narrative, chronologically ordered timeline of the most significant events. For each key event, provide the timestamp and explain *what* happened and *why* it is significant in relation to the `user_query`.
+
+        - **Observed TTPs (Tactics, Techniques, and Procedures)**: Identify and describe the observed attacker behaviors. For each TTP, you must:
+            1.  Map it to the relevant MITRE ATT&CK framework (Tactic, Technique ID, and Name).
+            2.  Provide a clear explanation of the TTP.
+            3.  Cite the specific evidence from the `sample_rows` that supports your conclusion.
+
+        - **Indicators of Compromise (IOCs)**: Create a structured list of all relevant IOCs found in the logs. Use clear categories:
+            - **IP Addresses**: [List of IPs]
+            - **URIs / Paths**: [List of suspicious URIs]
+            - **User-Agents**: [List of malicious or anomalous user agents]
+            - **File Hashes / Payloads**: (If any observed)
+
+        - **Attack Hypothesis**: Formulate a clear and concise theory of the attacker's end-to-end operation based on the `user_query` and the evidence.
+
+        - **Probable Impact**: Assess the potential business or security impact if the attack were successful.
+
+        - **Prioritized Recommendations**: Provide a list of actionable, strategic recommendations.
+
+        **JSON FORMATTING RULES**:
+        Your output must strictly adhere to the provided JSON schema.
+        - Inside the "markdown_report" field, you MUST write the complete, full-length markdown report. Use newline characters (\\\\n) for formatting.
+        - Inside the "highlights" field, extract 3 to 5 bullet points of the most critical immediate alerts.
+
+        **CRITICAL**: Do not invent data. Your entire report must be based *only* on the evidence.
+        """
+
+    # --- Assemble prompt with token-budget-aware truncation ---
+    max_rows_to_try = min(len(rows), 250)
+    cleaned_rows = _clean_rows(rows[:max_rows_to_try])
+
+    while True:
+        prompt_payload = {
+            "user_query": payload.query,
+            "total_matches": payload.total_matches,
+            "sample_rows": cleaned_rows,
+        }
+
+        if system_context_note:
+            prompt_payload["system_context_note"] = system_context_note
+
+        task_details = {
+            "task_name": "Forensic Report Generation",
+            "task_instructions": forensic_instructions,
+            "input_payload": json.dumps(prompt_payload, ensure_ascii=False),
+            "output_schema": json.dumps(DEFAULT_FORENSIC_SCHEMA, ensure_ascii=False),
+        }
+
+        if provider_name == "ollama":
+            prompt = OPTIMIZED_PROMPT_TEMPLATE.format(**task_details)
+        else:
+            prompt = FULL_PROMPT_TEMPLATE.format(**task_details)
+
+        # If no token budget is set, return immediately
+        if not max_input_tokens:
+            return prompt
+
+        estimated = _estimate_tokens(prompt)
+        if estimated <= max_input_tokens:
+            return prompt
+
+        # Budget exceeded — reduce logs by 30% and retry
+        new_count = max(int(len(cleaned_rows) * 0.7), 1)
+        if new_count >= len(cleaned_rows):
+            # Can't reduce further, return as-is (provider will raise a clear error)
+            return prompt
+        cleaned_rows = cleaned_rows[:new_count]
+
+
+def build_nlq_to_mongo_prompt(query: str, provider_name: str, source_id: str | None = None) -> str:
+    """Builds the prompt for natural language to MongoDB query translation."""
+    nlq_instructions = """
+            You are a precise technical translation engine. Your sole purpose is to convert natural language forensic questions into syntactically perfect MongoDB filter queries based strictly on the provided database schema.
+            
+            === TARGET DATABASE SCHEMA ===
+            - 'source_id' (string): Unique identifier of the application instance.
+            - 'source_ip' (string): Resolved IP address.
+            - 'timestamp_utc' (string/date): UTC log timestamp.
+            - 'network.client_ip' (string): Definitive client IP.
+            - 'http.method' (string): HTTP verb.
+            - 'http.path' (string): HTTP path/endpoint.
+            - 'http.query' (string): URL query parameters.
+            - 'http.status_code' (integer): HTTP response status code.
+            - 'http.user_agent' (string): Client User-Agent string.
+            
+            === TRANSLATION RULES ===
+            1.  **Filter Noise**: Ignore conversational filler like "show me", "find", etc.
+            2.  **IP Matching**: Map extracted IPs to an exact match on `source_ip`.
+            3.  **Keywords & Paths**: Use case-insensitive regex (`$regex` with `$options`: 'i') for keywords against `http.path`, `http.query`, or `http.user_agent`.
+            4.  **Context Injection**: If a `source_id` is provided in the input, you MUST include it in the query with an `$and` operator.
+            
+            The user query and context are in the INPUT_PAYLOAD.
+            """
+
+    input_payload: Dict[str, Any] = {"query": query}
+    if source_id:
+        input_payload["source_id"] = source_id
+
+    task_details = {
+        "task_name": "Natural Language to MongoDB Filter Translation",
+        "task_instructions": nlq_instructions,
+        "input_payload": json.dumps(input_payload, ensure_ascii=False),
+        "output_schema": json.dumps(DEFAULT_NLQ_MONGO_SCHEMA, ensure_ascii=False)
+    }
+
+    template = OPTIMIZED_PROMPT_TEMPLATE if provider_name == 'ollama' else FULL_PROMPT_TEMPLATE
+    return template.format(**task_details)
+

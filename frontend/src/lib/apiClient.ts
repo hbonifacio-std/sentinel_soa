@@ -39,6 +39,10 @@ function getErrorMessage(status: number, detail: unknown, fallback: string): str
   return fallback || `HTTP ${status}`;
 }
 
+function isStructuredJson(value: unknown): value is Record<string, unknown> | unknown[] {
+  return (typeof value === 'object' && value !== null) || Array.isArray(value);
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const url = path.startsWith('http') ? path : `${baseURL}${path}`;
   const headers = new Headers(options.headers);
@@ -89,5 +93,10 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     return {} as T;
   }
 
-  return (await response.json()) as T;
+  const payload: unknown = await response.json();
+  if (!isStructuredJson(payload)) {
+    throw new ApiError(response.status, 'Invalid JSON response format.', payload, String(payload));
+  }
+
+  return payload as T;
 }

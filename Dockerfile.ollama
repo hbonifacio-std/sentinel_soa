@@ -4,16 +4,22 @@ WORKDIR /app
  
 # Instalar netcat
 RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/lists/*
- 
-# Copiar el Modelfile
-COPY Modelfile .
- 
-# Levantamos Ollama, esperamos el puerto, descargamos el modelo base y creamos sentinel-analyst
+
+# Copiar AMBOS Modelfiles al contenedor
+COPY ModelfileForensic .
+COPY ModelfileMongoTranslate .
+
+# Levantamos Ollama, esperamos el puerto, descargamos el modelo base y creamos ambos agentes
 RUN ollama serve & \
     echo "Esperando a que Ollama inicie..." && \
     while ! nc -z localhost 11434; do sleep 1; done && \
-    echo "Descargando FROM qwen2.5-coder:7b..." && \
+    echo "Descargando modelo base qwen2.5-coder:7b..." && \
     ollama pull qwen2.5-coder:7b && \
-    echo "Creando sentinel-analyst..." && \
-    ollama create sentinel-analyst -f Modelfile && \
-    echo "¡Modelo inyectado exitosamente en la imagen!"
+    \
+    echo "Creando agente 1: sentinel-analyst (Forensic)..." && \
+    ollama create sentinel-analyst -f ModelfileForensic && \
+    \
+    echo "Creando agente 2: sentinel-translator (MongoDB NLQ)..." && \
+    ollama create sentinel-translator-mongodb -f ModelfileMongoTranslate && \
+    \
+    echo "¡Ambos modelos inyectados exitosamente en la imagen!"

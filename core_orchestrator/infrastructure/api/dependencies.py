@@ -19,6 +19,7 @@ from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidat
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
 from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
+from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
 from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 
@@ -53,6 +54,9 @@ def get_telemetry_processing_service(container: Container = Depends(get_containe
 
 def get_user_service(container: Container = Depends(get_container)) -> UserService:
     return container.user_service
+
+def get_forensic_service(container: Container = Depends(get_container)) -> ForensicService:
+    return container.forensic_service
 
 def get_agent_runner(container: Container = Depends(get_container)) -> AgentRunner:
     return container.agent_runner

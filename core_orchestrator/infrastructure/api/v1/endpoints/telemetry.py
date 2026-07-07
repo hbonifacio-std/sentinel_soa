@@ -86,7 +86,6 @@ async def ingest_batch_events(
         )
 
     # Apply redaction to batch events before logging
-    sanitized_events_info = [json.dumps(redact_sensitive_data(event.model_dump())) for event in events]
     logger.info(
         f"Batch ingestion request received with {len(events)} events from '{first_source_id}'. "
     )

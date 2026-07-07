@@ -1,20 +1,14 @@
 import logging
 import json
 import os
-import sys
 import time
-import urllib
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, Request, Depends, HTTPException, status, Response
+from fastapi import FastAPI, Request, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt 
 from pydantic import BaseModel
-import hmac
-import hashlib
-from urllib import request as urllib_request
-from urllib import error as urllib_error
 
 # --- Logging Configuration ---
 # Configures the logger to write to a specific file.

@@ -64,9 +64,12 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     container_name: sentinel_mcp_server
+    ports:
+      - "8080:8080"
     environment:
       # Variables de entorno para el Log Analysis Server (MCP)
       LLM_PROVIDER: ${LLM_PROVIDER}
+      DEFAULT_MODEL_ID: ${DEFAULT_MODEL_ID}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: ${GEMINI_MODEL}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}

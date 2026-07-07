@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
@@ -9,6 +9,14 @@ from core_orchestrator.infrastructure.security.dependencies import get_analyst_u
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+class ReportActionRequest(BaseModel):
+    """Validated payload for analyst comments attached to a report."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    comment: str = Field(min_length=1, max_length=2000)
 
 # ============================================================================
 # Endpoints de la API
@@ -59,12 +67,12 @@ async def mark_report_reviewed(
 @router.post("/analytics/reports/{report_id}/actions")
 async def add_report_action(
         report_id: str,
-        action_request: Dict[str, Any],
+        action_request: ReportActionRequest,
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         _: None = Depends(get_analyst_user)
 ):
     try:
-        report = await analytics_service.add_action_to_report(report_id, action_request)
+        report = await analytics_service.add_action_to_report(report_id, action_request.model_dump())
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         return report

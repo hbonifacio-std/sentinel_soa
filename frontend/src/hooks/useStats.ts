@@ -1,7 +1,9 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { startOfHour } from 'date-fns';
 import { mockStats } from '@/data/mockStats';
 import { apiFetch } from '@/lib/apiClient';
+import { statsKeys } from '@/lib/queryKeys';
 import type { LogEntry } from '@/types/logEntry';
 import type { MitreTacticRow, StatsResponse, ThreatLevelRow, TimelineRow } from '@/types/api';
 import type {KillChainPhase, Threat} from '@/types/threat';
@@ -48,9 +50,10 @@ function getRequestPath(threat: Threat, log?: LogEntry) {
     return log.request_uri;
   }
 
-  const details = threat.details as Record<string, unknown> | undefined;
-  if (typeof details?.request_uri === 'string' && details.request_uri.trim().length > 0) {
-    return details.request_uri;
+  const detailsRecord: Record<string, unknown> | undefined = threat.details ?? undefined;
+  const detailsRequestUri = detailsRecord?.request_uri;
+  if (typeof detailsRequestUri === 'string' && detailsRequestUri.trim().length > 0) {
+    return detailsRequestUri;
   }
 
   const rawTelemetry = (threat as Threat & { raw_telemetry?: Record<string, unknown> }).raw_telemetry;
@@ -62,37 +65,20 @@ function getRequestPath(threat: Threat, log?: LogEntry) {
 }
 
 export function useStats(sourceId: string | null, threats: Threat[], logs: LogEntry[]) {
-  const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      if (!sourceId) {
-        setStats(null);
-        return;
-      }
-
+  const statsQuery = useQuery({
+    queryKey: statsKeys.detail(sourceId),
+    enabled: Boolean(sourceId),
+    queryFn: async () => {
       if (useMockData) {
-        setStats(mockStats);
-        return;
+        return mockStats;
       }
 
-      setLoading(true);
-      setError(null);
-      try {
-        const query = new URLSearchParams({ source_id: sourceId }).toString();
-        const data = await apiFetch<StatsResponse>(`/api/v1/analytics/stats?${query}`);
-        setStats(data);
-      } catch (e) {
-        setError(e as Error);
-      } finally {
-        setLoading(false);
-      }
-    }
+      const query = new URLSearchParams({ source_id: sourceId as string }).toString();
+      return apiFetch<StatsResponse>(`/api/v1/analytics/stats?${query}`);
+    },
+  });
 
-    void load();
-  }, [sourceId]);
+  const stats = statsQuery.data ?? null;
 
   const timelineData = useMemo((): TimelineRow[] => {
     const bucket = new Map<
@@ -274,5 +260,13 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
   }));
 }, [threats]);
 
-  return { stats, timelineData, mitreTactics, threatLevelData,killChainPhaseData, loading, error };
+  return {
+    stats,
+    timelineData,
+    mitreTactics,
+    threatLevelData,
+    killChainPhaseData,
+    loading: statsQuery.isLoading || statsQuery.isFetching,
+    error: statsQuery.error instanceof Error ? statsQuery.error : null,
+  };
 }

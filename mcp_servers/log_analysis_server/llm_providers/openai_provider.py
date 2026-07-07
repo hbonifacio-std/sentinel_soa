@@ -5,10 +5,9 @@ Implements LLMProviderInterface for OpenAI, encapsulating all OpenAI
 API-specific logic and keeping it agnostic from the rest of the system.
 """
 
-import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional, List
 
 from openai import AsyncOpenAI
 from pydantic import ValidationError
@@ -33,25 +32,24 @@ class OpenAIProvider(LLMProviderInterface):
 
     _PROVIDER_NAME = "openai"
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, *, model_name: str, api_key: str, max_output_tokens: Optional[int] = None, timeout: Optional[int] = None):
         """
         Initialize the OpenAI provider with specific configuration.
         
         Args:
-            config (Dict[str, Any]): Must contain:
-                - openai_api_key: Authentication key for OpenAI
-                - openai_model: Model name (default: gpt-4o-mini)
-                - openai_max_output_tokens: Maximum output tokens (default: 4096)
-                - openai_timeout_seconds: Request timeout (default: 60)
+            model_name: The specific OpenAI model to use (e.g., 'gpt-4o-mini').
+            api_key: The API key for OpenAI authentication.
+            max_output_tokens: Optional maximum number of tokens for the response.
+            timeout: Optional request timeout in seconds.
         """
-        super().__init__(config)
-        self._api_key = config.get("openai_api_key")
-        self._model_name = config.get("openai_model", "gpt-4o-mini")
-        self._max_tokens = config.get("openai_max_output_tokens", 4096)
-        self._timeout = config.get("openai_timeout_seconds", 60)
+        super().__init__()
+        self._api_key = api_key
+        self._model_name = model_name or "gpt-4o-mini"
+        self._max_tokens = max_output_tokens or 4096
+        self._timeout = timeout or 60
         
         if not self._api_key:
-            raise LLMException("openai_api_key is required in the configuration")
+            raise LLMException("OpenAI API key is required.")
         
         # Initialize OpenAI async client
         self._client = AsyncOpenAI(

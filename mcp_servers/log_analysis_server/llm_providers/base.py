@@ -62,33 +62,11 @@ class LLMProviderInterface(ABC):
     from this class and implement all abstract methods.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self):
         """
-        Initialize the provider with specific configuration.
-        
-        Args:
-            config (Dict[str, Any]): Configuration dictionary with environment variables
-                (may include API keys, base URLs, models, timeouts, etc.)
+        Initializes the provider.
         """
-        self.config = config
-        logger.debug(f"Initializing LLM provider with configuration: {self._sanitize_config(config)}")
-
-    @abstractmethod
-    def build_analysis_prompt(self, telemetry: Any, history: List[Any]) -> str:
-        """
-        Dynamically generates the prompt adapted to the provider's nature.
-
-        Each concrete provider will decide internally whether to build an
-        extended descriptive prompt (e.g., Gemini) or an optimized JSON payload (e.g., Ollama).
-
-        Args:
-            telemetry (Any): Current telemetry window data.
-            history (List[Any]): History of previous alerts for the IP.
-
-        Returns:
-            str: The prompt string ready to be sent to call_model().
-        """
-        pass
+        logger.debug(f"Initializing LLM provider: {self.provider_name}")
 
     @abstractmethod
     async def call_model(self, prompt: str, max_tokens: Optional[int] = None) -> str:
@@ -168,26 +146,7 @@ class LLMProviderInterface(ABC):
         """
         pass
 
-    @staticmethod
-    def _sanitize_config(config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Remove sensitive data (API keys, passwords) from the configuration
-        for safe logging.
-        
-        Args:
-            config (Dict[str, Any]): Original configuration
-            
-        Returns:
-            Dict[str, Any]: Configuration with sensitive data masked
-        """
-        sensitive_keys = { 'api_key', 'secret', 'password', 'token', 'key'}
-        sanitized = {}
-        for k, v in config.items():
-            if any(sensitive in k.lower() for sensitive in sensitive_keys):
-                sanitized[k] = "***REDACTED***"
-            else:
-                sanitized[k] = v
-        return sanitized
+
 
 
 class LLMException(Exception):
