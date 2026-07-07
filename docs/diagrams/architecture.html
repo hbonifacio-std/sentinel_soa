@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+ <head><script>window["__codeletBootstrap__"]=JSON.parse('{"A":"A","B":"20260707-05-f6eb95b"}');</script><script src="/_sdk/f432b76fb310b513.telemetry_sdk.js" integrity="sha512-9FJQ55EKmmqhyyik8BhrMVfm0+iYYfb8uOlRsjtkxJMEI97qOVEI4PnHohDjQAtvAep0IOEpdQ64eki0sz62ug=="></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cybersecurity Data Flow Diagram</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&amp;display=swap" rel="stylesheet">
+  <style>
+       
+        * { 
+            font-family: 'Space Mono', monospace; 
+            font-size: 14px; /* <--- AÑADE ESTA LÍNEA (Ajusta el número a tu gusto) */
+        }
+    body { overflow: hidden; }
+        body { overflow: hidden; }
+        .node { cursor: pointer; transition: filter 0.3s; }
+        .node:hover { filter: brightness(1.4) drop-shadow(0 0 12px currentColor); }
+        .dimmed { opacity: 0.15; transition: opacity 0.3s; }
+        .highlighted { opacity: 1; transition: opacity 0.3s; }
+
+        @keyframes dash { to { stroke-dashoffset: -40; } }
+        .flow-line { stroke-dasharray: 8 12; animation: dash 1.5s linear infinite; }
+        .flow-line-fast { stroke-dasharray: 4 8; animation: dash 0.6s linear infinite; }
+        .flow-line-slow { stroke-dasharray: 12 16; animation: dash 2.5s linear infinite; }
+
+        @keyframes pulse { 0%,100% { r: 3; opacity: 1; } 50% { r: 5; opacity: 0.6; } }
+        .particle { animation: pulse 1s ease-in-out infinite; }
+
+        @keyframes glow { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .glow-border { animation: glow 2s ease-in-out infinite; }
+
+        .zone-border { stroke-dasharray: 6 4; fill: none; }
+    </style>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js" type="text/javascript"></script>
+  <script src="/_sdk/0179d719c431a79e.data_sdk.js" type="text/javascript" integrity="sha512-OsRvJkI5GkC3MJQcgotQYotpzrMSX415GiKKgvYdxQEEkzD/fdchShO2FMSy0PJr/tiINMXOk5Vl2zAgg6bUiA=="></script>
+  <script src="/_sdk/0b3af1c300e720aa.resizing_sdk.js" type="text/javascript" integrity="sha512-nX1P6oXZmEY5wCI2lUVg3BwKu1cr0yi+ZpXgZ0Yn90vkSwvpmyzBMvOyD6VLJUtBwFI2dSrw1b6OvORxSggw3w=="></script>
+ </head>
+ <body data-template-id="__page-root" class="w-full min-h-screen flex flex-col items-center justify-center">
+  <header class="absolute top-4 left-0 w-full text-center z-10">
+   <h1 data-template-id="diagram-title" class="canva-text text-2xl font-bold tracking-wider"></h1>
+   <p data-template-id="diagram-subtitle" class="canva-text text-xs mt-1 opacity-70"></p>
+  </header>
+  <main class="w-full h-full flex items-center justify-center" style="height: calc(100 * min(var(--vh, 1vh), 1vh))">
+   <svg id="diagram" viewbox="0 0 1400 750" class="w-full max-w-[1400px] h-auto" style="max-height: calc(90 * min(var(--vh, 1vh), 1vh))">
+    <!-- Zone borders --> <rect class="zone-border" x="30" y="80" width="280" height="600" rx="12" stroke="#ff4444" stroke-width="1.5" opacity="0.4" /> <rect class="zone-border" x="350" y="80" width="300" height="600" rx="12" stroke="#00d4ff" stroke-width="1.5" opacity="0.4" /> <rect class="zone-border" x="690" y="80" width="380" height="600" rx="12" stroke="#b44dff" stroke-width="1.5" opacity="0.4" /> <rect class="zone-border" x="1110" y="80" width="260" height="600" rx="12" stroke="#00ff88" stroke-width="1.5" opacity="0.4" /> <!-- Zone labels --> <text x="170" y="105" fill="#ff6666" font-size="11" text-anchor="middle" opacity="0.8">
+     ZONE A: TARGET ENV
+    </text> <text x="500" y="105" fill="#00d4ff" font-size="11" text-anchor="middle" opacity="0.8">
+     ZONE B: CORE PROCESSING
+    </text> <text x="880" y="105" fill="#b44dff" font-size="11" text-anchor="middle" opacity="0.8">
+     ZONE C: AI ORCHESTRATION
+    </text> <text x="1240" y="105" fill="#00ff88" font-size="11" text-anchor="middle" opacity="0.8">
+     ZONE D: USER INTERFACE
+    </text> <!-- Connection paths --> <g id="connections">
+     <!-- Attacker to Victim -->
+     <line class="flow-line-fast" id="path-atk-victim" x1="170" y1="220" x2="170" y2="360" stroke="#ff4444" stroke-width="2.5" opacity="0.8" />
+     <text x="115" y="295" fill="#ff6666" font-size="8" opacity="0.7">
+      Attack Vectors
+     </text> <!-- Victim to Core API -->
+     <line class="flow-line" id="path-victim-api" x1="280" y1="420" x2="420" y2="350" stroke="#ff8800" stroke-width="2" opacity="0.7" />
+     <text x="260" y="340" fill="#ffaa44" font-size="8" opacity="0.7">
+      Log Packets Stream
+     </text> <!-- Core API to Redis -->
+     <line class="flow-line-fast" id="path-api-redis" x1="500" y1="280" x2="500" y2="200" stroke="#00d4ff" stroke-width="2" opacity="0.7" />
+     <text x="520" y="240" fill="#00d4ff" font-size="8" opacity="0.7">
+      Queue/Cache
+     </text> <!-- Core API to MongoDB -->
+     <line class="flow-line-slow" id="path-api-mongo" x1="500" y1="420" x2="500" y2="530" stroke="#00d4ff" stroke-width="2" opacity="0.7" />
+     <text x="520" y="480" fill="#00d4ff" font-size="8" opacity="0.7">
+      REST/Storage
+     </text> <!-- Core API to MCP Server -->
+     <line class="flow-line" id="path-api-mcp" x1="580" y1="350" x2="780" y2="385" stroke="#9933ff" stroke-width="3" opacity="0.8" />
+     <text x="600" y="410" fill="#b44dff" font-size="8" opacity="0.7">
+      FastMCP Protocol
+     </text> <!-- MCP to AI Gateway --> <!-- MCP to AI Providers (direct connections) -->
+     <line class="flow-line-slow" id="path-mcp-ollama" x1="845" y1="440" x2="760" y2="580" stroke="#cc66ff" stroke-width="1.5" opacity="0.6" />
+     <line class="flow-line-slow" id="path-mcp-gemini" x1="870" y1="450" x2="840" y2="610" stroke="#cc66ff" stroke-width="1.5" opacity="0.6" />
+     <line class="flow-line-slow" id="path-mcp-openai" x1="900" y1="460" x2="920" y2="610" stroke="#cc66ff" stroke-width="1.5" opacity="0.6" />
+     <line class="flow-line-slow" id="path-mcp-groq" x1="920" y1="450" x2="1000" y2="580" stroke="#cc66ff" stroke-width="1.5" opacity="0.6" /> <!-- React Chat to MCP Server -->
+     <line class="flow-line" id="path-chat-mcp" x1="1130" y1="330" x2="600" y2="335" stroke="#44ffaa" stroke-width="1.5" opacity="0.6" />
+     <text x="950" y="320" fill="#44ffaa" font-size="8" opacity="0.7">
+      Model Query
+     </text> <!-- Core API / Redis to React Dashboard -->
+     <line class="flow-line" id="path-api-dashboard" x1="580" y1="320" x2="1140" y2="250" stroke="#00ff88" stroke-width="1.5" opacity="0.6" />
+     <text x="860" y="260" fill="#00ff88" font-size="8" opacity="0.7">
+      HTTPS RESPONSE
+     </text>
+    </g> <!-- Particles overlay --> <g id="particles"></g> <!-- NODES --> <!-- Attacker --> <g class="node" data-node="attacker" data-paths="path-atk-victim">
+     <circle cx="170" cy="180" r="45" fill="none" stroke="#ff4444" stroke-width="2" class="glow-border" />
+     <text x="170" y="175" fill="#ff4444" font-size="22" text-anchor="middle">
+      ☠
+     </text>
+     <text x="170" y="200" fill="#ff6666" font-size="9" text-anchor="middle">
+      Attacker
+     </text>
+    </g> <!-- Victim Apps --> <g class="node" data-node="victim" data-paths="path-atk-victim,path-victim-api">
+     <rect x="100" y="370" width="140" height="60" rx="6" fill="rgba(255,136,0,0.1)" stroke="#ff8800" stroke-width="2" />
+     <text x="170" y="398" fill="#ffaa44" font-size="10" text-anchor="middle">
+      Victim Apps
+     </text>
+     <text x="170" y="415" fill="#ff8800" font-size="7" text-anchor="middle" opacity="0.7">
+      Monitored Zone
+     </text>
+    </g> <!-- Core API --> <g class="node" data-node="coreapi" data-paths="path-victim-api,path-api-redis,path-api-mongo,path-api-mcp,path-api-dashboard,path-chat-api">
+     <polygon points="500,300 555,325 555,375 500,400 445,375 445,325" fill="rgba(0,212,255,0.1)" stroke="#00d4ff" stroke-width="2.5" />
+     <text x="500" y="345" fill="#00d4ff" font-size="10" text-anchor="middle" font-weight="bold">
+      Core API
+     </text>
+     <text x="500" y="362" fill="#00aacc" font-size="8" text-anchor="middle">
+      FastAPI
+     </text>
+    </g> <!-- Redis --> <g class="node" data-node="redis" data-paths="path-api-redis">
+     <circle cx="500" cy="165" r="35" fill="rgba(0,212,255,0.08)" stroke="#00ccff" stroke-width="1.5" />
+     <text x="500" y="162" fill="#00eeff" font-size="14" text-anchor="middle">
+      ⚡
+     </text>
+     <text x="500" y="178" fill="#00ccff" font-size="8" text-anchor="middle">
+      Redis
+     </text>
+    </g> <!-- MongoDB --> <g class="node" data-node="mongo" data-paths="path-api-mongo">
+     <rect x="460" y="540" width="80" height="50" rx="8" fill="rgba(0,180,255,0.08)" stroke="#00aadd" stroke-width="1.5" />
+     <text x="500" y="562" fill="#00ccee" font-size="12" text-anchor="middle">
+      🗄
+     </text>
+     <text x="500" y="580" fill="#00aadd" font-size="8" text-anchor="middle">
+      MongoDB
+     </text>
+    </g> <!-- MCP Server --> <g class="node" data-node="mcp" data-paths="path-api-mcp,path-mcp-gateway">
+     <circle cx="880" cy="400" r="50" fill="rgba(180,77,255,0.1)" stroke="#b44dff" stroke-width="2.5" />
+     <text x="880" y="385" fill="#cc88ff" font-size="16" text-anchor="middle">
+      🧠
+     </text>
+     <text x="880" y="405" fill="#b44dff" font-size="8" text-anchor="middle">
+      MCP Server
+     </text>
+     <text x="880" y="420" fill="#9933cc" font-size="7" text-anchor="middle">
+      FastMCP
+     </text>
+    </g> <!-- AI Providers --> <g class="node" data-node="ollama" data-paths="path-mcp-ollama">
+     <text x="740" y="600" fill="#cc88ff" font-size="9" text-anchor="middle">
+      Ollama
+     </text>
+    </g> <g class="node" data-node="gemini" data-paths="path-mcp-gemini">
+     <text x="830" y="630" fill="#cc88ff" font-size="9" text-anchor="middle">
+      Gemini
+     </text>
+    </g> <g class="node" data-node="openai" data-paths="path-mcp-openai">
+     <text x="930" y="630" fill="#cc88ff" font-size="9" text-anchor="middle">
+      OpenAI
+     </text>
+    </g> <g class="node" data-node="groq" data-paths="path-mcp-groq">
+     <text x="1020" y="600" fill="#cc88ff" font-size="9" text-anchor="middle">
+      Groq
+     </text>
+    </g> <!-- React Frontend --> <g class="node" data-node="react" data-paths="path-api-dashboard,path-chat-api">
+     <rect x="1130" y="180" width="200" height="250" rx="8" fill="rgba(0,255,136,0.06)" stroke="#00ff88" stroke-width="2" />
+     <text x="1230" y="205" fill="#00ff88" font-size="10" text-anchor="middle" font-weight="bold">
+      🖥 React Frontend
+     </text>
+     <rect x="1180" y="215" width="100" height="55" rx="4" fill="rgba(255,68,68,0.08)" stroke="#ff6666" stroke-width="1" />
+     <text x="1230" y="240" fill="#ff8888" font-size="7" text-anchor="middle">
+      Threat
+     </text>
+     <text x="1230" y="253" fill="#ff8888" font-size="7" text-anchor="middle">
+      Dashboard
+     </text>
+     <rect x="1180" y="300" width="100" height="55" rx="4" fill="rgba(68,255,170,0.08)" stroke="#44ffaa" stroke-width="1" />
+     <text x="1230" y="340" fill="#44ffaa" font-size="7" text-anchor="middle">
+      AI Chat
+     </text>
+     <text x="1230" y="320" fill="#44ffaa" font-size="7" text-anchor="middle">
+      Window
+     </text>
+    </g> <!-- Legend --> <g transform="translate(40, 700)">
+     <circle cx="0" cy="0" r="4" fill="#ff4444" />
+     <text x="10" y="4" fill="#aaa" font-size="10">
+      Threat/Attack
+     </text>
+     <circle cx="150" cy="0" r="4" fill="#00d4ff" />
+     <text x="160" y="4" fill="#aaa" font-size="10">
+      Core Infra
+     </text>
+     <circle cx="270" cy="0" r="4" fill="#b44dff" />
+     <text x="280" y="4" fill="#aaa" font-size="10">
+      AI Orchestration
+     </text>
+     <circle cx="440" cy="0" r="4" fill="#00ff88" />
+     <text x="450" y="4" fill="#aaa" font-size="10">
+      User Interface
+     </text>
+    </g>
+   </svg>
+  </main>
+  <script src="/_sdk/e063511df281944a.editing_sdk.js" integrity="sha512-Xa8p4aPfoMxVnzxQE2WAG0FfoaPLxdjOJMfUZGm1yZosJTYmnNDvgLkJ2EoN0i3zxjeQVAzUMSXNvTKQVqbXyQ=="></script>
+  <script>
+        // Hover highlighting
+        const nodes = document.querySelectorAll('.node');
+        const allPaths = document.querySelectorAll('#connections > *');
+
+        nodes.forEach(node => {
+            node.addEventListener('mouseenter', () => {
+                const activePaths = (node.dataset.paths || '').split(',');
+                allPaths.forEach(p => {
+                    if (p.id && activePaths.includes(p.id)) {
+                        p.classList.add('highlighted');
+                        p.classList.remove('dimmed');
+                        p.style.opacity = '1';
+                        p.style.strokeWidth = parseFloat(getComputedStyle(p).strokeWidth) + 1 + 'px';
+                    } else if (p.id) {
+                        p.classList.add('dimmed');
+                        p.classList.remove('highlighted');
+                    }
+                });
+            });
+            node.addEventListener('mouseleave', () => {
+                allPaths.forEach(p => {
+                    p.classList.remove('dimmed', 'highlighted');
+                    p.style.opacity = '';
+                    p.style.strokeWidth = '';
+                });
+            });
+        });
+
+        // Animated particles
+        const particlesG = document.getElementById('particles');
+        const particleDefs = [
+            { path: 'path-atk-victim', color: '#ff4444', speed: 1200 },
+            { path: 'path-victim-api', color: '#ff8800', speed: 2000 },
+            { path: 'path-api-redis', color: '#00eeff', speed: 800 },
+            { path: 'path-api-mcp', color: '#b44dff', speed: 1800 },
+            { path: 'path-api-dashboard', color: '#00ff88', speed: 2200 },
+            { path: 'path-mcp-ollama', color: '#cc66ff', speed: 1500 },
+            { path: 'path-chat-mcp', color: '#44ffaa', speed: 2500 },
+        ];
+
+        particleDefs.forEach(def => {
+            const line = document.getElementById(def.path);
+            if (!line) return;
+            const x1 = +line.getAttribute('x1'), y1 = +line.getAttribute('y1');
+            const x2 = +line.getAttribute('x2'), y2 = +line.getAttribute('y2');
+
+            for (let i = 0; i < 3; i++) {
+                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circle.setAttribute('r', '3');
+                circle.setAttribute('fill', def.color);
+                circle.classList.add('particle');
+                circle.style.animationDelay = (i * def.speed / 3) + 'ms';
+                particlesG.appendChild(circle);
+
+                let start = null;
+                const offset = (i / 3) * def.speed;
+                function animate(ts) {
+                    if (!start) start = ts;
+                    const t = ((ts - start + offset) % def.speed) / def.speed;
+                    circle.setAttribute('cx', x1 + (x2 - x1) * t);
+                    circle.setAttribute('cy', y1 + (y2 - y1) * t);
+                    requestAnimationFrame(animate);
+                }
+                requestAnimationFrame(animate);
+            }
+        });
+    </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a177d15b316faefa',t:'MTc4MzQzNzQ2NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
