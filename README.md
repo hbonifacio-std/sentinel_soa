@@ -68,9 +68,11 @@ La guía completa de instalación y configuración se encuentra aquí:
 
 docker exec -it sentinel_attacker python3 /app/traffic_simulator.py
 
+### modelo ollama en local
 FROM qwen2.5-coder:7b
 
+### insertar semilla de datos
 $env:MONGO_HOST="localhost"; $env:MONGO_PORT="27017"; $env:MONGO_USER="sentinel_user"; $env:MONGO_PASSWORD="sentinel_password"; $env:MONGO_DB_NAME="sentinel_soa"; $env:REDIS_HOST="localhost"; $env:REDIS_PORT="6379"; $env:REDIS_PASSWORD="password"; python scripts/bootstrap_local_data.py
 
 
-npx repomix --compress
+
