@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 from typing import List, Annotated
-from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.dependencies import (
@@ -28,24 +28,31 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+from core_orchestrator.infrastructure.api.rate_limiter import limiter
+from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
+
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(lambda request: f"{getattr(request.state, 'tenant_rate', 60)}/minute")
 async def ingest_single_event(
+    request: Request,
     event: LogEvent,
     background_tasks: BackgroundTasks,
     client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
     telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
     agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]
 ):
-    
+    """Ingest a single event and stamp it with tenant context."""
+
+    # Stamp tenant_id on the event server-side (never trust incoming tenant_id)
+    event.tenant_id = tenant.tenant_id
+
     event_dict = event.model_dump()
     sanitized_event_json = json.dumps(redact_sensitive_data(event_dict))
-    logger.info(
-        f"Single event ingestion request received: {sanitized_event_json}")
+    logger.info(f"Single event ingestion request received: {sanitized_event_json}")
 
-    
     background_tasks.add_task(telemetry_service.ingest_log_event, event)
-    
     await telemetry_processing_service.add_log_event(event)
 
     return {
@@ -56,10 +63,13 @@ async def ingest_single_event(
 
 
 @router.post("/ingest/batch", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(lambda request: f"{getattr(request.state, 'tenant_rate', 60)}/minute")
 async def ingest_batch_events(
+    request: Request,
     events: List[LogEvent],
     background_tasks: BackgroundTasks,
     client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
+    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
     telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
     agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]
@@ -84,6 +94,10 @@ async def ingest_batch_events(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"The authenticated client '{client.client_id}' is not authorized to send source_id '{first_source_id}'."
         )
+
+    # Stamp tenant_id server-side on every event
+    for ev in events:
+        ev.tenant_id = tenant.tenant_id
 
     # Apply redaction to batch events before logging
     logger.info(

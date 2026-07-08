@@ -64,6 +64,7 @@ class LogEvent(BaseModel):
 
     # Base Core Fields
     source_id: str = Field(..., description="Unique ID of the app instance.")
+    tenant_id: Optional[str] = Field(default=None, description="Tenant identifier (set server-side; client values are ignored).")
     source_ip: str = Field(..., description="Resolved IP address used for indexing.")
     timestamp_utc: datetime = Field(..., description="Normalized ISO 8601 UTC timestamp.")
 
