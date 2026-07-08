@@ -1,140 +1,112 @@
-# Guía de Implementación y Configuración
+# Setup and Configuration
 
-Esta guía proporciona los pasos necesarios para configurar y ejecutar el proyecto Sentinel SOA en un entorno de desarrollo.
+This document provides instructions for setting up the Sentinel SOA environment, configuring services via environment variables, and seeding the database with initial data.
 
-## Requisitos Previos
+## 1. Quick Start
 
--   Docker y Docker Compose
--   Python 3.9 o superior (para desarrollo local fuera de Docker)
--   Una clave de API de Google Gemini (si se desea usar este proveedor)
+The entire environment is orchestrated with Docker Compose. To get started:
 
-## Configuración del Entorno
-
-El proyecto utiliza un archivo `.env` para gestionar las variables de entorno. Puede empezar copiando el archivo de ejemplo:
-
-```bash
-cp .env.example .env
-```
-
-A continuación, edite el archivo `.env` y configure las siguientes variables:
-
-### Variables de Entorno
-
-| Variable | Descripción | Valor por Defecto/Ejemplo | Obligatorio |
-| :--- | :--- | :--- | :--- |
-| `LLM_PROVIDER` | Define qué proveedor de LLM se utilizará. Opciones: `gemini` u `ollama`. | `gemini` | Sí |
-| `GEMINI_API_KEY` | Tu clave de API para Google Gemini. | `""` | Si `LLM_PROVIDER=gemini` |
-| `GEMINI_MODEL` | El modelo específico de Gemini que se va a utilizar. | `gemini-1.5-flash` | Si `LLM_PROVIDER=gemini` |
-| `OLLAMA_BASE_URL` | La URL base del servicio Ollama. | `http://ollama:11434` | Si `LLM_PROVIDER=ollama` |
-| `OLLAMA_MODEL` | El nombre del modelo local que se utilizará en Ollama. | `sentinel-analyst` | Si `LLM_PROVIDER=ollama` |
-| `MONGO_DB_NAME` | Base MongoDB de la aplicación (telemetría, reportes, analytics). | `sentinel_soa` | Sí |
-| `RULES_MONGO_DB_NAME` | Base MongoDB dedicada al CRUD y versionado de reglas heurísticas. | `heuristy` | Recomendado |
-| `REDIS_RULES_DB` | DB lógica de Redis usada para cachear el bundle activo de reglas. | `3` | Recomendado |
-| `RULES_CACHE_TTL_SECONDS` | TTL del bundle de reglas en Redis. | `86400` | No |
-
-**Nota**: Los valores de `OLLAMA_BASE_URL` y `OLLAMA_MODEL` están preconfigurados en `docker-compose.yml` para funcionar dentro del entorno Docker. No es necesario cambiarlos a menos que tengas una configuración personalizada.
-
-### Variables específicas del sistema de reglas
-
-- `MONGO_DB_NAME` y `RULES_MONGO_DB_NAME` **no cumplen el mismo rol**.
-- `MONGO_DB_NAME` aloja datos operativos de la aplicación.
-- `RULES_MONGO_DB_NAME` aloja:
-  - `heuristic_rules`
-  - `rule_versions`
-  - `rule_audit_log`
-- `REDIS_RULES_DB` se usa para cachear el `RulesBundle` activo que luego el core inyecta al MCP server.
-
-Para la documentación funcional completa del subsistema de reglas, consulta:
-
-- **[📄 Guía completa de reglas heurísticas](./rules/README.md)**
-
-## Ejecución del Proyecto
-
-Una vez configurado el archivo `.env`, puedes levantar todos los servicios utilizando Docker Compose:
-
-```bash
-docker-compose up --build
-```
-
-### Bootstrap local automático
-
-Al iniciar `core`, el sistema ahora ejecuta un bootstrap idempotente controlado por `BOOTSTRAP_ON_STARTUP`.
-
-Ese bootstrap deja listo:
-
-- un usuario web inicial desde `data/users_seed.json`;
-- las reglas heurísticas base en la base `heuristy`;
-- los clientes/fuentes autorizadas de telemetría desde `data/telemetry_clients_seed.json`;
-- la caché de clientes autorizados en Redis.
-
-### Credenciales iniciales por defecto
-
-Usuario web inicial:
-
-- usuario: `admin`
-- contraseña: `AdminPassword123!`
-
-Cliente inicial de telemetría para Vector/local:
-
-- `client_id`: `victim-app-01`
-- `source_id`: `victim-app-01`
-- `X-Sentinel-API-Key`: `sentinel_local_dev_api_key_12345`
-- HMAC public key: `victim-app-01`
-
-### Rebootstrap manual
-
-Si necesitas recrear semillas sobre un entorno vacío o volver a hidratar datos manualmente:
-
-```bash
-python scripts/bootstrap_local_data.py
-python scripts/bootstrap_local_data.py --overwrite-existing
-python scripts/bootstrap_local_data.py --force-rules
-```
-
--   El flag `--build` fuerza la reconstrucción de las imágenes de Docker, lo cual es útil si has realizado cambios en el código o en los `Dockerfile`.
--   La primera vez que se ejecute, Docker descargará las imágenes base y Ollama descargará el modelo `llama3.2:1b`, lo que puede tardar varios minutos.
-
-## Verificación
-
-Para verificar que los servicios están funcionando correctamente:
-
-1.  **Core Orchestrator API**: Abre tu navegador o un cliente de API y accede a `http://localhost:8000/docs`. Deberías ver la documentación interactiva de la API de FastAPI.
-
-2.  **Logs de los Contenedores**: Puedes ver los logs de cada servicio con el siguiente comando:
+1.  **Create an environment file:** Copy the example file to `.env`. This file will hold all your local configuration secrets and settings.
     ```bash
-    # Ver logs de todos los servicios
-    docker-compose logs -f
-
-    # Ver logs de un servicio específico (ej. core)
-    docker-compose logs -f core
+    cp .env.example .env
     ```
 
-## Desarrollo Local (Sin Docker)
+2.  **Edit `.env`:** Open the `.env` file and at a minimum, provide your API key for the desired LLM provider (e.g., `GEMINI_API_KEY` for Google Gemini).
 
-Si prefieres ejecutar los servicios localmente sin Docker, necesitarás:
-
-1.  **Instalar dependencias**:
+3.  **Build and run the services:**
     ```bash
-    pip install -r requirements.txt
+    docker-compose up --build
+    ```
+    This command builds the images for all services and starts them. The frontend will be available at `http://localhost:3000` and the core API at `http://localhost:8000`.
+
+## 2. Data Seeding
+
+After the containers are running, you need to seed the database with initial users, telemetry clients, and heuristic rules. This is done using the `bootstrap_local_data.py` script.
+
+1.  **Execute the script:** Run the script from the root of the project.
+    ```bash
+    python scripts/bootstrap_local_data.py
     ```
 
-2.  **Ejecutar cada servicio** en una terminal separada, asegurándote de configurar las variables de entorno adecuadas para cada uno.
+2.  **Script Options:**
+    *   `--users-seed <path>`: Path to the JSON file for user seeding. (Default: `data/users_seed.json`)
+    *   `--clients-seed <path>`: Path to the JSON file for telemetry client seeding. (Default: `data/telemetry_clients_seed.json`)
+    *   `--overwrite-existing`: Use this flag to update existing users and clients if they are found in the database. By default, existing entries are skipped.
+    *   `--force-rules`: Use this flag to clear all existing heuristic rules, versions, and audit logs before seeding them from `data/mongodb/heuristic_rules.json`. **Use with caution.**
 
-    -   **Log Analysis Server**:
-        ```bash
-        # En la terminal 1
-        export MCP_SERVER_HOST=localhost
-        export MCP_SERVER_PORT=8080
-        # ... (resto de variables de LLM)
-        python mcp_servers/log_analysis_server/server.py
-        ```
+## 3. Environment Variables
 
-    -   **Core Orchestrator**:
-        ```bash
-        # En la terminal 2
-        export MCP_SERVER_HOST=localhost
-        export MCP_SERVER_PORT=8080
-        # ... (resto de variables de LLM)
-        uvicorn core_orchestrator.main:app --host 0.0.0.0 --port 8000 --reload
-        ```
-    **Nota**: Para el desarrollo local, también necesitarías tener una instancia de Ollama ejecutándose por separado si deseas usarla.
+Configuration is managed via environment variables defined in the `.env` file and loaded by Docker Compose.
+
+### LLM Provider Selection
+
+These variables control which Language Model provider the `mcp_server` uses for analysis.
+
+| Variable | Description | Options | Default |
+|---|---|---|---|
+| `LLM_PROVIDER` | Selects the primary LLM provider. | `gemini`, `ollama` | `gemini` |
+| `GEMINI_API_KEY` | Your Google Gemini API Key. Required if `LLM_PROVIDER=gemini`. | - | - |
+| `GEMINI_MODEL` | The specific Gemini model to use. | `gemini-1.5-flash`, `gemini-1.5-pro` | `gemini-1.5-flash` |
+| `OLLAMA_BASE_URL` | The base URL where the Ollama service is running. | - | `http://localhost:11434` |
+| `OLLAMA_MODEL` | The local Ollama model to use. You must pull this model first. | `mistral`, `llama2`, etc. | `mistral` |
+| `OLLAMA_TIMEOUT_SECONDS` | Timeout for requests to Ollama. Increase for larger models. | - | `300` |
+
+### Core Orchestrator Settings
+
+These variables configure the main `core` service.
+
+| Variable | Description | Default |
+|---|---|---|
+| `JWT_SECRET_KEY` | A long, random, and secret string used for signing JWTs. | `your-super-secret-key-here` |
+| `WINDOW_THRESHOLD_REQUESTS` | Number of requests from a source IP within the time window to trigger an alert. | (Set in `.env`) |
+| `WINDOW_DURATION_SECONDS` | Duration of the sliding time window for correlating requests. | (Set in `.env`) |
+| `MAX_ALERTS_IN_MEMORY` | Maximum number of alerts to keep in the in-memory queue. | (Set in `.env`) |
+| `BOOTSTRAP_ON_STARTUP` | If `true`, runs the data seeding process when the container starts. | `true` |
+| `MCP_SERVER_HOST` | Hostname of the MCP server, as seen from the core service. | `mcp_server` |
+| `MCP_SERVER_PORT` | Port of the MCP server. | `8080` |
+
+### Database & Cache Settings
+
+| Variable | Description | Default |
+|---|---|---|
+| `MONGO_HOST` | Hostname for the MongoDB service. | (Set in `.env`) |
+| `MONGO_PORT` | Port for the MongoDB service. | (Set in `.env`) |
+| `MONGO_USER` | Username for MongoDB authentication. | (Set in `.env`) |
+| `MONGO_PASSWORD` | Password for MongoDB authentication. | (Set in `.env`) |
+| `MONGO_DB_NAME` | The name of the main application database in MongoDB. | (Set in `.env`) |
+| `RULES_MONGO_DB_NAME` | The name of the database for heuristic rules. | `heuristy` |
+| `REDIS_HOST` | Hostname for the Redis service. | (Set in `.env`) |
+| `REDIS_PORT` | Port for the Redis service. | (Set in `.env`) |
+| `REDIS_PASSWORD` | Password for Redis authentication. | (Set in `.env`) |
+
+### Victim & Telemetry Settings
+
+These variables configure the `victim_app` and the `log_shipper` (Vector).
+
+| Variable | Description | Default |
+|---|---|---|
+| `VICTIM_SOURCE_ID` | A unique identifier for the monitored application instance. | `victim-app-01` |
+| `TELEMETRY_FORWARD_URL` | The full URL where the log shipper sends telemetry batches. | `http://core:8000/api/v1/telemetry/ingest/batch` |
+| `TELEMETRY_HMAC_PUBLIC_KEY`| The public key (Client ID) used by the core to look up the shared secret for HMAC signature verification. | `victim-app-01` |
+| `TELEMETRY_HMAC_SECRET` | The shared secret key used by the `victim_app` to sign telemetry payloads. Must match the secret stored in the database for the corresponding client. | (A default is provided) |
+
+## 4. Local Ollama Setup
+
+To run the system with a local LLM and avoid external API calls:
+
+1.  **Run Ollama Container:** The included `docker-compose.yml` already defines an `ollama` service.
+
+2.  **Pull a Model:** From your host machine, `exec` into the running `ollama` container and pull a model. `mistral` is recommended as a starting point.
+    ```bash
+    docker exec -it sentinel_ollama ollama pull mistral
+    ```
+
+3.  **Configure `.env`:** Change the `LLM_PROVIDER` in your `.env` file.
+    ```
+    LLM_PROVIDER=ollama
+    ```
+
+4.  **Restart the MCP Server:** To apply the change, restart the `mcp_server` container.
+    ```bash
+    docker-compose restart mcp_server
+    ```
