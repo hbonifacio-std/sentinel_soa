@@ -17,6 +17,9 @@ from mcp_servers.log_analysis_server.llm_providers.base import (
     LLMResponse,
     LLMException,
 )
+from mcp_servers.log_analysis_server.llm_providers.response_normalizer import (
+    parse_llm_decision_response,
+)
 from mcp_servers.log_analysis_server.services.prompt_builder import AnalysisPromptBuilder
 
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers.groq_provider")
@@ -128,19 +131,10 @@ class GroqProvider(LLMProviderInterface):
             LLMException: If there is a parsing or validation error
         """
         try:
-            # Try to extract JSON from the response (GROQ might wrap it)
-            parsed = self._extract_json_object(response)
+            normalized = parse_llm_decision_response(response)
             logger.debug("JSON parsed successfully")
 
-            # Keep a provider-agnostic contract: only cognitive LLM fields are accepted.
-            filtered = {
-                "threat_score": parsed.get("threat_score", 0),
-                "reasoning_summary": parsed.get("reasoning_summary", ""),
-                "recommendation": parsed.get("recommendation", ""),
-            }
-            
-            # Try to validate with Pydantic
-            validated = LLMResponse(**filtered)
+            validated = LLMResponse(**normalized)
             logger.debug("Response validated against LLMResponse schema")
             return validated
             
@@ -155,46 +149,6 @@ class GroqProvider(LLMProviderInterface):
         except Exception as exc:
             logger.error(f"Unexpected error in validate_response: {str(exc)}")
             raise LLMException(f"Unexpected error: {str(exc)}") from exc
-
-    @staticmethod
-    def _extract_json_object(raw_text: str) -> Dict[str, Any]:
-        """Extract a JSON object even when the model wraps it with extra text or markdown fences."""
-        import re
-        
-        stripped = raw_text.strip()
-
-        # Fast-path: fully valid JSON object
-        try:
-            parsed = json.loads(stripped)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-        # Remove markdown code fences and retry
-        fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", stripped, re.DOTALL | re.IGNORECASE)
-        if fence_match:
-            candidate = fence_match.group(1).strip()
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        # Fallback: take first '{' and last '}' block
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            candidate = stripped[start:end + 1]
-            try:
-                parsed = json.loads(candidate)
-                if isinstance(parsed, dict):
-                    return parsed
-            except json.JSONDecodeError:
-                pass
-
-        raise json.JSONDecodeError("Could not extract a valid JSON object", stripped, 0)
 
     @property
     def provider_name(self) -> str:

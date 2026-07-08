@@ -17,6 +17,9 @@ from mcp_servers.log_analysis_server.llm_providers.base import (
     LLMResponse,
     LLMException,
 )
+from mcp_servers.log_analysis_server.llm_providers.response_normalizer import (
+    parse_llm_decision_response,
+)
 from mcp_servers.log_analysis_server.services.prompt_builder import AnalysisPromptBuilder
 
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers.openai_provider")
@@ -126,18 +129,10 @@ class OpenAIProvider(LLMProviderInterface):
             LLMException: If there is a parsing or validation error
         """
         try:
-            parsed = json.loads(response)
+            normalized = parse_llm_decision_response(response)
             logger.debug("JSON parsed successfully")
 
-            # Keep a provider-agnostic contract: only cognitive LLM fields are accepted.
-            filtered = {
-                "threat_score": parsed.get("threat_score", 0),
-                "reasoning_summary": parsed.get("reasoning_summary", ""),
-                "recommendation": parsed.get("recommendation", ""),
-            }
-            
-            # Try to validate with Pydantic
-            validated = LLMResponse(**filtered)
+            validated = LLMResponse(**normalized)
             logger.debug("Response validated against LLMResponse schema")
             return validated
             

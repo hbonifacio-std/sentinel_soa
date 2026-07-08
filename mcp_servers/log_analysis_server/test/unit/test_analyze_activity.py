@@ -20,6 +20,7 @@ from mcp_servers.log_analysis_server.tools.analyze_activity import (
     _build_targeted_asset,
     _enrich_with_mitre_dictionary,
     _extract_rules_bundle,
+    generate_recommendation,
     execute_analyze_web_activity,
     LLMAnalyzer,
 )
@@ -387,3 +388,95 @@ async def test_execute_get_threat_context_raises_on_empty_ip():
     with pytest.raises((ValueError, Exception)):
         request = ThreatContextRequest(source_ip="  ", limit=5)
         await execute_get_threat_context(request)
+
+
+# ---------------------------------------------------------------------------
+# generate_recommendation tests (Fase 3: Coverage for CRITICAL/HIGH/MEDIUM)
+# ---------------------------------------------------------------------------
+
+def test_generate_recommendation_critical_level_with_sql_injection():
+    """CRITICAL level with SQL injection indicator."""
+    recommendation = generate_recommendation(
+        threat_level="CRITICAL",
+        source_ip="192.168.1.100",
+        indicators=["SQL_INJECTION_PROBE", "AUTOMATED_SCANNER_FINGERPRINT"]
+    )
+    assert "🔴 **CRITICAL LEVEL" in recommendation
+    assert "SQL injection attack in progress" in recommendation
+    assert "192.168.1.100" in recommendation
+    assert "Level 1" in recommendation
+    assert "Level 2" in recommendation
+    assert "Level 3" in recommendation
+
+
+def test_generate_recommendation_critical_level_with_path_traversal():
+    """CRITICAL level with path traversal indicator."""
+    recommendation = generate_recommendation(
+        threat_level="CRITICAL",
+        source_ip="10.0.0.50",
+        indicators=["PATH_TRAVERSAL_PROBE"]
+    )
+    assert "🔴 **CRITICAL LEVEL" in recommendation
+    assert "BLOCK IMMEDIATELY" in recommendation
+    assert "10.0.0.50" in recommendation
+    assert "file integrity" in recommendation.lower()
+
+
+def test_generate_recommendation_high_level_with_scanner():
+    """HIGH level with scanner fingerprint."""
+    recommendation = generate_recommendation(
+        threat_level="HIGH",
+        source_ip="203.0.113.45",
+        indicators=["Scanner activity detected"]
+    )
+    assert "🟠 **HIGH LEVEL" in recommendation
+    assert "rate-limiting" in recommendation
+    assert "203.0.113.45" in recommendation
+    assert "24 hours" in recommendation
+
+
+def test_generate_recommendation_high_level_with_auth_probing():
+    """HIGH level with authentication probing."""
+    recommendation = generate_recommendation(
+        threat_level="HIGH",
+        source_ip="198.51.100.10",
+        indicators=["AUTHENTICATION_OR_AUTHORIZATION_PROBING"]
+    )
+    assert "🟠 **HIGH LEVEL" in recommendation
+    assert "198.51.100.10" in recommendation
+
+
+def test_generate_recommendation_medium_level():
+    """MEDIUM level recommendation."""
+    recommendation = generate_recommendation(
+        threat_level="MEDIUM",
+        source_ip="172.16.0.1",
+        indicators=["ANOMALOUS_REQUEST_RATE"]
+    )
+    assert "🟡 **MEDIUM LEVEL" in recommendation
+    assert "MONITORING RECOMMENDED" in recommendation
+    assert "rate-limiting" in recommendation
+    assert "172.16.0.1" in recommendation
+
+
+def test_generate_recommendation_low_level():
+    """LOW or NONE threat level."""
+    recommendation = generate_recommendation(
+        threat_level="LOW",
+        source_ip="1.1.1.1",
+        indicators=[]
+    )
+    assert "🟢 **LOW/BENIGN LEVEL" in recommendation
+    assert "benign" in recommendation.lower()
+    assert "No immediate action required" in recommendation
+
+
+def test_generate_recommendation_with_webshell_indicator():
+    """CRITICAL level with webshell attempt."""
+    recommendation = generate_recommendation(
+        threat_level="CRITICAL",
+        source_ip="evil.attacker.com",
+        indicators=["WEBSHELL_UPLOAD_ATTEMPT"]
+    )
+    assert "🔴" in recommendation
+    assert "webshell attempt detected" in recommendation

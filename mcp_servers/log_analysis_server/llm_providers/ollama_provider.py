@@ -7,8 +7,7 @@ analysis execution without external API dependencies and without costs.
 
 import json
 import logging
-import re
-from typing import Any, Dict, Optional, List
+from typing import Optional
 
 import httpx
 from httpx import Timeout
@@ -19,7 +18,9 @@ from mcp_servers.log_analysis_server.llm_providers.base import (
     LLMResponse,
     LLMException,
 )
-from mcp_servers.log_analysis_server.services.prompt_builder import AnalysisPromptBuilder
+from mcp_servers.log_analysis_server.llm_providers.response_normalizer import (
+    parse_llm_decision_response,
+)
 
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers.ollama_provider")
 
@@ -62,82 +63,20 @@ class OllamaProvider(LLMProviderInterface):
     def _get_client(self) -> httpx.AsyncClient:
         """
         Get or create an asynchronous HTTP client for Ollama.
-        
+
+        Reuses a single client instance for the lifetime of the provider.
+
         Returns:
             httpx.AsyncClient: Client with configured timeout
         """
-        structured_timeout = Timeout(
-            timeout=float(self._timeout),
-            read=float(self._timeout),
-            connect=10.0
-        )
-
-        self._client = httpx.AsyncClient(timeout=structured_timeout)
+        if self._client is None:
+            structured_timeout = Timeout(
+                timeout=float(self._timeout),
+                read=float(self._timeout),
+                connect=10.0,
+            )
+            self._client = httpx.AsyncClient(timeout=structured_timeout)
         return self._client
-
-    @staticmethod
-    def _extract_json_object(raw_text: str) -> Dict[str, Any]:
-        """Extract a JSON object even when the model wraps it with extra text or markdown fences."""
-        stripped = raw_text.strip()
-
-        # Fast-path: fully valid JSON object
-        try:
-            parsed = json.loads(stripped)
-            if isinstance(parsed, dict):
-                return parsed
-        except json.JSONDecodeError:
-            pass
-
-        # Remove markdown code fences and retry
-        fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", stripped, re.DOTALL | re.IGNORECASE)
-        if fence_match:
-            candidate = fence_match.group(1).strip()
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-
-        # Fallback: take first '{' and last '}' block
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start != -1 and end != -1 and end > start:
-            candidate = stripped[start:end + 1]
-            parsed = json.loads(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-
-        raise json.JSONDecodeError("Could not extract a valid JSON object", stripped, 0)
-
-    @staticmethod
-    def _normalize_response(parsed: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize aliases and keep only the 3 canonical LLM decision fields."""
-        raw = dict(parsed)
-
-        aliases = {
-            "score": "threat_score",
-            "risk_score": "threat_score",
-            "analysis_summary": "reasoning_summary",
-            "summary": "reasoning_summary",
-            "justification": "reasoning_summary",
-            "recommended_action": "recommendation",
-            "mitigation": "recommendation",
-        }
-
-        normalized: Dict[str, Any] = {}
-        for source_key, target_key in aliases.items():
-            if target_key not in raw and source_key in raw:
-                raw[target_key] = raw[source_key]
-
-        normalized["threat_score"] = raw.get("threat_score", 0)
-        normalized["reasoning_summary"] = raw.get(
-            "reasoning_summary",
-            "Partial LLM output received; reasoning completed using deterministic security heuristics.",
-        )
-        normalized["recommendation"] = raw.get(
-            "recommendation",
-            "Strengthen layered detection controls and harden exposed application attack surfaces.",
-        )
-
-        return normalized
 
     async def call_model(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """
@@ -207,8 +146,7 @@ class OllamaProvider(LLMProviderInterface):
             LLMException: If there is a parsing or validation error
         """
         try:
-            parsed = self._extract_json_object(response)
-            normalized = self._normalize_response(parsed)
+            normalized = parse_llm_decision_response(response, use_fallback_defaults=True)
             logger.debug("JSON parsed successfully")
             
             # Validate with Pydantic

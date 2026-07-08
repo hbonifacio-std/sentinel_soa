@@ -7,6 +7,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from mcp_servers.log_analysis_server.services.translate_mongo import TranslateMongo
+from mcp_servers.log_analysis_server.services.json_utils import extract_json_object
 
 
 # ---------------------------------------------------------------------------
@@ -21,45 +22,41 @@ def _make_translator(model_id: str = "qwen2_5_coder7") -> TranslateMongo:
 
 
 # ---------------------------------------------------------------------------
-# _extract_json_object (static helper)
+# extract_json_object (shared helper, lenient mode)
 # ---------------------------------------------------------------------------
 
 def test_extract_json_direct():
     raw = '{"mongo_filter": {"source_ip": "10.0.0.1"}}'
-    result = TranslateMongo._extract_json_object(raw)
+    result = extract_json_object(raw, strict=False)
     assert result["mongo_filter"]["source_ip"] == "10.0.0.1"
 
 
 def test_extract_json_fenced_block():
     raw = '```json\n{"mongo_filter": {"source_ip": "10.0.0.1"}}\n```'
-    result = TranslateMongo._extract_json_object(raw)
+    result = extract_json_object(raw, strict=False)
     assert result["mongo_filter"]["source_ip"] == "10.0.0.1"
 
 
 def test_extract_json_substring_braces():
     raw = 'Some preamble {"mongo_filter": {"source_ip": "10.0.0.1"}} some suffix'
-    result = TranslateMongo._extract_json_object(raw)
+    result = extract_json_object(raw, strict=False)
     assert result["mongo_filter"]["source_ip"] == "10.0.0.1"
 
 
 def test_extract_json_empty_string():
-    result = TranslateMongo._extract_json_object("")
+    result = extract_json_object("", strict=False)
     assert result == {}
 
 
 def test_extract_json_invalid_returns_empty():
-    result = TranslateMongo._extract_json_object("not json at all !!!")
+    result = extract_json_object("not json at all !!!", strict=False)
     assert result == {}
 
 
-def test_extract_json_non_dict_json_returns_raw():
-    # The implementation returns whatever json.loads produces for non-dict JSON.
-    # A list input parses successfully, so the method returns it.
-    # This test documents the actual behavior without asserting wrong assumptions.
+def test_extract_json_non_dict_json_returns_empty():
     raw = '[{"key": "val"}]'
-    result = TranslateMongo._extract_json_object(raw)
-    # Either a list or {} are acceptable; the important thing is not crashing.
-    assert result is not None
+    result = extract_json_object(raw, strict=False)
+    assert result == {}
 
 
 # ---------------------------------------------------------------------------

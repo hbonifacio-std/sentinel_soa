@@ -1,10 +1,9 @@
-import json
 import logging
-import re
 from typing import Any, Optional
 
 from mcp_servers.log_analysis_server.config import server_settings
 from mcp_servers.log_analysis_server.llm_providers import create_llm_provider, LLMProviderInterface
+from mcp_servers.log_analysis_server.services.json_utils import extract_json_object
 from mcp_servers.log_analysis_server.services.prompt_factory import build_nlq_to_mongo_prompt
 
 logger = logging.getLogger(__name__)
@@ -42,39 +41,6 @@ class TranslateMongo:
             config=config
         )
 
-    @staticmethod
-    def _extract_json_object(raw_text: str) -> dict[str, Any]:
-        """Safely extracts a JSON object from a raw string."""
-        stripped = str(raw_text or "").strip()
-        if not stripped:
-            return {}
-
-        try:
-            return json.loads(stripped)
-        except json.JSONDecodeError:
-            logger.warning(f"Initial JSON parse failed for: {stripped}")
-
-        fenced = re.search(r"```(?:json)?\s*(\{.*})\s*```", stripped, re.DOTALL | re.IGNORECASE)
-        if fenced:
-            try:
-                return json.loads(fenced.group(1).strip())
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse fenced JSON: {fenced.group(1)}")
-                return {}
-
-        start = stripped.find("{")
-        end = stripped.rfind("}")
-        if start >= 0 and end > start:
-            try:
-                return json.loads(stripped[start : end + 1])
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse substring JSON: {stripped[start:end+1]}")
-                return {}
-        
-        logger.error(f"Could not find a valid JSON object in the response: {raw_text}")
-        return {}
-
-
     async def translate_query(self, query: str, source_id: Optional[str] = None) -> dict[str, Any]:
         """
         Translates a natural language query to a MongoDB filter.
@@ -100,7 +66,7 @@ class TranslateMongo:
             # The system prompt is now embedded in the user_prompt by the factory
             response_text = await self._provider.call_model(prompt=user_prompt)
             
-            parsed_response = self._extract_json_object(response_text)
+            parsed_response = extract_json_object(response_text, strict=False)
 
             if "mongo_filter" not in parsed_response:
                 logger.error(f"Response from LLM is missing 'mongo_filter': {parsed_response}")
@@ -121,13 +87,4 @@ class TranslateMongo:
                 "error": "An exception occurred during translation.",
                 "details": str(e)
             }
-
-async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = None) -> dict[str, Any]:
-    """
-    High-level function to generate a MongoDB query from a natural language query.
-    It uses the TranslateMongo class to perform the translation.
-    """
-    # Using the default model ID from settings for translation tasks
-    translator = TranslateMongo(model_id=server_settings.default_translator_model_id or server_settings.default_model_id)
-    return await translator.translate_query(query, source_id)
 

@@ -13,6 +13,10 @@ from mcp_servers.log_analysis_server.config import server_settings
 from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
 from mcp_servers.log_analysis_server.tools.forensic_nlq import build_forensic_mongo_query, generate_forensic_report
 from mcp_servers.log_analysis_server.tools.threat_context import ThreatContextRequest, execute_get_threat_context
+from mcp_servers.log_analysis_server.tools.error_responses import (
+    build_analyze_web_activity_error,
+    build_threat_context_error,
+)
 
 # --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
@@ -127,26 +131,13 @@ async def analyze_web_activity(  # noqa: PLR0913
         return await execute_analyze_web_activity(payload)
     except Exception as e:
         logger.error(f"Error executing tool: {str(e)}", exc_info=True)
-        return {
-            "window_id": window_id,
-            "source_id": source_id,
-            "source_ip": source_ip,
-            "threat_detected": False,
-            "threat_level": "NONE",
-            "threat_score": 0,
-            "indicators_found": ["analysis_execution_error"],
-            "reasoning_summary": "MCP tool execution failed before producing a valid analytical verdict.",
-            "recommendation": "Review MCP server logs, validate telemetry window payload, and rerun analysis.",
-            "targeted_asset": f"victim-app [simulation_dmz] paths: {unique_uris_requested[:5]}",
-            "mitre_tactic": None,
-            "mitre_tactic_id": None,
-            "mitre_technique": None,
-            "mitre_technique_id": None,
-            "mitre_sub_technique": None,
-            "mitre_sub_technique_id": None,
-            "suggested_mitigations": [],
-            "error": str(e)
-        }
+        return build_analyze_web_activity_error(
+            window_id=window_id,
+            source_id=source_id,
+            source_ip=source_ip,
+            unique_uris_requested=unique_uris_requested,
+            error=str(e),
+        )
 
 @server.tool()
 async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = None) -> Dict[str, Any]:
@@ -215,12 +206,7 @@ async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str
         return await execute_get_threat_context(request_payload)
     except Exception as e:
         logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
-        return {
-            "source_ip": source_ip,
-            "history": [],
-            "record_count": 0,
-            "error": str(e)
-        }
+        return build_threat_context_error(source_ip=source_ip, error=str(e))
 
 # --- Server Startup Logic ---
 async def main():

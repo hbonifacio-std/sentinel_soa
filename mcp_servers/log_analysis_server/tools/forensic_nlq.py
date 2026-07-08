@@ -10,14 +10,12 @@ from typing import Any, Optional, List, Tuple
 from mcp_servers.log_analysis_server.config import server_settings
 from mcp_servers.log_analysis_server.llm_providers import create_llm_provider
 from mcp_servers.log_analysis_server.models.forensic_input import ForensicReportInput, ForensicQueryPlannerInput
+from mcp_servers.log_analysis_server.services.json_utils import extract_json_object
 from mcp_servers.log_analysis_server.services.prompt_factory import build_forensic_prompt
 from mcp_servers.log_analysis_server.services.translate_mongo import TranslateMongo
 
 _SUSPICIOUS_PATH_TOKENS = ("/.env", "/.git", "/etc/passwd", "../", "%2e%2e", "/admin", "/wp-")
 _SCANNER_TOKENS = ("sqlmap", "nikto", "nmap", "masscan", "dirbuster", "gobuster", "burp")
-_REGEX_OPERATOR = "$regex"
-_OPTIONS_OPERATOR = "$options"
-_HTTP_PATH_FIELD = "http.path"
 _DEFAULT_FORENSIC_REPORT_TIMEOUT_SECONDS = 1800
 
 # Constants for Triage and Sampling
@@ -29,15 +27,7 @@ logger = logging.getLogger(__name__)
 
 _IP_PATTERN = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _STATUS_PATTERN = re.compile(r"\b[1-5]\d\d\b")
-_URI_PATTERN = re.compile(r"/(?:[A-Za-z0-9._~!$&'()*+,;=:@%-]|%[0-9A-Fa-f]{2})+")
 _WORD_PATTERN = re.compile(r"[A-Za-z0-9_.:%-]{3,}")
-
-
-def _extract_status_codes(query_text: str, ip_matches: list[str]) -> list[int]:
-    text_without_ips = query_text
-    for ip in ip_matches:
-        text_without_ips = text_without_ips.replace(ip, " ")
-    return sorted({int(code) for code in _STATUS_PATTERN.findall(text_without_ips)})
 
 
 def _extract_keyword_terms(query_text: str) -> list[str]:
@@ -79,37 +69,6 @@ def _extract_keyword_terms(query_text: str) -> list[str]:
             continue
         terms.append(normalized)
     return terms
-
-
-def _extract_json_object(raw_text: str) -> dict[str, Any]:
-    stripped = str(raw_text or "").strip()
-    if not stripped:
-        return {}
-
-    try:
-        parsed = json.loads(stripped)
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        pass
-
-    fenced = re.search(r"```(?:json)?\s*(\{.*})\s*```", stripped, re.DOTALL | re.IGNORECASE)
-    if fenced:
-        try:
-            parsed = json.loads(fenced.group(1).strip())
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            parsed = json.loads(stripped[start : end + 1])
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}
-
-    return {}
 
 
 def _run_intelligent_sampling(rows: List[dict[str, Any]], query: str) -> Tuple[List[dict[str, Any]], str]:
@@ -192,8 +151,8 @@ async def _generate_llm_forensic_report(
     rows: list[dict[str, Any]],
     system_context_note: Optional[str] = None
 ) -> dict[str, Any]:
-    model_id_to_use = server_settings.default_model_id
-    
+    model_id_to_use = payload.model_id or server_settings.default_model_id
+
     model_def = server_settings.available_models.get(model_id_to_use)
     if not model_def:
         raise ValueError(f"Model ID '{model_id_to_use}' not found in the available models catalog.")
@@ -218,7 +177,7 @@ async def _generate_llm_forensic_report(
         provider.call_model(prompt),
         timeout=float(_DEFAULT_FORENSIC_REPORT_TIMEOUT_SECONDS),
     )
-    parsed = _extract_json_object(response_text)
+    parsed = extract_json_object(response_text, strict=False)
     return parsed
 
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,5 +16,5 @@ class ForensicReportInput(BaseModel):
     query: str = Field(..., min_length=3, max_length=400)
     source_id: str = Field(default=None, min_length=1, max_length=100)
     total_matches: int = Field(default=0, ge=0)
-    model_id: str = Field(min_length=3, max_length=100)
+    model_id: Optional[str] = Field(default=None, min_length=3, max_length=100)
     rows: list[dict[str, Any]] = Field(default_factory=list)

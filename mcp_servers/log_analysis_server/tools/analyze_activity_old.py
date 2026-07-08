@@ -21,7 +21,6 @@ from mcp_servers.log_analysis_server.models.rules_bundle import RulesBundle
 from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
 from mcp_servers.log_analysis_server.store.alert_store import alert_store
 from mcp_servers.log_analysis_server.services.prompt_factory import build_web_activity_prompt
-from mcp_servers.log_analysis_server.services.prompt_factory import build_web_activity_prompt
 from mcp_servers.log_analysis_server.llm_providers import create_llm_provider
 
 # Local logger configuration

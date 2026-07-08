@@ -31,6 +31,8 @@ from mcp_servers.log_analysis_server.llm_providers import create_llm_provider  #
 from mcp_servers.log_analysis_server.llm_providers.base import LLMResponse, LLMException  # noqa: E402
 from mcp_servers.log_analysis_server.llm_providers.gemini_provider import GeminiProvider  # noqa: E402
 from mcp_servers.log_analysis_server.llm_providers.ollama_provider import OllamaProvider  # noqa: E402
+from mcp_servers.log_analysis_server.llm_providers.response_normalizer import normalize_llm_decision
+from mcp_servers.log_analysis_server.services.json_utils import extract_json_object  # noqa: E402
 from mcp_servers.log_analysis_server.llm_providers.openai_provider import OpenAIProvider  # noqa: E402
 from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProvider  # noqa: E402
 
@@ -149,30 +151,34 @@ def test_ollama_provider_properties():
     assert prov.model_name == "mistral"
 
 
-def test_ollama_extract_json_object_direct():
+def test_ollama_get_client_reuses_single_instance():
     prov = OllamaProvider(model_name="mistral", base_url="http://localhost:11434")
+    first_client = prov._get_client()
+    second_client = prov._get_client()
+    assert first_client is second_client
+
+
+def test_ollama_extract_json_object_direct():
     raw = '{"threat_score": 55, "reasoning_summary": "r", "recommendation": "rec"}'
-    assert prov._extract_json_object(raw)["threat_score"] == 55
+    assert extract_json_object(raw)["threat_score"] == 55
 
 
 def test_ollama_extract_json_object_fenced():
-    prov = OllamaProvider(model_name="mistral", base_url="http://localhost:11434")
     raw = '```json\n{"threat_score": 60, "reasoning_summary": "r", "recommendation": "rec"}\n```'
-    assert prov._extract_json_object(raw)["threat_score"] == 60
+    assert extract_json_object(raw)["threat_score"] == 60
 
 
 def test_ollama_extract_json_object_substring():
-    prov = OllamaProvider(model_name="mistral", base_url="http://localhost:11434")
     raw = 'some prefix {"threat_score": 65, "reasoning_summary": "r", "recommendation": "rec"} suffix'
-    assert prov._extract_json_object(raw)["threat_score"] == 65
+    assert extract_json_object(raw)["threat_score"] == 65
 
 
 def test_ollama_normalize_response_alias_mapping():
-    normalized = OllamaProvider._normalize_response({
+    normalized = normalize_llm_decision({
         "score": 70,
         "summary": "Aliases test",
         "mitigation": "Do something",
-    })
+    }, use_fallback_defaults=True)
     assert normalized["threat_score"] == 70
     assert normalized["reasoning_summary"] == "Aliases test"
     assert normalized["recommendation"] == "Do something"

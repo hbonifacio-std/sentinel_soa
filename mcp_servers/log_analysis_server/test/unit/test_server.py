@@ -162,7 +162,7 @@ async def test_get_threat_context_returns_history():
     mock_result = {
         "source_ip": "10.0.0.1",
         "history": [],
-        "record_count": 0,
+        "alerts_found": 0,
     }
     with patch(
         "mcp_servers.log_analysis_server.server.execute_get_threat_context",
@@ -185,3 +185,4 @@ async def test_get_threat_context_returns_error_dict_on_exception():
     assert "error" in result
     assert result["source_ip"] == "10.0.0.1"
     assert result["history"] == []
+    assert result["alerts_found"] == 0
