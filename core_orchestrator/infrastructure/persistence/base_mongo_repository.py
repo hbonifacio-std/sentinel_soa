@@ -29,6 +29,16 @@ class BaseRepository(Generic[ModelType]):
         count = await self.collection.count_documents(query, limit=1)
         return count > 0
 
+    async def find_many(self, query: Dict[str, Any]) -> List[ModelType]:
+        cursor = self.collection.find(query)
+        docs = await cursor.to_list(length=None)
+        results = []
+        for doc in docs:
+            dict_doc = cast(Dict[str, Any], doc)
+            dict_doc.pop("_id", None)
+            results.append(self.model(**dict_doc))
+        return results
+
 
     async def find_paginated(
             self, query: Optional[Dict[str, Any]] = None, page: int = 1, limit: int = 10, sort_by: Optional[str] = None, descending: bool = True
