@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("mcp_servers.log_analysis_server.llm_providers")
 
+_active_providers = []
+import asyncio
+
 
 def create_llm_provider(
     provider_name: str, 
@@ -98,8 +101,13 @@ def create_llm_provider(
             )
         
         logger.debug(f"Provider {provider_name_lower} initialized successfully")
+        # Register provider instance for coordinated shutdown/cleanup
+        try:
+            _active_providers.append(provider_instance)
+        except Exception:
+            logger.debug("Could not register provider in active registry")
         return provider_instance
-        
+
     except TypeError as type_err:
         logger.error(f"Configuration error for provider {provider_name_lower}: {str(type_err)}")
         raise LLMException(
@@ -109,6 +117,27 @@ def create_llm_provider(
     except Exception as exc:
         logger.error(f"Error creating provider {provider_name_lower}: {str(exc)}", exc_info=True)
         raise LLMException(f"Error initializing {provider_name_lower}: {str(exc)}") from exc
+
+async def close_all_providers() -> None:
+    """Close/cleanup all active LLM provider instances (best-effort).
+
+    Iterates over the registry of created providers and calls `close()` if present.
+    Handles both sync and async close methods.
+    """
+    if not _active_providers:
+        return
+    logger.info(f"Closing {_active_providers.__len__()} active LLM provider(s)")
+    for prov in list(_active_providers):
+        try:
+            close_fn = getattr(prov, 'close', None)
+            if close_fn:
+                if asyncio.iscoroutinefunction(close_fn):
+                    await close_fn()
+                else:
+                    close_fn()
+        except Exception:
+            logger.exception('Error closing provider %s', getattr(prov, 'provider_name', repr(prov)))
+    _active_providers.clear()
 
 
 __all__ = [

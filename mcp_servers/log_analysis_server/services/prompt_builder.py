@@ -1,10 +1,53 @@
 """Module for analytical prompt engineering and construction for the MCP Server.
 
-This module is responsible for structuring the base template by injecting received
-telemetry data to be delivered to the LLM inference engine.
+DEPRECATED: This module is maintained for backward compatibility. New code should use
+`prompt_factory.build_web_activity_prompt()` and `prompt_factory.build_forensic_prompt()`
+instead. For system instructions, use `system_instructions` module.
+
+=== LLM RECOMMENDATIONS vs DETERMINISTIC HEURISTICS (Read This!) ===
+
+**LLM Output Fields**:
+- `threat_score`: Human-interpretable risk score (0-100), computed by the LLM based on attack pattern recognition
+- `reasoning_summary`: Narrative explanation of why this window triggered an alert (max 100 words)
+- `recommendation`: Strategic, mid-to-long-term mitigation actions (e.g., "Implement MFA", "Update WAF rules")
+
+These three fields form the LLM's decision. They are:
+✓ Strategic (focused on systemic improvements, not immediate band-aids)
+✓ Contextual (incorporate historical alerts, infrastructure state, attack patterns)
+✓ Human-reviewed-ready (safe for SOC analysts to read and act upon)
+
+**Heuristic Scoring** (separate system):
+The deterministic heuristics in `analyze_activity/heuristics_engine.py` compute a separate
+`score` and `indicators_found` list based on:
+- Statistical anomalies (RPS spikes, 404 ratio, response code distribution)
+- Known attack pattern signatures (SQL injection attempts, path traversal, brute force)
+- Payload inspection (malicious User-Agent strings, suspicious headers)
+
+Heuristic results are:
+✓ Immediate (no LLM latency, deterministic)
+✓ Observable (clear rules, auditable decision paths)
+✓ Tactical (focused on fast threat response)
+
+**How They Integrate**:
+1. Telemetry arrives → Heuristics compute indicators + score
+2. Heuristics score passed to LLM as context
+3. LLM outputs: threat_score, reasoning, recommendation
+4. Backend merges:
+   - Uses higher of (heuristic_score, llm_threat_score) as canonical threat_score
+   - Uses LLM's reasoning_summary verbatim
+   - Uses LLM's recommendation for strategic guidance
+   - Uses heuristic indicators + suggested_mitigations for immediate actions
+
+Maintainers: When changing the semantic of these fields, update docstrings in
+prompt_factory.py as well to keep them in sync.
 """
 import json
+import warnings
 from typing import List, Any
+
+from mcp_servers.log_analysis_server.services.system_instructions import (
+    get_analysis_system_instructions,
+)
 
 class AnalysisPromptBuilder:
     """Class specialized in the dynamic generation of cybersecurity guidelines and prompts."""
@@ -71,78 +114,32 @@ class AnalysisPromptBuilder:
         }
     @staticmethod
     def get_system_instructions() -> str:
-        """Role definition, attack detection guidelines (OWASP Top 10), and mapping standards (MITRE ATT&CK / NIST)."""
-        return """You are a senior cybersecurity analyst at a SOC (Security Operations Center), specializing in early threat detection through forensic analysis of HTTP telemetry. Your role is to accurately evaluate web traffic windows and determine if they contain attack indicators, classifying them according to the Cyber Kill Chain model and the OWASP Top 10 (2021) framework.
-
-                In addition to OWASP Top 10, your analysis should align with MITRE ATT&CK tactics and techniques, and conform to NIST cybersecurity framework principles, focusing on detection and response capabilities.
-                
-                === MITRE ATT&CK and NIST Alignment ===
-                When identifying indicators and formulating reasoning, correlate observed traffic patterns with MITRE ATT&CK Tactics (e.g., Reconnaissance, Initial Access, Execution, Persistence, Privilege Escalation, Defense Evasion, Credential Access, Discovery, Lateral Movement, Collection, Exfiltration, Impact) and Techniques (e.g., T1595 - Active Scanning, T1190 - Exploit Public-Facing Application).
-                Your reasoning_summary should briefly mention relevant ATT&CK techniques if applicable.
-                Recommendations should also consider NIST Cybersecurity Framework Functions: Identify, Protect, Detect, Respond, Recover. Focus your recommendations on "Detect" and "Respond" actions, suggesting improvements in monitoring, alerting, and incident response procedures.
-                
-                === ATTACK PATTERNS TO DETECT (OWASP Top 10) ===
-                1. A07:2021 - Identification and Authentication Failures
-                   - Multiple POST /auth/login attempts with different username/password combinations (brute force).
-                   - Sequential attempts against the same user with common passwords (e.g., admin, admin_password, etc.).
-                   - User enumeration: trying names like admin, root, test, superadmin in rapid succession.
-                   - Brute-force tool User-Agents: "Hydra", "python-requests".
-                
-                2. A03:2021 - Injection (SQL / NoSQL)
-                   - SQLi payloads in username/password fields: ' OR '1'='1, UNION SELECT, admin'--.
-                   - User-Agent "sqlmap/x.x" is a near-certain indicator of automated A03.
-                
-                3. A01:2021 - Broken Access Control / A02:2021 - Cryptographic Failures
-                   - JWT tokens with header alg=none or empty/invalid signature.
-                   - Manipulated tokens attempting privilege escalation (e.g., sub=admin).
-                   - Bearer token reused in rapid bursts (exfiltration / stolen token).
-                
-                4. A05:2021 - Security Misconfiguration
-                   - Requests to undocumented or sensitive paths: /admin, /.env, /config, /.git/config, /backup.zip, /wp-login.php, /etc/passwd.
-                   - Path traversal: ../, %2e%2e%2f, ..%5c sequences.
-                   - Discovery tools: dirb, gobuster, nikto (bursts of 404s).
-                
-                5. General automation/reconnaissance indicators
-                   - Abnormally high sustained RPS (> 10 RPS) or bursts of >5 requests in less than 1 second.
-                   - 404 error ratio greater than 50% in a window, or accumulation of repeated 401/403 responses.
-                
-                === INDICATOR QUALITY RULES (IMPORTANT) ===
-                - `indicators_found` MUST contain SOC-style semantic labels, not raw routes or isolated payload samples.
-                - Forbidden as standalone indicators: "/.env", "/etc/passwd", "/swagger.json", "../".
-                - Prefer normalized labels like:
-                  - "PATH_TRAVERSAL_PROBE"
-                  - "SENSITIVE_RESOURCE_ENUMERATION"
-                  - "AUTOMATED_SCANNER_FINGERPRINT"
-                  - "HIGH_404_ENUMERATION_RATIO"
-                  - "ANOMALOUS_REQUEST_RATE"
-                  - "SQL_INJECTION_PROBE"
-                - Keep 3 to 8 indicators, deduplicated and concise.
-                
-                === BENIGN TRAFFIC YOU SHOULD NOT FLAG AS A THREAT ===
-                - A sporadic GET / (health check).
-                - POST /auth/login with ONE known valid credential followed by GET /api/users/me, with natural interval.
-                - A single isolated failed login attempt (typo).
-                - Normal browser User-Agents.
-                
-                === CORRELATION AND SCORING GUIDELINES ===
-                1. threat_score >= 70 -> threat_detected=true, threat_level "HIGH" or "CRITICAL"
-                2. threat_score 40-69 -> threat_detected=true, threat_level "MEDIUM"
-                3. threat_score 20-39 -> threat_detected can be true/false, threat_level "LOW"
-                4. threat_score < 20 -> threat_detected=false, threat_level "NONE"
-                Weigh HISTORY: if the same origin has already generated previous alerts, increase the threat_score.
-                
-                === MANDATORY RESPONSE FORMAT ===
-                You must return a single JSON object. Ensure that all the required fields match the following JSON keys:
-                {
-                  "threat_score": "integer (0 to 100)",
-                  "reasoning_summary": "string (max 100 words)",
-                  "recommendation": "string"
-                }
-                Generate the response directly in a structured JSON format. Do not include markdown code blocks like ```json or any additional text outside the object."""
+        """Role definition, attack detection guidelines (OWASP Top 10), and mapping standards (MITRE ATT&CK / NIST).
+        
+        DEPRECATED: Use `system_instructions.get_analysis_system_instructions()` instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "AnalysisPromptBuilder.get_system_instructions() is deprecated. "
+            "Use system_instructions.get_analysis_system_instructions() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return get_analysis_system_instructions()
 
     @staticmethod
     def build_full_prompt(telemetry: Any, history: List[Any]) -> str:
-        """Dynamic telemetry payload prompt for Gemini (Instructions are defined in system_instruction)."""
+        """Dynamic telemetry payload prompt for Gemini (Instructions are defined in system_instruction).
+        
+        DEPRECATED: Use `prompt_factory.build_web_activity_prompt()` with provider_name='gemini' instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "AnalysisPromptBuilder.build_full_prompt() is deprecated. "
+            "Use prompt_factory.build_web_activity_prompt(telemetry, history, 'gemini') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         data = AnalysisPromptBuilder._extract_telemetry_data(telemetry, history)
 
 
@@ -208,7 +205,17 @@ class AnalysisPromptBuilder:
 
     @staticmethod
     def build_optimized_json_prompt(telemetry: Any, history: List[Any]) -> str:
-        """OPTIMIZED and minimalist Prompt (For Ollama with ModelfileForensic)."""
+        """OPTIMIZED and minimalist Prompt (For Ollama with ModelfileForensic).
+        
+        DEPRECATED: Use `prompt_factory.build_web_activity_prompt()` with provider_name='ollama' instead.
+        This method will be removed in a future version.
+        """
+        warnings.warn(
+            "AnalysisPromptBuilder.build_optimized_json_prompt() is deprecated. "
+            "Use prompt_factory.build_web_activity_prompt(telemetry, history, 'ollama') instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         data = AnalysisPromptBuilder._extract_telemetry_data(telemetry, history)
 
         ollama_payload = {

@@ -6,6 +6,8 @@ This module does not load its own .env file, ensuring that configuration
 is centralized in the orchestrator.
 """
 
+import json
+from pathlib import Path
 from typing import Optional, Dict
 from pydantic import Field, SecretStr, field_validator, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,6 +47,34 @@ class LogAnalysisServerSettings(BaseSettings):
             "groq-llama-3_3-70b-versatile": ModelDefinition(provider="groq", model_name="llama-3.3-70b-versatile",max_output_tokens=12000, max_input_tokens=8192)
         },
         description="Catalog of available LLM models for analysis."
+    )
+    
+    available_models_json_path: Optional[str] = Field(
+        default=None,
+        validation_alias="AVAILABLE_MODELS_JSON_PATH",
+        description="Optional path to a JSON file that overrides the model catalog (enables zero-redeploy model updates)."
+    )
+
+    # ========== FORENSIC SAMPLING CONFIGURATION ==========
+    
+    forensic_low_volume_log_threshold: int = Field(
+        default=100,
+        validation_alias="FORENSIC_LOW_VOLUME_LOG_THRESHOLD",
+        gt=0,
+        description="Threshold below which forensic logs are considered low-volume and subject to sampling."
+    )
+    
+    forensic_sampled_log_count: int = Field(
+        default=20,
+        validation_alias="FORENSIC_SAMPLED_LOG_COUNT",
+        gt=0,
+        description="Number of logs to sample when low-volume threshold is exceeded."
+    )
+    
+    mitre_matrix_json_path: Optional[str] = Field(
+        default=None,
+        validation_alias="MITRE_MATRIX_JSON_PATH",
+        description="Optional path to a JSON file that overrides the MITRE matrix (enables dynamic updates without redeploy)."
     )
 
     # ========== LLM PROVIDER CONFIGURATION ==========
@@ -139,6 +169,61 @@ class LogAnalysisServerSettings(BaseSettings):
     def validate_ollama_base_url(cls, v: str) -> str:
         """Ensures the Docker-friendly Ollama endpoint is used when the env var is empty."""
         return (v or '').strip() or 'http://ollama:11434'
+    
+    def _load_models_from_json(self, json_path: str) -> Dict[str, ModelDefinition]:
+        """Load model catalog from external JSON file."""
+        try:
+            path = Path(json_path)
+            if not path.exists():
+                import sys
+                import logging
+                logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+                logger = logging.getLogger("MCP_CONFIG")
+                logger.warning(f"Models JSON file not found: {json_path}. Using default catalog.")
+                return self.available_models
+            
+            with open(path, 'r') as f:
+                data = json.load(f)
+            
+            models = {}
+            for key, model_data in data.items():
+                models[key] = ModelDefinition(**model_data)
+            return models
+        except Exception as e:
+            import sys
+            import logging
+            logging.basicConfig(level=logging.ERROR, stream=sys.stderr)
+            logger = logging.getLogger("MCP_CONFIG")
+            logger.error(f"Failed to load models from {json_path}: {e}. Using default catalog.")
+            return self.available_models
+    
+    def _load_mitre_matrix_from_json(self, json_path: str) -> Dict[str, Any]:
+        """Load MITRE matrix from external JSON file."""
+        try:
+            path = Path(json_path)
+            if not path.exists():
+                import sys
+                import logging
+                logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+                logger = logging.getLogger("MCP_CONFIG")
+                logger.warning(f"MITRE matrix JSON file not found: {json_path}. Using default matrix.")
+                return None
+            
+            with open(path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            import sys
+            import logging
+            logging.basicConfig(level=logging.ERROR, stream=sys.stderr)
+            logger = logging.getLogger("MCP_CONFIG")
+            logger.error(f"Failed to load MITRE matrix from {json_path}: {e}. Using default matrix.")
+            return None
+
+    def __init__(self, **data):
+        """Override init to load models from external JSON if configured."""
+        super().__init__(**data)
+        if self.available_models_json_path:
+            self.available_models = self._load_models_from_json(self.available_models_json_path)
 
     def get_provider_config(self) -> dict:
         """

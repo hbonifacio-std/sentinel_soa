@@ -3,6 +3,22 @@ Deterministic heuristics engine module for threat analysis.
 
 Implements rule-based analysis to detect attack patterns without relying
 on the LLM, providing a confidence baseline for threat scoring.
+
+=== HEURISTICS vs LLM RECOMMENDATIONS ===
+
+This module computes TACTICAL, REACTIVE indicators (threat_score, indicators).
+These are complementary to the LLM's STRATEGIC recommendations in prompt_factory.py.
+
+See prompt_factory.py module docstring for a detailed explanation of the integration
+between deterministic heuristics and LLM output.
+
+Key Differences:
+- Heuristics: Immediate, deterministic, observable decision rules (0-100 score)
+- LLM: Strategic, contextual, reasoning-based (0-100 score + narrative + recommendations)
+- Integration: Backend uses max(heuristic_score, llm_score) as canonical threat_score
+
+Maintainers: When updating heuristic scoring algorithms or indicator labels,
+update docstrings in prompt_factory.py to keep both systems documented.
 """
 
 import logging
@@ -15,7 +31,11 @@ logger = logging.getLogger(__name__)
 
 
 class ThreatHeuristics:
-    """Heuristic analysis engine for risk score calculation (0-100%)."""
+    """Heuristic analysis engine for risk score calculation (0-100%).
+    
+    This class implements deterministic, rule-based threat detection.
+    For strategic recommendations and LLM-based analysis, see prompt_factory.py.
+    """
 
     @staticmethod
     def analyze(

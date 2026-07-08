@@ -18,9 +18,14 @@ _SUSPICIOUS_PATH_TOKENS = ("/.env", "/.git", "/etc/passwd", "../", "%2e%2e", "/a
 _SCANNER_TOKENS = ("sqlmap", "nikto", "nmap", "masscan", "dirbuster", "gobuster", "burp")
 _DEFAULT_FORENSIC_REPORT_TIMEOUT_SECONDS = 1800
 
-# Constants for Triage and Sampling
-_LOW_VOLUME_LOG_THRESHOLD = 150
-_SAMPLED_LOG_COUNT = 250
+# Backwards-compatible constants (can be configured via server_settings)
+try:
+    _LOW_VOLUME_LOG_THRESHOLD = server_settings.forensic_low_volume_log_threshold
+    _SAMPLED_LOG_COUNT = server_settings.forensic_sampled_log_count
+except Exception:
+    # Fallback defaults in case server_settings isn't available during import
+    _LOW_VOLUME_LOG_THRESHOLD = 150
+    _SAMPLED_LOG_COUNT = 250
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +127,7 @@ def _run_intelligent_sampling(rows: List[dict[str, Any]], query: str) -> Tuple[L
     sampled_rows = high_interest_logs
     
     # Add normal logs to provide baseline context if there's space
-    remaining_space = _SAMPLED_LOG_COUNT - len(sampled_rows)
+    remaining_space = server_settings.forensic_sampled_log_count - len(sampled_rows)
     if remaining_space > 0 and normal_logs:
         # Prioritize taking normal logs from the beginning and end of the timeframe
         slice_size = min(remaining_space, len(normal_logs)) // 2
@@ -130,7 +135,7 @@ def _run_intelligent_sampling(rows: List[dict[str, Any]], query: str) -> Tuple[L
         sampled_rows.extend(normal_logs[-slice_size:])
 
     # Ensure the final sample size is within the limit
-    sampled_rows = sampled_rows[:_SAMPLED_LOG_COUNT]
+    sampled_rows = sampled_rows[:server_settings.forensic_sampled_log_count]
     
     # 3. Create context note
     top_ip_str = ip_counter.most_common(1)[0][0] if ip_counter else "N/A"
@@ -237,8 +242,8 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
     rows = payload.rows
     system_context_note = None
 
-    # Triage based on the number of logs
-    if len(rows) > _LOW_VOLUME_LOG_THRESHOLD:
+    # Triage based on the number of logs (using config thresholds)
+    if len(rows) > server_settings.forensic_low_volume_log_threshold:
         # High volume -> Use intelligent sampling
         rows, system_context_note = _run_intelligent_sampling(payload.rows, payload.query)
     

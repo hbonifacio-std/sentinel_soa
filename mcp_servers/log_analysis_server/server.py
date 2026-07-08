@@ -218,19 +218,29 @@ async def main():
     
     logger.info("Tools 'analyze_web_activity' and 'get_threat_context' registered.")
 
-    if transport_mode == 'stdio':
-        logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
-        await server.run_async(transport='stdio')
+    try:
+        if transport_mode == 'stdio':
+            logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
+            await server.run_async(transport='stdio')
 
-    elif transport_mode == 'http':
-        host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
-        port = int(os.getenv('MCP_SERVER_PORT', '8080'))
-        logger.info(f"Starting FastMCP Log Analysis Server on HTTP at {host}:{port}...")
-        await server.run_async(transport='http', host=host, port=port)
-        
-    else:
-        logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'http'.")
-        sys.exit(1)
+        elif transport_mode == 'http':
+            host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
+            port = int(os.getenv('MCP_SERVER_PORT', '8080'))
+            logger.info(f"Starting FastMCP Log Analysis Server on HTTP at {host}:{port}...")
+            await server.run_async(transport='http', host=host, port=port)
+            
+        else:
+            logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'http'.")
+            sys.exit(1)
+
+    finally:
+        # Ensure all LLM provider clients are closed on shutdown
+        try:
+            from mcp_servers.log_analysis_server.llm_providers import close_all_providers
+            logger.info("Shutting down: closing LLM providers...")
+            await close_all_providers()
+        except Exception:
+            logger.exception("Error while closing LLM providers during shutdown")
 
 if __name__ == "__main__":
     try:

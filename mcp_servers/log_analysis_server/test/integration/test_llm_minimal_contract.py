@@ -53,14 +53,17 @@ def test_llm_response_ignores_extras_and_keeps_only_three_fields():
 
 
 def test_ollama_normalization_returns_canonical_three_fields_only():
-    normalized = OllamaProvider._normalize_response(
+    from mcp_servers.log_analysis_server.llm_providers.response_normalizer import normalize_llm_decision
+    
+    normalized = normalize_llm_decision(
         {
             "score": 64,
             "summary": "Automated scan evolves into focused credential abuse.",
             "mitigation": "Harden auth workflows and improve anomaly detections.",
             "threat_level": "HIGH",
             "window_id": "should-be-ignored",
-        }
+        },
+        use_fallback_defaults=True
     )
 
     assert set(normalized.keys()) == {"threat_score", "reasoning_summary", "recommendation"}
