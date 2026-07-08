@@ -1,11 +1,13 @@
 """Main orchestration logic for web activity analysis.
 
 Coordinates heuristic analysis, LLM invocation, and verdict construction.
+Supports lightweight dependency injection for testability.
 """
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Protocol
 
 from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput as AnalysisInput
 from mcp_servers.log_analysis_server.models.analysis_output import ThreatAssessment as AnalysisOutput
@@ -20,6 +22,46 @@ from .indicators import build_deterministic_indicators, normalize_indicator_labe
 from .recommendations import generate_recommendation
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Protocol & Dataclass for Dependency Injection
+# ============================================================================
+
+class AlertStoreProtocol(Protocol):
+    """Protocol for alert store implementations (in-memory, Redis, Mongo, etc.)."""
+
+    def get_history_by_ip(self, source_ip: str, limit: int) -> List[Any]:
+        """Retrieves alert history for an IP."""
+        ...
+
+    def add_assessment(self, source_ip: str, assessment: AnalysisOutput) -> None:
+        """Persists an assessment for temporal context."""
+        ...
+
+
+@dataclass
+class AnalysisDependencies:
+    """Lightweight dependency container for analyze_web_activity.
+    
+    Allows tests to inject mock implementations without monkeypatching.
+    Defaults point to singletons for backward compatibility.
+    """
+
+    alert_store: AlertStoreProtocol
+    threat_heuristics_class: type = ThreatHeuristics
+
+    @classmethod
+    def default(cls) -> "AnalysisDependencies":
+        """Returns dependencies with singletons (production default)."""
+        return cls(
+            alert_store=alert_store,
+            threat_heuristics_class=ThreatHeuristics,
+        )
+
+
+# Default instance for the MCP tool entry point
+DEFAULT_DEPS = AnalysisDependencies.default()
 
 
 def _normalize_score(value: Any, default: int) -> int:
@@ -67,11 +109,15 @@ def _extract_rules_bundle(arguments: Dict[str, Any]) -> Optional[RulesBundle]:
         return None
 
 
-async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, Any]:
+async def execute_analyze_web_activity(
+    arguments: Dict[str, Any],
+    deps: AnalysisDependencies = None,
+) -> Dict[str, Any]:
     """Executes heuristic and AI analysis on a suspicious web activity window.
 
     Args:
         arguments: MCP tool arguments including the WebActivityWindowInput payload.
+        deps: Dependency injection container. Defaults to DEFAULT_DEPS (production singletons).
 
     Returns:
         ThreatAssessment dictionary with threat score, indicators, MITRE mapping, etc.
@@ -80,6 +126,9 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         ValueError: If the input schema is invalid.
         Exception: On unexpected runtime errors.
     """
+    if deps is None:
+        deps = DEFAULT_DEPS
+
     try:
         model_id = arguments.pop("model_id", None)
         rules_bundle = _extract_rules_bundle(arguments)
@@ -97,7 +146,7 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         # 2. DETERMINISTIC HEURISTIC ANALYSIS (Confidence baseline)
         # ========================================================================
         logger.debug(f"[HEURISTICS] Running deterministic engine for {source_ip}...")
-        heuristic_score, heuristic_indicators, heuristic_reasoning = ThreatHeuristics.analyze(
+        heuristic_score, heuristic_indicators, heuristic_reasoning = deps.threat_heuristics_class.analyze(
             analysis_input,
             rules_bundle=rules_bundle,
         )
@@ -108,7 +157,7 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         # ========================================================================
         # 3. TEMPORAL CONTEXT ENRICHMENT: history of previous alerts
         # ========================================================================
-        threat_history = alert_store.get_history_by_ip(source_ip, limit=10)
+        threat_history = deps.alert_store.get_history_by_ip(source_ip, limit=10)
         logger.debug(f"Previous alert history for {source_ip}: {len(threat_history)} records")
 
         # ========================================================================
@@ -198,7 +247,7 @@ async def execute_analyze_web_activity(arguments: Dict[str, Any]) -> Dict[str, A
         # ========================================================================
         # 6. ASSESSMENT PERSISTENCE (for temporal context)
         # ========================================================================
-        alert_store.add_assessment(source_ip, analysis_output)
+        deps.alert_store.add_assessment(source_ip, analysis_output)
 
         if analysis_output.threat_detected:
             logger.warning(

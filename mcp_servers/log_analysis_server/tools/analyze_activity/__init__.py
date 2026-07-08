@@ -9,6 +9,9 @@ Maintains backward compatibility with the original import path:
 
 from .orchestrator import (
     execute_analyze_web_activity,
+    AnalysisDependencies,
+    DEFAULT_DEPS,
+    AlertStoreProtocol,
     _normalize_score,
     _derive_threat_level,
     _build_targeted_asset,
@@ -36,6 +39,10 @@ _normalize_indicator_label = normalize_indicator_label
 __all__ = [
     # Main execution
     "execute_analyze_web_activity",
+    # Dependency injection
+    "AnalysisDependencies",
+    "DEFAULT_DEPS",
+    "AlertStoreProtocol",
     # LLM integration
     "LLMAnalyzer",
     "_append_llm_signature",

@@ -23,7 +23,10 @@ from mcp_servers.log_analysis_server.tools.analyze_activity import (
     generate_recommendation,
     execute_analyze_web_activity,
     LLMAnalyzer,
+    AnalysisDependencies,
+    DEFAULT_DEPS,
 )
+from mcp_servers.log_analysis_server.services.heuristics_engine import ThreatHeuristics
 from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
 from mcp_servers.log_analysis_server.tools.threat_context import (
     ThreatContextRequest,
@@ -480,3 +483,59 @@ def test_generate_recommendation_with_webshell_indicator():
     )
     assert "🔴" in recommendation
     assert "webshell attempt detected" in recommendation
+
+
+# ---------------------------------------------------------------------------
+# Dependency Injection tests (Fase 4)
+# ---------------------------------------------------------------------------
+
+def test_analysis_dependencies_default():
+    """Default AnalysisDependencies uses production singletons."""
+    deps = AnalysisDependencies.default()
+    assert deps.alert_store is not None
+    assert deps.threat_heuristics_class is ThreatHeuristics
+
+
+def test_default_deps_singleton():
+    """DEFAULT_DEPS is a module-level singleton."""
+    assert DEFAULT_DEPS is not None
+    assert DEFAULT_DEPS.alert_store is not None
+    assert DEFAULT_DEPS.threat_heuristics_class is ThreatHeuristics
+
+
+@pytest.mark.asyncio
+async def test_execute_analyze_web_activity_with_mock_deps():
+    """Test execute_analyze_web_activity with injected mock dependencies (no monkeypatch)."""
+    from unittest.mock import MagicMock, AsyncMock
+
+    # Create mock dependencies
+    mock_alert_store = MagicMock()
+    mock_alert_store.get_history_by_ip.return_value = []
+    mock_alert_store.add_assessment.return_value = None
+
+    mock_deps = AnalysisDependencies(
+        alert_store=mock_alert_store,
+        threat_heuristics_class=ThreatHeuristics,
+    )
+
+    # Execute with mock deps (no monkeypatch needed!)
+    result = await execute_analyze_web_activity(
+        _base_arguments(),
+        deps=mock_deps,
+    )
+
+    # Verify the mock was called
+    assert mock_alert_store.get_history_by_ip.called
+    assert mock_alert_store.add_assessment.called
+    assert result["threat_detected"] is not None
+
+
+@pytest.mark.asyncio
+async def test_execute_analyze_web_activity_uses_default_deps_when_none():
+    """Test that execute_analyze_web_activity defaults to DEFAULT_DEPS when deps=None."""
+    # Call with deps=None explicitly (or omitted, which defaults to None)
+    result = await execute_analyze_web_activity(_base_arguments(), deps=None)
+
+    # Should work without error and use production dependencies
+    assert "threat_detected" in result
+    assert "threat_score" in result
