@@ -24,6 +24,7 @@ from core_orchestrator.infrastructure.api.v1.endpoints import (
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
 from core_orchestrator.infrastructure.handlers.exceptions import validation_exception_handler
 from core_orchestrator.infrastructure.api import dependencies as deps
+from core_orchestrator.infrastructure.api.auth import require_api_key, get_tenant_context
 
 
 logging.basicConfig(
@@ -112,7 +113,8 @@ app.include_router(
 app.include_router(
     agent_telemetry.router,
     prefix="/api/v1/telemetry",
-    tags=["Telemetry Ingestion"]
+    tags=["Telemetry Ingestion"],
+    dependencies=[Depends(require_api_key)],
 )
 app.include_router(
     analytics.router,
@@ -127,7 +129,8 @@ app.include_router(
 app.include_router(
     refactored_rules_router.router, # ✨ Using the new refactored router
     prefix="/api/v1/rules",
-    tags=["Rules Management"]
+    tags=["Rules Management"],
+    dependencies=[Depends(require_api_key)],
 )
 
 

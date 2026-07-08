@@ -26,11 +26,14 @@ logger = logging.getLogger("core_orchestrator.mcp_client")
 class MCPClientManager:
     """Manages a persistent MCP session against the HTTP MCP server."""
 
-    def __init__(self, server_script_path: Optional[str] = None):
+    def __init__(self, server_script_path: Optional[str] = None, max_retries: int = 3):
         self.server_script_path = server_script_path
         self._transport_cm = None
         self._session_cm = None
         self._session: Optional[ClientSession] = None
+        self._reconnect_lock = asyncio.Lock()
+        self._call_semaphore = asyncio.Semaphore(10)
+        self._max_retries = max_retries
 
     async def _open_http_session(self, url: str) -> ClientSession:
         self._transport_cm = _streamable_http_client(url)
@@ -81,20 +84,38 @@ class MCPClientManager:
         return await self.start_server_session()
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        """Call a remote MCP tool with concurrency limits and retry/backoff.
 
+        Ensures there's an active session up-front (fail-fast if reconnection cannot be
+        established). After that, attempts the call with bounded concurrency and retries
+        on transient errors, performing reconnection between attempts.
+        """
+        # Fail-fast: ensure we can obtain an active session before attempting retries
         try:
-            session = await self._ensure_active_session()
+            await self._ensure_active_session()
         except Exception as reconn_exc:
             logger.error("No se pudo restablecer la sesión MCP antes de ejecutar la herramienta.")
             raise RuntimeError(f"The MCP client session is not active. Reconnection failed: {reconn_exc}")
 
-        logger.info("Invoking remote MCP tool: %s", tool_name)
-        try:
-            result = await session.call_tool(tool_name, arguments)
-            return result
-        except Exception as exc:
-            logger.error("Failure executing call for '%s': %s", tool_name, exc, exc_info=True)
-            return {"error": f"Exception during remote tool execution: {exc}"}
+        last_exc: Optional[Exception] = None
+        for attempt in range(1, self._max_retries + 1):
+            try:
+                async with self._call_semaphore:
+                    # Ensure session is still valid; _ensure_active_session will reconnect if needed
+                    session = await self._ensure_active_session()
+                    return await session.call_tool(tool_name, arguments)
+            except Exception as exc:
+                last_exc = exc
+                logger.error(
+                    "MCP call '%s' failed (attempt %d/%d): %s",
+                    tool_name, attempt, self._max_retries, exc,
+                )
+                # Force a session refresh for the next attempt
+                self._session = None
+                await asyncio.sleep(min(2 ** attempt, 8))
+
+        logger.error("MCP call '%s' failed after %d attempts: %s", tool_name, self._max_retries, last_exc)
+        return {"error": f"Exception during remote tool execution after {self._max_retries} attempts: {last_exc}"}
 
     async def close(self):
         if self._session_cm:
