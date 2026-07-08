@@ -10,8 +10,14 @@ from mcp_servers.log_analysis_server.tools.forensic_nlq import (
 )
 
 
-def test_build_forensic_mongo_query_extracts_ip_status_and_source_scope() -> None:
-    # This test is not directly affected by the refactor, but we ensure it still passes.
+@patch("mcp_servers.log_analysis_server.tools.forensic_nlq.TranslateMongo.translate_query")
+def test_build_forensic_mongo_query_extracts_ip_status_and_source_scope(mock_translate) -> None:
+    mock_translate.return_value = {
+        "mongo_filter": {"$and": []},
+        "detected_terms": ["admin"],
+        "detected_ips": ["10.0.0.7"],
+        "detected_status_codes": [404],
+    }
     result = asyncio.run(
         build_forensic_mongo_query(
             {
@@ -95,8 +101,14 @@ def test_generate_forensic_report_uses_intelligent_sampling_for_high_volume(mock
     assert str(len(log_rows)) in system_note
 
 
-def test_build_forensic_mongo_query_does_not_extract_http_status_from_ip_octets() -> None:
-    # This test is not directly affected by the refactor, but we ensure it still passes.
+@patch("mcp_servers.log_analysis_server.tools.forensic_nlq.TranslateMongo.translate_query")
+def test_build_forensic_mongo_query_does_not_extract_http_status_from_ip_octets(mock_translate) -> None:
+    mock_translate.return_value = {
+        "mongo_filter": {},
+        "detected_terms": [],
+        "detected_ips": ["172.18.0.2"],
+        "detected_status_codes": [],
+    }
     result = asyncio.run(
         build_forensic_mongo_query(
             {
@@ -108,3 +120,4 @@ def test_build_forensic_mongo_query_does_not_extract_http_status_from_ip_octets(
 
     assert result.get("detected_ips") == ["172.18.0.2"]
     assert result.get("detected_status_codes") == []
+

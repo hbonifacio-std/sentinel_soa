@@ -108,9 +108,12 @@ def test_llm_analyzer_appends_provider_model_suffix(monkeypatch):
         async def validate_response(self, response):
             return LLMResponse.model_validate(json.loads(response))
 
-    monkeypatch.setattr(LLMAnalyzer, "_provider", _FakeProvider())
+    from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
+    telemetry = WebActivityWindowInput(**_build_arguments())
+    analyzer = LLMAnalyzer(model_id="qwen2_5_coder7")
+    monkeypatch.setattr(analyzer, "_provider", _FakeProvider())
 
-    result = asyncio.run(LLMAnalyzer.analyze_with_context(telemetry={}, history=[]))
+    result = asyncio.run(analyzer.analyze_with_context(telemetry=telemetry, history=[]))
 
     assert set(result.keys()) == {"threat_score", "reasoning_summary", "recommendation"}
     assert result["reasoning_summary"] == "Narrative (openai-gpt-4o-mini)"
@@ -136,11 +139,16 @@ def test_llm_analyzer_does_not_duplicate_suffix(monkeypatch):
         async def validate_response(self, response):
             return LLMResponse.model_validate(json.loads(response))
 
-    monkeypatch.setattr(LLMAnalyzer, "_provider", _FakeProvider())
+    from mcp_servers.log_analysis_server.models.analysis_input import WebActivityWindowInput
+    telemetry = WebActivityWindowInput(**_build_arguments())
+    analyzer = LLMAnalyzer(model_id="qwen2_5_coder7")
+    monkeypatch.setattr(analyzer, "_provider", _FakeProvider())
 
-    result = asyncio.run(LLMAnalyzer.analyze_with_context(telemetry={}, history=[]))
+    result = asyncio.run(analyzer.analyze_with_context(telemetry=telemetry, history=[]))
 
     assert result["reasoning_summary"].count("(openai-gpt-4o-mini)") == 1
     assert result["recommendation"].count("(openai-gpt-4o-mini)") == 1
+
+
 
 
