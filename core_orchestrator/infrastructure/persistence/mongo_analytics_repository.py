@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
@@ -8,6 +9,7 @@ from core_orchestrator.infrastructure.config.database import DatabaseManager
 from core_orchestrator.domain.ports.analysis.analytics_repository import AnalyticsRepository
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
+logger = logging.getLogger(__name__)
 GROUP_STAGE = "$group"
 
 class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsRepository):
@@ -150,8 +152,19 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         return reports
 
     async def create_report(self, report: BaseModel) -> str:
-        result = await self.collection.insert_one(report.model_dump(by_alias=True))
-        return str(result.inserted_id)
+        """Saves an analysis report to MongoDB with proper serialization and logging."""
+        # mode="json" serializes nested Pydantic models to dicts
+        # by_alias=True converts field names to their MongoDB aliases (e.g., id -> _id)
+        doc = report.model_dump(mode="json", by_alias=True)
+        
+        logger.debug(f"Attempting to insert analysis report: {doc}")
+        try:
+            result = await self.collection.insert_one(doc)
+            logger.info(f"Analysis report successfully inserted with ID: {result.inserted_id}")
+            return str(result.inserted_id)
+        except Exception as e:
+            logger.error(f"Failed to insert analysis report: {e}", exc_info=True)
+            raise
 
     @staticmethod
     def _normalize_document_id(document: Dict[str, Any]) -> Dict[str, Any]:

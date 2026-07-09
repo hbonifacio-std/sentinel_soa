@@ -1,10 +1,13 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
+import logging
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion
 from core_orchestrator.domain.ports.rules.rule_repository import RuleRepository as RuleRepositoryPort
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
@@ -18,7 +21,7 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
     async def get_by_id(self, rule_id: str) -> Optional[HeuristicRule]:
         return await self.find_one({"rule_id": rule_id})
 
-    async def get_all(self, include_inactive: bool = False) -> List[HeuristicRule]:
+    async def get_all(self, include_inactive: bool = False, tenant_id: Optional[str] = None) -> List[HeuristicRule]:
         query = {} if include_inactive else {"is_active": True}
         response = await self.find_paginated(query=query, page=1, limit=100) 
         return response["results"]
@@ -27,6 +30,13 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
         if not rule_ids:
             return []
         query = {"rule_id": {"$in": rule_ids}}
+        return await self.find_many(query)
+
+    async def get_rules_by_tenant(self, tenant_id: Optional[str], include_inactive: bool = False) -> List[HeuristicRule]:
+        """Get rules for a specific tenant or global rules (if tenant_id is None or '*')."""
+        query = {"$or": [{"tenant_id": tenant_id}, {"tenant_id": None}, {"tenant_id": "*"}]}
+        if not include_inactive:
+            query["is_active"] = True
         return await self.find_many(query)
 
     async def rule_exists(self, rule_id: str) -> bool:
@@ -46,7 +56,15 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
 
     # Versioning methods
     async def create_version(self, version: RuleVersion) -> RuleVersion:
-        await self.versions_collection.insert_one(version.model_dump(by_alias=True))
+        # mode="json" serializes nested objects, by_alias=True handles field mapping
+        doc = version.model_dump(mode="json", by_alias=True)
+        logger.debug(f"Inserting rule version: {version.version_hash}")
+        try:
+            await self.versions_collection.insert_one(doc)
+            logger.info(f"Rule version {version.version_hash} inserted successfully")
+        except Exception as e:
+            logger.error(f"Failed to insert rule version {version.version_hash}: {e}", exc_info=True)
+            raise
         return version
 
     async def get_version(self, version_hash: str) -> Optional[RuleVersion]:

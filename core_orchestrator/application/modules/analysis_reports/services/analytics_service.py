@@ -116,13 +116,18 @@ class ReportTelemetryService(ReportTelemetryServicePort):
     async def get_debug_reports(self) -> List[Dict[str, Any]]:
         return await self.analytics_repository.get_debug_reports(limit=5)
 
-    async def create_analysis_report(self, report_data:BaseModel) -> str:
+    async def create_analysis_report(self, report_data: BaseModel) -> str:
         """
         Creates a new analysis report in the database.
         """
-
         source_ip = getattr(report_data, "source_ip", "UNKNOWN")
-
-        logger.debug(f"Creating analysis report for {source_ip} in the database.")
-        return await self.analytics_repository.create_report(report_data)
+        logger.info(f"Creating analysis report for {source_ip}")
+        
+        try:
+            result = await self.analytics_repository.create_report(report_data)
+            logger.info(f"Analysis report created successfully with ID: {result} for {source_ip}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to create analysis report for {source_ip}: {e}", exc_info=True)
+            raise
 
