@@ -12,14 +12,12 @@ from pydantic import BaseModel, Field
 
 class TenantBase(BaseModel):
     """Base tenant model with common fields."""
-    tenant_id: str = Field(..., min_length=1, max_length=100, description="Unique tenant identifier")
+    client_id: str = Field(..., min_length=1, max_length=100, description="Unique tenant identifier")
     display_name: str = Field(..., min_length=1, max_length=200, description="Human-readable tenant name")
     rate_limit_per_minute: int = Field(default=60, ge=1, le=10000, description="API rate limit per minute")
     is_active: bool = Field(default=True, description="Whether the tenant is active")
     
     # Telemetry client fields (optional - tenant can be a telemetry source)
-    client_id: Optional[str] = Field(default=None, description="Optional: client ID if this tenant is a telemetry source")
-    source_id: Optional[str] = Field(default=None, description="Optional: source ID for telemetry ingestion")
     description: Optional[str] = Field(default=None, description="Optional: description of tenant/source")
     api_key: Optional[str] = Field(default=None, description="Optional: API key for telemetry ingestion")
     hmac_public_key: Optional[str] = Field(default=None, description="Optional: public key for HMAC verification")

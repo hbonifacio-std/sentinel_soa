@@ -57,6 +57,7 @@ class TelemetryWindow(BaseModel):
     """
     window_id: UUID = Field(..., description="Universal unique identifier (UUID v4) of the analysis window.")
     source_id: str = Field(..., description="Unique identifier of the server or application that originates the log.")
+    client_id: Optional[str] = Field(default=None, description="Tenant/client identifier associated with the window.")
     source_ip: str = Field(..., description="Source IP address under analysis.")
     window_start_utc: datetime = Field(..., description="Time window start timestamp in ISO 8601 UTC format.")
     window_end_utc: datetime = Field(..., description="Time window end timestamp in ISO 8601 UTC format.")
@@ -354,6 +355,7 @@ def build_web_activity_window(raw_logs: List[LogEvent]) -> TelemetryWindow:
     return TelemetryWindow(
         window_id=window_id,
         source_id=source_id,
+        client_id=getattr(first_log, "client_id", None),
         source_ip=source_ip,
         window_start_utc=window_start,
         window_end_utc=window_end,

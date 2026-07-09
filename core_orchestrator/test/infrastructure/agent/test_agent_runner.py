@@ -95,6 +95,32 @@ async def test_agent_runner_task_callbacks(
 
 
 @pytest.mark.asyncio
+async def test_run_analysis_executes_immediately_when_agent_is_ready(
+    mock_telemetry_processing_service,
+    mock_cache_service,
+    mock_telemetry_service,
+    mock_analytics_service,
+    mock_agent_factory
+):
+    runner = AgentRunner(
+        telemetry_processing_service=mock_telemetry_processing_service,
+        cache_service=mock_cache_service,
+        telemetry_service=mock_telemetry_service,
+        analytics_service=mock_analytics_service,
+        agent_factory=mock_agent_factory
+    )
+
+    agent_mock = AsyncMock()
+    agent_mock.process_telemetry_window.return_value = '{"status":"ok"}'
+    runner.agent = agent_mock
+
+    result = await runner.run_analysis({"window_id": "win-1"})
+
+    assert result == '{"status":"ok"}'
+    agent_mock.process_telemetry_window.assert_awaited_once_with({"window_id": "win-1"})
+
+
+@pytest.mark.asyncio
 async def test_agent_runner_enqueue_lifo_drop(
     mock_telemetry_processing_service,
     mock_cache_service,

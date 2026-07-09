@@ -19,6 +19,7 @@ class AnalysisReportResponse(BaseModel):
 
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), alias="_id")
     source_id: str | None = None
+    client_id: str | None = None
     source_ip: str | None = None
     threat_level: str | None = None
     threat_score: float | int | None = None

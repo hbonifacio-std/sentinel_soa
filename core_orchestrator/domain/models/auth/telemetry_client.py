@@ -55,7 +55,6 @@ class TelemetryClientResponse(TelemetryClientBase):
     def from_db_model(cls, client: TelemetryClientInDB) -> "TelemetryClientResponse":
         return cls(
             client_id=client.client_id,
-            source_id=client.source_id,
             display_name=client.display_name,
             description=client.description,
             is_active=client.is_active,
@@ -69,7 +68,6 @@ class TelemetryClientResponse(TelemetryClientBase):
 
 class TelemetryClientAuthContext(BaseModel):
     client_id: str
-    source_id: str
     display_name: str
     hmac_public_key: Optional[str] = None
 

@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.domain.ports import AnalysisServicePort, LlmAnalysisPort
+from core_orchestrator.infrastructure.security.rules_bundle_signer import sign_rules_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,11 @@ def _build_safe_analysis_result(
         logger.warning("MCP analysis returned an error for %s: %s", source_ip, safe.get("error"))
 
     safe["source_ip"] = source_ip
-    safe["source_id"] = safe.get("source_id") or telemetry_payload.get("source_id", "unknown")
+    source_id = safe.get("source_id")
+    if not source_id or str(source_id).strip().lower() in {"n/a", "unknown", "unknown-service", "none"}:
+        source_id = telemetry_payload.get("source_id", "unknown")
+    safe["source_id"] = source_id
+    safe["client_id"] = safe.get("client_id") or telemetry_payload.get("client_id")
     safe["window_id"] = str(safe.get("window_id") or telemetry_payload.get("window_id", "unknown"))
 
     score = _normalize_score(safe.get("threat_score"), 0)
@@ -97,6 +102,7 @@ def _build_safe_analysis_result(
     safe.setdefault("recommendation", "Review telemetry window, enable stricter rate limiting, and investigate suspicious paths.")
 
     _ensure_mitre_defaults(safe)
+
     return safe
 
 
@@ -117,7 +123,6 @@ class AnalysisService(AnalysisServicePort):
 
         allowed_fields = {
             "window_id",
-            "source_id",
             "source_ip",
             "window_start_utc",
             "window_end_utc",
@@ -138,12 +143,19 @@ class AnalysisService(AnalysisServicePort):
         tool_arguments = {k: v for k, v in telemetry_payload.items() if k in allowed_fields}
 
         rules_bundle = await self.rules_engine_service.get_active_rules()
-        tool_arguments["rules_bundle"] = rules_bundle.to_cache_dict()
+        signed_bundle = self._sign_rules_bundle(rules_bundle.to_cache_dict())
+        tool_arguments["rules_bundle"] = signed_bundle
         logger.info(
-            "Forwarding telemetry window %s to MCP with rules bundle version=%s",
+            "Forwarding telemetry window %s to MCP with rules bundle version=%s (signed)",
             telemetry_payload.get("window_id"),
             rules_bundle.version_hash,
         )
 
         analysis_result = await self.llm_analysis_port.analyze_web_activity(tool_arguments)
+        logger.info("MCP analysis completed for %s", source_ip)
         return _build_safe_analysis_result(analysis_result, telemetry_payload, source_ip)
+
+    @staticmethod
+    def _sign_rules_bundle(rules_bundle: Dict[str, Any]) -> Dict[str, Any]:
+        """Sign rules_bundle with HMAC to ensure integrity and authenticity."""
+        return sign_rules_bundle(rules_bundle)

@@ -7,8 +7,6 @@ from typing import Any
 
 def build_analyze_web_activity_error(
     *,
-    window_id: str,
-    source_id: str,
     source_ip: str,
     unique_uris_requested: list[str],
     error: str,
@@ -16,8 +14,6 @@ def build_analyze_web_activity_error(
     """Build a safe fallback verdict when analyze_web_activity fails."""
     uri_sample = unique_uris_requested[:5]
     return {
-        "window_id": window_id,
-        "source_id": source_id,
         "source_ip": source_ip,
         "threat_detected": False,
         "threat_level": "NONE",

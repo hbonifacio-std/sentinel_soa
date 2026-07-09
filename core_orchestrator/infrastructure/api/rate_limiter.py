@@ -19,9 +19,9 @@ def tenant_or_ip_key(request: Request) -> str:
 
     This ensures rate limiting is applied per tenant rather than per-IP where possible.
     """
-    tenant_id = getattr(request.state, "tenant_id", None)
+    tenant_id = getattr(request.state, "client_id", None)
     if tenant_id:
-        return f"tenant:{tenant_id}"
+        return f"{tenant_id}"
     return get_remote_address(request)
 
 

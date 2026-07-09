@@ -22,13 +22,13 @@ class TelemetryProcessingService:
         self._window_cache = window_cache
 
     async def add_log_event(self, log_line: LogLine) -> None:
-        key = f"window:{log_line.source_ip}"
+        key = self._build_window_key(log_line.client_id, log_line.source_ip)
         await self._window_cache.add_to_window(key, log_line.model_dump_json(), self.window_duration)
 
     async def add_multiple_logs_events(self, log_lines: List[LogLine]) -> None:
         if not log_lines:
             return
-        key = f"window:{log_lines[0].source_ip}"
+        key = self._build_window_key(log_lines[0].client_id, log_lines[0].source_ip)
         payloads = [line.model_dump_json() for line in log_lines]
         await self._window_cache.add_multiple_to_window(key, payloads, self.window_duration)
 
@@ -53,3 +53,8 @@ class TelemetryProcessingService:
         current_size = await self.get_window_size(key)
         return current_size >= self.window_threshold_requests
 
+    @staticmethod
+    def _build_window_key(tenant_id: Optional[str], source_ip: str) -> str:
+        """Build tenant-scoped window key to prevent collision between tenants with overlapping IPs."""
+        safe_tenant = tenant_id or "default"
+        return f"window:{safe_tenant}:{source_ip}"

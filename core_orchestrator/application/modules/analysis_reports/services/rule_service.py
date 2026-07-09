@@ -164,8 +164,17 @@ class RuleService:
     async def cache_rules(self, bundle: RulesBundle, ttl_seconds: Optional[int] = None) -> None:
         await self.cache.store_bundle(bundle, ttl_seconds=ttl_seconds)
 
+    async def cache_rules_for_tenant(self, bundle: RulesBundle, cache_key_suffix: str, ttl_seconds: Optional[int] = None) -> None:
+        """Cache rules with tenant-specific key suffix."""
+        await self.cache.store_bundle(bundle, cache_key_suffix=cache_key_suffix, ttl_seconds=ttl_seconds)
+
     async def get_cached_rules(self) -> Optional[RulesBundle]:
-        return await self.cache.get_bundle()
+        """Get cached rules (backward compatibility - uses 'global' suffix)."""
+        return await self.cache.get_bundle(cache_key_suffix="global")
+
+    async def get_cached_rules_for_tenant(self, cache_key_suffix: str) -> Optional[RulesBundle]:
+        """Retrieve cached rules with tenant-specific key suffix."""
+        return await self.cache.get_bundle(cache_key_suffix=cache_key_suffix)
 
     async def invalidate_rules_cache(self) -> None:
         await self.cache.invalidate_bundle()
@@ -176,6 +185,12 @@ class RuleService:
     async def list_all_active_rules_internal(self) -> List[HeuristicRule]:
         """Trae absolutamente todas las reglas activas usando cursores (Sin paginación)."""
         return await self.repo.get_all(include_inactive=False)
+
+    async def get_active_rules_by_tenant(self, tenant_id: Optional[str]) -> List[HeuristicRule]:
+        """Get active rules for a specific tenant + global rules (merged)."""
+        global_rules = await self.repo.get_rules_by_tenant(tenant_id=None, include_inactive=False)
+        tenant_rules = await self.repo.get_rules_by_tenant(tenant_id=tenant_id, include_inactive=False)
+        return global_rules + tenant_rules
 
     async def get_rules_by_ids_internal(self, rule_ids: List[str]) -> List[HeuristicRule]:
         """

@@ -23,7 +23,7 @@ activity_logger.addHandler(file_handler)
 activity_logger.propagate = False
 
 # --- Unique identifier for this application ---
-SOURCE_ID = os.getenv("VICTIM_SOURCE_ID", "victim-app-01")
+
 APP_NAME = os.getenv("APP_NAME", "Core-Banking-API")
 APP_VERSION = os.getenv("APP_VERSION", "2.4.1")
 APP_ENV = os.getenv("APP_ENV", "development")
@@ -149,7 +149,6 @@ async def log_requests(request: Request, call_next):
 
     # 4. Construcción del JSON minimalista
     log_data = {
-        "source_id": SOURCE_ID,
         "source_ip": client_ip,
         "timestamp": datetime.now(timezone.utc).isoformat(),
 
@@ -160,7 +159,6 @@ async def log_requests(request: Request, call_next):
             "proxy_forwarded_for":forwarded_for,
             "proxy_real_ip":real_ip
         },
-
         "http": {
             "method": request.method,
             "path": path,

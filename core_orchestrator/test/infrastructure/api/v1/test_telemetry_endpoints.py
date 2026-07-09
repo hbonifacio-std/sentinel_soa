@@ -53,6 +53,12 @@ def client(mock_telemetry_service, mock_processing_service, mock_agent_runner):
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
 
+
+batch_headers = {
+    "X-Sentinel-SOURCE-ID": "src-1",
+    "X-Sentinel-Client-ID": "client-1",
+}
+
 def test_ingest_single_event(client, mock_telemetry_service, mock_processing_service):
     payload = dummy_event.model_dump(mode="json")
     response = client.post("/", json=payload)
@@ -62,13 +68,17 @@ def test_ingest_single_event(client, mock_telemetry_service, mock_processing_ser
 
 def test_ingest_batch_events_success(client, mock_telemetry_service, mock_processing_service):
     payload = [dummy_event.model_dump(mode="json")]
-    response = client.post("/ingest/batch", json=payload)
+    response = client.post("/ingest/batch", json=payload, headers=batch_headers)
     assert response.status_code == 202
     assert response.json()["processed_records"] == 1
     mock_processing_service.add_multiple_logs_events.assert_called_once()
 
+    buffered_event = mock_processing_service.add_multiple_logs_events.await_args.args[0][0]
+    assert buffered_event.client_id == "client-1"
+    assert buffered_event.source_id == "src-1"
+
 def test_ingest_batch_events_empty(client):
-    response = client.post("/ingest/batch", json=[])
+    response = client.post("/ingest/batch", json=[], headers=batch_headers)
     assert response.status_code == 400
 
 def test_ingest_batch_events_different_source_ids(client):
@@ -76,14 +86,17 @@ def test_ingest_batch_events_different_source_ids(client):
         dummy_event.model_dump(mode="json"),
         {**dummy_event.model_dump(mode="json"), "source_id": "src-2"}
     ]
-    response = client.post("/ingest/batch", json=payload)
-    assert response.status_code == 400
+    response = client.post("/ingest/batch", json=payload, headers=batch_headers)
+    assert response.status_code == 202
+    assert response.json()["processed_records"] == 2
 
 def test_ingest_batch_events_unauthorized_source_id(client):
     payload = [
         {**dummy_event.model_dump(mode="json"), "source_id": "src-other"}
     ]
-    response = client.post("/ingest/batch", json=payload)
+    headers = dict(batch_headers)
+    headers["X-Sentinel-Client-ID"] = "client-other"
+    response = client.post("/ingest/batch", json=payload, headers=headers)
     assert response.status_code == 403
 
 def test_flush_windows_success(client, mock_processing_service, mock_agent_runner):
@@ -148,4 +161,3 @@ def test_flush_windows_gather_exception(client, mock_processing_service, mock_ag
     response = client.post("/flush")
     assert response.status_code == 500
     assert "gather error" in response.json()["detail"]
-

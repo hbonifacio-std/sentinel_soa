@@ -87,6 +87,25 @@ class AgentRunner:
         """Public property to check if the MCP session is active."""
         return self._is_mcp_session_alive()
 
+    async def run_analysis(self, telemetry_window: Dict[str, Any]) -> str:
+        """
+        Runs an analysis for a completed telemetry window.
+
+        When the MCP agent is available, the window is analyzed immediately.
+        Otherwise, the window is re-queued so the background consumer can
+        process it once the MCP session is restored.
+        """
+        if self.agent is None:
+            window_key = str(telemetry_window.get("window_id", "manual-window"))
+            logger.warning(
+                "MCP agent unavailable during manual analysis request. Re-queuing window '%s'.",
+                window_key,
+            )
+            await self._enqueue_analysis(telemetry_window, window_key=window_key)
+            return ""
+
+        return await self.agent.process_telemetry_window(telemetry_window)
+
     # ──────────────────────────────────────────────────────────────────────
     # 1. PRODUCER: Window Processor  →  Analysis Queue
     # ──────────────────────────────────────────────────────────────────────
@@ -389,4 +408,3 @@ class AgentRunner:
                 )
         except asyncio.CancelledError:
             pass
-

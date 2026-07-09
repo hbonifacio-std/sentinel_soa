@@ -5,6 +5,7 @@ Supports lightweight dependency injection for testability.
 """
 
 import json
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol
@@ -22,6 +23,7 @@ from .indicators import build_deterministic_indicators, normalize_indicator_labe
 from .recommendations import generate_recommendation
 
 logger = logging.getLogger(__name__)
+_LLM_ANALYSIS_TIMEOUT_S = 300.0
 
 
 # ============================================================================
@@ -31,12 +33,12 @@ logger = logging.getLogger(__name__)
 class AlertStoreProtocol(Protocol):
     """Protocol for alert store implementations (in-memory, Redis, Mongo, etc.)."""
 
-    def get_history_by_ip(self, source_ip: str, limit: int) -> List[Any]:
-        """Retrieves alert history for an IP."""
+    def get_history_by_ip(self, source_ip: str, limit: int = 10) -> List[Any]:
+        """Retrieves alert history for an IP (for backward compatibility with InMemoryAlertStore)."""
         ...
 
     def add_assessment(self, source_ip: str, assessment: AnalysisOutput) -> None:
-        """Persists an assessment for temporal context."""
+        """Persists an assessment for temporal context (for backward compatibility with InMemoryAlertStore)."""
         ...
 
 
@@ -131,6 +133,12 @@ async def execute_analyze_web_activity(
 
     try:
         model_id = arguments.pop("model_id", None)
+        
+        # Extract metadata that should NOT be sent to LLM analysis
+        window_id = arguments.pop("window_id", None)
+        source_id = arguments.pop("source_id", None)
+        client_id = arguments.pop("client_id", None)
+        
         rules_bundle = _extract_rules_bundle(arguments)
         sanitized_arguments = {k: v for k, v in arguments.items() if k != "rules_bundle"}
 
@@ -138,8 +146,6 @@ async def execute_analyze_web_activity(
         analysis_input = AnalysisInput(**sanitized_arguments)
 
         source_ip = analysis_input.source_ip
-        source_id = analysis_input.source_id
-        window_id = analysis_input.window_id
         logger.info(f"Starting 'analyze_web_activity' tool for IP: {source_ip} (Window: {window_id})")
 
         # ========================================================================
@@ -173,12 +179,22 @@ async def execute_analyze_web_activity(
 
             # We delegate telemetry and history directly to LLMAnalyzer
             # so the provider decides how to package it.
-            raw_assessment = await analyzer.analyze_with_context(
-                telemetry=analysis_input,
-                history=threat_history
+            raw_assessment = await asyncio.wait_for(
+                analyzer.analyze_with_context(
+                    telemetry=analysis_input,
+                    history=threat_history
+                ),
+                timeout=_LLM_ANALYSIS_TIMEOUT_S,
             )
             logger.debug(
                 f"LLM response received: {json.dumps(raw_assessment, indent=2, ensure_ascii=False)[:300]}...")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "LLM analysis timed out after %ss for %s. Falling back to heuristics.",
+                _LLM_ANALYSIS_TIMEOUT_S,
+                source_ip,
+            )
+            raw_assessment = None
         except Exception as llm_err:
             logger.warning(f"LLM analysis failed, using heuristics fallback: {str(llm_err)}")
             raw_assessment = None
@@ -219,8 +235,9 @@ async def execute_analyze_web_activity(
         if merged_indicators and all(ind.lower() in INDICATOR_GENERIC_TOKENS for ind in merged_indicators):
             merged_indicators = deterministic_indicators[:10] or merged_indicators
 
-        raw_assessment["window_id"] = str(window_id)
-        raw_assessment["source_id"] = source_id
+        raw_assessment["window_id"] = str(window_id) if window_id else "N/A"
+        raw_assessment["source_id"] = source_id or "N/A"
+        raw_assessment["client_id"] = client_id
         raw_assessment["source_ip"] = source_ip
         raw_assessment["indicators_found"] = merged_indicators[:15]
 

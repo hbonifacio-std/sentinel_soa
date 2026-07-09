@@ -17,6 +17,10 @@ from mcp_servers.log_analysis_server.tools.error_responses import (
     build_analyze_web_activity_error,
     build_threat_context_error,
 )
+from mcp_servers.log_analysis_server.security import (
+    verify_rules_bundle_signature,
+    get_internal_token,
+)
 
 # --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
@@ -56,8 +60,6 @@ async def get_available_models() -> Dict[str, Any]:
 # pylint: disable=too-many-arguments
 @server.tool()
 async def analyze_web_activity(  # noqa: PLR0913
-        window_id: str,
-        source_id: str,
         source_ip: str,
         window_start_utc: str,
         window_end_utc: str,
@@ -75,13 +77,14 @@ async def analyze_web_activity(  # noqa: PLR0913
         infra_context: Optional[Dict[str, Any]] = None,
         security_state_features: Optional[Dict[str, Any]] = None,
         rules_bundle: Optional[Dict[str, Any]] = None,
+        window_id: Optional[str] = None,
+        source_id: Optional[str] = None,
+        client_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes web telemetry to detect threats using heuristics + LLM.
 
     Args:
-        window_id: Window identifier.
-        source_id: Telemetry source ID.
         source_ip: Source IP under analysis.
         window_start_utc: Start timestamp.
         window_end_utc: End timestamp.
@@ -95,16 +98,27 @@ async def analyze_web_activity(  # noqa: PLR0913
         attempted_usernames: Distinct usernames observed in authentication attempts.
         invalid_token_requests_count: Number of requests with invalid/expired authentication tokens.
         max_response_size_bytes: Maximum response size observed in the window.
-        model_id: The identifier for the analysis model to use.
         suspicious_samples: Sanitized suspicious request samples for context.
         infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
         security_state_features: Session/authentication state features for account-compromise correlation.
-        rules_bundle: Active rules bundle injected by core orchestrator.
+        rules_bundle: Active rules bundle injected by core orchestrator (HMAC-signed).
+        window_id: Window identifier (for report tracking, not sent to LLM analysis).
+        source_id: Telemetry source ID (for report tracking, not sent to LLM analysis).
+        client_id: Client identifier that submitted the request (for report tracking).
     """
+    # Verify rules_bundle integrity if present
+    if rules_bundle and not verify_rules_bundle_signature(rules_bundle):
+        logger.error("rules_bundle signature verification failed")
+        return build_analyze_web_activity_error(
+            source_ip=source_ip,
+            unique_uris_requested=unique_uris_requested,
+            error="rules_bundle integrity check failed",
+        )
+    
     # Rebuild the 'arguments' dictionary expected by execute_analyze_web_activity
+    # Note: window_id, source_id, and client_id are NOT sent to analysis, 
+    # they are preserved for the final report
     payload = {
-        "window_id": window_id,
-        "source_id": source_id,
         "source_ip": source_ip,
         "window_start_utc": window_start_utc,
         "window_end_utc": window_end_utc,
@@ -122,6 +136,10 @@ async def analyze_web_activity(  # noqa: PLR0913
         "infra_context": infra_context or {},
         "security_state_features": security_state_features or {},
         "rules_bundle": rules_bundle,
+        # Metadata for reporting (not sent to LLM analysis)
+        "window_id": window_id,
+        "source_id": source_id,
+        "client_id": client_id,
     }
 
     logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")
@@ -132,8 +150,6 @@ async def analyze_web_activity(  # noqa: PLR0913
     except Exception as e:
         logger.error(f"Error executing tool: {str(e)}", exc_info=True)
         return build_analyze_web_activity_error(
-            window_id=window_id,
-            source_id=source_id,
             source_ip=source_ip,
             unique_uris_requested=unique_uris_requested,
             error=str(e),
@@ -216,6 +232,10 @@ async def main():
     """
     transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
     
+    # Warn if MCP_INTERNAL_TOKEN is not configured
+    if not get_internal_token():
+        logger.warning("⚠️  MCP_INTERNAL_TOKEN not configured - HMAC signing/verification will be disabled!")
+    
     logger.info("Tools 'analyze_web_activity' and 'get_threat_context' registered.")
 
     try:
@@ -227,6 +247,7 @@ async def main():
             host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
             port = int(os.getenv('MCP_SERVER_PORT', '8080'))
             logger.info(f"Starting FastMCP Log Analysis Server on HTTP at {host}:{port}...")
+            logger.info("Authorization: Bearer token validation via mcp_client.py headers")
             await server.run_async(transport='http', host=host, port=port)
             
         else:

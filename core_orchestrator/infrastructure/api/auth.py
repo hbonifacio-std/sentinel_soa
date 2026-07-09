@@ -7,6 +7,12 @@ from core_orchestrator.infrastructure.api.dependencies import get_db_manager
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
 from core_orchestrator.infrastructure.security.dependencies import verify_api_key_header
 
+
+def _normalize_tenant_id(value: str) -> str:
+    if value.startswith("tenant:"):
+        return value.split("tenant:", 1)[1]
+    return value
+
 @dataclass
 class TenantContext:
     tenant_id: str
@@ -67,7 +73,8 @@ async def get_tenant_context(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or inactive tenant credentials.")
 
         tenant_id = tenant_doc["tenant_id"]
-        request.state.tenant_id = tenant_id
+        tenant_id = _normalize_tenant_id(tenant_id)
+        request.state.client_id = tenant_id
         request.state.tenant_rate = int(tenant_doc.get("rate_limit_per_minute", 60))
         return TenantContext(
             tenant_id=tenant_id,
@@ -83,8 +90,8 @@ async def get_tenant_context(
     # Backwards-compatible fallback: derive tenant from verified telemetry client
     # (useful for tests and PoC environments where tenants are not yet registered)
     if client:
-        derived_tenant = f"tenant:{client.client_id}"
-        request.state.tenant_id = derived_tenant
+        derived_tenant = _normalize_tenant_id(client.client_id)
+        request.state.client_id = derived_tenant
         request.state.tenant_rate = int(os.getenv("DEFAULT_TENANT_RATE", "60"))
         return TenantContext(
             tenant_id=derived_tenant,

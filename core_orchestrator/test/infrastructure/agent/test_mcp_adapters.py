@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
@@ -31,6 +32,24 @@ async def test_llm_analysis_adapter(mock_mcp_manager):
     mock_mcp_manager.call_tool.return_value = {"threat_detected": False}
     res = await adapter.analyze_web_activity({"ip": "1.2.3.4"})
     assert res["threat_detected"] is False
+
+
+@pytest.mark.asyncio
+async def test_llm_analysis_adapter_timeout_returns_fallback(mock_mcp_manager):
+    adapter = MCPLlmAnalysisAdapter(mock_mcp_manager)
+
+    async def slow_call_tool(*args, **kwargs):
+        await asyncio.sleep(0.05)
+
+    mock_mcp_manager.call_tool.side_effect = slow_call_tool
+
+    with patch("core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter._MCP_TOOL_TIMEOUT_S", 0.01):
+        result = await adapter.analyze_web_activity({"source_ip": "1.2.3.4"})
+
+    assert result["source_ip"] == "1.2.3.4"
+    assert result["threat_detected"] is False
+    assert result["threat_score"] == 0
+    assert result["error"] == "MCP analysis timed out"
 
 @pytest.mark.asyncio
 async def test_forensic_intelligence_adapter(mock_mcp_manager):
@@ -87,14 +106,21 @@ async def test_orchestrator_agent():
     threat_context_service.get_historical_context.assert_not_called()
     
     # Cache miss + Threat detected case
-    analysis_result = {"source_ip": "1.2.3.4", "threat_detected": True}
+    analysis_result = {
+        "source_ip": "1.2.3.4",
+        "source_id": "victim-app",
+        "client_id": "tenant-42",
+        "threat_detected": True,
+    }
     analysis_service.analyze_activity.return_value = analysis_result
     threat_context_service.get_historical_context.return_value = {"threat_history": ["prev"]}
-    
+
     res = await agent.process_telemetry_window(payload)
     assert "threat_history" in res
     threat_context_service.get_historical_context.assert_called_once_with("1.2.3.4")
     analytics_service.create_analysis_report.assert_called()
+    assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].source_id == "victim-app"
+    assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].client_id == "tenant-42"
 
 @pytest.mark.asyncio
 @patch("core_orchestrator.infrastructure.agent.mcp_client._streamable_http_client")

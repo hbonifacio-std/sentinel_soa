@@ -57,6 +57,7 @@ class OrchestratorAgent:
         """Enriches the analysis result with historical threat context if a threat was detected."""
         source_ip = analysis_result.get("source_ip", "UNKNOWN")
         if not analysis_result.get("threat_detected", False):
+            logger.info(f"Step 2: No threat detected for {source_ip}. Skipping historical context.")
             return analysis_result
 
         logger.info(f"Step 2: Threat detected. Requesting historical context for {source_ip}")
@@ -70,6 +71,8 @@ class OrchestratorAgent:
     async def _save_report(self, analysis_result: Dict[str, Any]):
         """Saves the final analysis report to the database."""
         source_ip = analysis_result.get("source_ip", "UNKNOWN")
+        analysis_result.setdefault("source_id", "unknown")
+        analysis_result.setdefault("client_id", None)
         analysis_result.setdefault("reviewed", False)
         analysis_result.setdefault("actions", [])
         analysis_result.setdefault("resolved", False)
@@ -117,4 +120,3 @@ class OrchestratorAgent:
                 "threat_detected": False,
                 "threat_level": "NONE"
             }, ensure_ascii=False)
-

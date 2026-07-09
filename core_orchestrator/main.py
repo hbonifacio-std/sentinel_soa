@@ -74,7 +74,7 @@ async def add_limiter_to_state(request: Request, call_next: Callable[[Request], 
     # This is a bit of a workaround for the slowapi library not having a more direct
     # DI integration. We fetch the limiter instance from our container via the deps module.
     limiter = deps.get_limiter(container=get_container())
-    request.state.limiter = limiter
+    request.app.state.limiter = limiter
     response = await call_next(request)
     return response
 
@@ -119,7 +119,6 @@ app.include_router(
     agent_telemetry.router,
     prefix="/api/v1/telemetry",
     tags=["Telemetry Ingestion"],
-    dependencies=[Depends(require_api_key)],
 )
 app.include_router(
     analytics.router,
@@ -135,7 +134,6 @@ app.include_router(
     refactored_rules_router.router, # ✨ Using the new refactored router
     prefix="/api/v1/rules",
     tags=["Rules Management"],
-    dependencies=[Depends(require_api_key)],
 )
 
 

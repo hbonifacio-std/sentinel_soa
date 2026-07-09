@@ -22,10 +22,10 @@ class MongoTenantRepository(TenantRepository):
 
     def __init__(self, db_manager: DatabaseManager):
         self._db_manager = db_manager
-        self.collection = db_manager.get_auth_db()["tenants"]
+        self.collection = db_manager.get_auth_db()["authorized_telemetry_clients"]
 
     async def get(self, tenant_id: str) -> Optional[TenantInDB]:
-        tenant_doc = await self.collection.find_one({"tenant_id": tenant_id})
+        tenant_doc = await self.collection.find_one({"client_id": tenant_id})
         if tenant_doc:
             return TenantInDB(**tenant_doc)
         return None
@@ -78,14 +78,12 @@ class MongoTenantRepository(TenantRepository):
         now = datetime.now(timezone.utc)
 
         tenant_doc = {
-            "tenant_id": tenant_create.tenant_id,
+            "client_id": tenant_create.client_id,
             "display_name": tenant_create.display_name,
             "api_key_hash": api_key_hash,
             "api_key_plaintext": api_key_plaintext,
             "rate_limit_per_minute": tenant_create.rate_limit_per_minute,
             "is_active": tenant_create.is_active,
-            "client_id": tenant_create.client_id,
-            "source_id": tenant_create.source_id,
             "description": tenant_create.description,
             "api_key": tenant_create.api_key,
             "hmac_public_key": tenant_create.hmac_public_key,
@@ -95,7 +93,7 @@ class MongoTenantRepository(TenantRepository):
         }
 
         await self.collection.insert_one(tenant_doc)
-        logger.info(f"Tenant created: {tenant_create.tenant_id} ({tenant_create.display_name})")
+        logger.info(f"Tenant created: {tenant_create.client_id} ({tenant_create.display_name})")
 
         return TenantInDB(**tenant_doc)
 
@@ -113,7 +111,7 @@ class MongoTenantRepository(TenantRepository):
         kwargs["updated_at"] = datetime.now(timezone.utc)
         
         result = await self.collection.find_one_and_update(
-            {"tenant_id": tenant_id},
+            {"client_id": tenant_id},
             {"$set": kwargs},
             return_document=True
         )
@@ -124,7 +122,7 @@ class MongoTenantRepository(TenantRepository):
 
     async def delete(self, tenant_id: str) -> bool:
         """Delete a tenant."""
-        result = await self.collection.delete_one({"tenant_id": tenant_id})
+        result = await self.collection.delete_one({"client_id": tenant_id})
         if result.deleted_count > 0:
             logger.info(f"Tenant deleted: {tenant_id}")
             return True
@@ -132,7 +130,7 @@ class MongoTenantRepository(TenantRepository):
 
     async def ensure_indexes(self) -> None:
         """Ensure unique indexes required by the tenants collection."""
-        await self.collection.create_index("tenant_id", unique=True)
+        await self.collection.create_index("client_id", unique=True)
         await self.collection.create_index("api_key_hash", unique=True, sparse=True)
         await self.collection.create_index("client_id", unique=True, sparse=True)
         await self.collection.create_index("api_key", unique=True, sparse=True)

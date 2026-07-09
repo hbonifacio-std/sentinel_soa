@@ -4,7 +4,7 @@ This module defines the data validation schemas that the MCP server requires
 to process time windows of suspicious HTTP activity.
 """
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -47,13 +47,13 @@ class WebActivityWindowInput(BaseModel):
     ensuring the LLM receives a structured payload with guaranteed static types.
     """
 
-    window_id: UUID = Field(
-        ...,
-        description="Universal unique identifier (UUID v4) of the analysis window."
+    window_id: Optional[UUID] = Field(
+        default=None,
+        description="Universal unique identifier (UUID v4) of the analysis window. Used for report tracking, not sent to LLM analysis."
     )
-    source_id: str = Field(
-        ...,
-        description="Unique identifier of the server or application that originates the log."
+    source_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier of the server or application that originates the log. Used for report tracking, not sent to LLM analysis."
     )
     source_ip: str = Field(
         ...,

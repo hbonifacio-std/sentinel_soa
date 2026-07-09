@@ -8,11 +8,16 @@ class RuleRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_all(self, include_inactive: bool = False) -> List[HeuristicRule]:
+    async def get_all(self, include_inactive: bool = False, tenant_id: Optional[str] = None) -> List[HeuristicRule]:
         raise NotImplementedError
 
     @abstractmethod
     async def get_by_ids(self, rule_ids: List[str]) -> List[HeuristicRule]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def get_rules_by_tenant(self, tenant_id: Optional[str], include_inactive: bool = False) -> List[HeuristicRule]:
+        """Fetch rules for a specific tenant (or global rules if tenant_id is None or '*')."""
         raise NotImplementedError
 
     @abstractmethod

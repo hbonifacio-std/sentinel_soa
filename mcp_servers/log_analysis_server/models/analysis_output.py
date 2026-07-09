@@ -51,6 +51,10 @@ class ThreatAssessment(BaseModel):
         ...,
         description="Unique identifier of the server or application that originates the log."
     )
+    client_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier of the client that submitted the analysis request."
+    )
     source_ip: str = Field(
         ...,
         description="Source IP address of the analyzed traffic."

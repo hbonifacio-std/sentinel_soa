@@ -45,7 +45,7 @@
     del(.timestamp)
   } else {
     # --- ESCENARIO B: Log Crudo / No-HTTP ---
-    .source_id = "victim-host-infrastructure"
+
     .timestamp_utc = to_string(now())
 
     # Regex protegido para TOML con doble escape
@@ -89,6 +89,7 @@
   # 2. Inyecta dinámicamente las credenciales que le asignaste al cliente
   request.headers.X-Sentinel-Client-ID = "${SENTINEL_CLIENT_ID}"
   request.headers.X-Sentinel-API-Key = "${SENTINEL_API_KEY}"
+  request.headers.X-Sentinel-SOURCE-ID = "victim-app-01"
 
   batch.max_events = 50
   batch.timeout_secs = 60

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
@@ -73,34 +74,30 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         return paginated
 
     async def get_report_by_id(self, report_id: str) -> Optional[dict]:
-        try:
-            obj_id = ObjectId(report_id)
-        except Exception:
+        query = self._build_report_id_query(report_id)
+        if query is None:
             return None
-        
-        doc = await self.collection.find_one({"_id": obj_id})
-        if doc and "_id" in doc:
+
+        doc = await self.collection.find_one(query)
+        if not isinstance(doc, dict):
+            return None
+        if "_id" in doc:
             doc = dict(doc)
             doc["id"] = str(doc.pop("_id"))
-        return dict(doc) if doc else None
+        return dict(doc)
 
     async def update_report(self, report_id: str, updates: dict) -> bool:
-        try:
-            obj_id = ObjectId(report_id)
-        except Exception:
+        query = self._build_report_id_query(report_id)
+        if query is None:
             return False
-        return await self.update_partial({"_id": obj_id}, updates)
+        return await self.update_partial(query, updates)
 
     async def add_action_to_report(self, report_id: str, action: dict) -> bool:
-        try:
-            obj_id = ObjectId(report_id)
-        except Exception:
+        query = self._build_report_id_query(report_id)
+        if query is None:
             return False
 
-        result = await self.collection.update_one(
-            {"_id": obj_id},
-            {"$push": {"actions": action}}
-        )
+        result = await self.collection.update_one(query, {"$push": {"actions": action}})
         return result.modified_count > 0
 
     async def get_distinct_source_ids(self) -> List[str]:
@@ -186,3 +183,13 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
                     if isinstance(item, dict):
                         self._normalize_document_id(item)
 
+    @staticmethod
+    def _build_report_id_query(report_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            return {"_id": ObjectId(report_id)}
+        except Exception:
+            try:
+                uuid.UUID(str(report_id))
+            except Exception:
+                return None
+            return {"_id": report_id}

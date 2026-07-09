@@ -348,7 +348,7 @@ async def get_tenant_context(request: Request, x_api_key: str = Header(default=N
         rate_limit_per_minute=tenant_doc.get("rate_limit_per_minute", 60),
     )
     # Se expone en request.state para que el rate limiter (slowapi) pueda usarlo como key_func.
-    request.state.tenant_id = context.tenant_id
+    request.state.client_id = context.tenant_id
     return context
 ```
 
@@ -365,7 +365,7 @@ Todos los routers (`agent_telemetry`, `analytics`, `rules_management`) agregan `
 @router.post("/ingest/batch", status_code=202)
 async def ingest_batch_events(events: List[LogEvent], tenant: TenantContext = Depends(get_tenant_context)):
     for event in events:
-        event.tenant_id = tenant.tenant_id   # nunca confiar en el valor entrante
+        event.client_id = tenant.client_id  # nunca confiar en el valor entrante
         ...
 ```
 
@@ -374,7 +374,8 @@ async def ingest_batch_events(events: List[LogEvent], tenant: TenantContext = De
 ```python
 # services/window_manager.py
 def get_window_key(self, log_line: LogEvent) -> str:
-    return f"window:{log_line.tenant_id}:{log_line.source_ip}"
+    return f"window:{log_line.client_id}:{log_line.source_ip}"
+
 
 async def get_active_windows(self) -> List[str]:
     keys = []
@@ -410,8 +411,9 @@ async def get_active_rules(self, tenant_id: str) -> RulesBundle:
 ```
 
 Punto de invocación en `orchestrator.py`:
+
 ```python
-rules_bundle = await get_rules_engine().get_active_rules(tenant.tenant_id)
+rules_bundle = await get_rules_engine().get_active_rules(tenant.client_id)
 ```
 
 En Redis DB3, las claves pasan de `rules:active:all` a `rules:active:{tenant_id}` (más `rules:active:global` para el baseline), evitando que la caché de un cliente pise la de otro.
@@ -439,7 +441,7 @@ La tool MCP `analyze_web_activity` (`server.py`) agrega el parámetro `tenant_id
 **d) Caché de resultados de análisis**
 
 ```python
-cache_key = f"cache:analysis:{tenant.tenant_id}:{json.dumps(telemetry_payload, sort_keys=True, default=str)}"
+cache_key = f"cache:analysis:{tenant.client_id}:{json.dumps(telemetry_payload, sort_keys=True, default=str)}"
 ```
 Aislamiento explícito, sin depender de que el contenido de la ventana sea suficientemente distinto entre clientes.
 

@@ -62,6 +62,7 @@ class ValidationRules(BaseModel):
 
 class HeuristicRule(BaseModel):
     rule_id: str
+    tenant_id: Optional[str] = Field(default=None, description="Tenant ID (None or '*' for global rules)")
     rule_type: RuleType
     category: RuleCategory
     version: int = Field(ge=1)

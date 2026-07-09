@@ -20,6 +20,7 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
         "threat_score": "82",
         "threat_detected": False,
         "indicators_found": [],
+        "source_id": "N/A",
     }
 
     service = AnalysisService(llm_analysis_port=llm_analysis_port, rules_engine_service=rules_engine_service)
@@ -27,6 +28,7 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
     telemetry_payload = {
         "window_id": 123,
         "source_id": "victim-app",
+        "client_id": "tenant-42",
         "source_ip": "10.0.0.1",
         "window_start_utc": "2026-01-01T00:00:00Z",
         "window_end_utc": "2026-01-01T00:01:00Z",
@@ -44,8 +46,9 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
     assert forwarded["rules_bundle"]["version_hash"] == "v-test-1"
 
     assert result["source_ip"] == "10.0.0.1"
+    assert result["source_id"] == "victim-app"
+    assert result["client_id"] == "tenant-42"
     assert result["threat_score"] == 82
     assert result["threat_detected"] is True
     assert isinstance(result["indicators_found"], list)
     assert result["indicators_found"]
-

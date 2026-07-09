@@ -58,7 +58,6 @@ class TenantService:
         
         # Return with plaintext key (only shown once)
         return TenantResponseWithKey(
-            tenant_id=tenant_in_db.tenant_id,
             display_name=tenant_in_db.display_name,
             rate_limit_per_minute=tenant_in_db.rate_limit_per_minute,
             is_active=tenant_in_db.is_active,
@@ -66,7 +65,7 @@ class TenantService:
             updated_at=tenant_in_db.updated_at,
             api_key_plaintext=api_key_plaintext,
             client_id=tenant_in_db.client_id,
-            source_id=tenant_in_db.source_id,
+
         )
 
     async def get_tenant(self, tenant_id: str) -> Optional[TenantInDB]:
@@ -136,7 +135,6 @@ class TenantService:
         
         return TelemetryClientAuthContext(
             client_id=tenant.client_id,
-            source_id=tenant.source_id,
             display_name=tenant.display_name,
             hmac_public_key=tenant.hmac_public_key,
         )
@@ -187,7 +185,6 @@ class TenantService:
         
         return TelemetryClientAuthContext(
             client_id=tenant.client_id,
-            source_id=tenant.source_id,
             display_name=tenant.display_name,
             hmac_public_key=tenant.hmac_public_key,
         )
@@ -214,7 +211,7 @@ class TenantService:
             if overwrite_existing:
                 # Update existing
                 updated = await self.update_tenant(
-                    existing.tenant_id,
+                    existing.client_id,
                     api_key=client_create.api_key,
                     hmac_public_key=client_create.hmac_public_key,
                     hmac_secret=client_create.hmac_secret,

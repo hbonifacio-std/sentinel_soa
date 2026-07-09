@@ -3,6 +3,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
+import uuid
 from bson import ObjectId
 from pydantic import BaseModel
 
@@ -211,6 +212,27 @@ async def test_mongo_analytics_repository_create_report(mock_db_manager):
 
     res = await repo.create_report(DummyModel(val="x"))
     assert res == "inserted-1"
+
+
+@pytest.mark.asyncio
+async def test_mongo_analytics_repository_accepts_string_report_ids(mock_db_manager):
+    manager, db, collections = mock_db_manager
+    collection = collections["analysis_reports"]
+
+    repo = MongoAnalyticsRepository(manager)
+    report_id = str(uuid.uuid4())
+    collection.find_one.return_value = {"_id": report_id, "source_ip": "10.0.0.1"}
+    collection.update_one.return_value = MagicMock(modified_count=1)
+
+    report = await repo.get_report_by_id(report_id)
+    assert report is not None
+    assert report["id"] == report_id
+
+    updated = await repo.update_report(report_id, {"reviewed": True})
+    assert updated is True
+
+    action_added = await repo.add_action_to_report(report_id, {"type": "block"})
+    assert action_added is True
 
 
 # ──────────────────────────────────────────────────────────────────────────────

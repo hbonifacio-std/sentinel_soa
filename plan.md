@@ -328,28 +328,28 @@ from core_orchestrator.services.database import db
 
 @dataclass
 class TenantContext:
-    tenant_id: str
-    display_name: str
-    rate_limit_per_minute: int
+  tenant_id: str
+  display_name: str
+  rate_limit_per_minute: int
 
 
 async def get_tenant_context(request: Request, x_api_key: str = Header(default=None)) -> TenantContext:
-    if not x_api_key:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing X-API-Key header.")
+  if not x_api_key:
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing X-API-Key header.")
 
-    key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
-    tenant_doc = await db.get_app_db().tenants.find_one({"api_key_hash": key_hash, "is_active": True})
-    if not tenant_doc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or inactive tenant credentials.")
+  key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+  tenant_doc = await db.get_app_db().tenants.find_one({"api_key_hash": key_hash, "is_active": True})
+  if not tenant_doc:
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or inactive tenant credentials.")
 
-    context = TenantContext(
-        tenant_id=tenant_doc["tenant_id"],
-        display_name=tenant_doc["display_name"],
-        rate_limit_per_minute=tenant_doc.get("rate_limit_per_minute", 60),
-    )
-    # Se expone en request.state para que el rate limiter (slowapi) pueda usarlo como key_func.
-    request.state.tenant_id = context.tenant_id
-    return context
+  context = TenantContext(
+    tenant_id=tenant_doc["tenant_id"],
+    display_name=tenant_doc["display_name"],
+    rate_limit_per_minute=tenant_doc.get("rate_limit_per_minute", 60),
+  )
+  # Se expone en request.state para que el rate limiter (slowapi) pueda usarlo como key_func.
+  request.state.client_id = context.tenant_id
+  return context
 ```
 
 Todos los routers (`agent_telemetry`, `analytics`, `rules_management`) agregan `tenant: TenantContext = Depends(get_tenant_context)` como parámetro, y **toda** consulta/escritura queda scoped por `tenant.tenant_id`.
@@ -364,9 +364,9 @@ Todos los routers (`agent_telemetry`, `analytics`, `rules_management`) agregan `
 # agent_telemetry.py (fragmento)
 @router.post("/ingest/batch", status_code=202)
 async def ingest_batch_events(events: List[LogEvent], tenant: TenantContext = Depends(get_tenant_context)):
-    for event in events:
-        event.tenant_id = tenant.tenant_id   # nunca confiar en el valor entrante
-        ...
+  for event in events:
+    event.client_id = tenant.client_id  # nunca confiar en el valor entrante
+    ...
 ```
 
 `WindowManager` deja de agrupar solo por IP (colisión real: dos clientes distintos pueden tener rangos privados solapados, ej. `10.0.0.5` de ambos) y agrupa por `(tenant, ip)`. Esto además resuelve el Hallazgo P2 #7 (`KEYS` → `SCAN`) en el mismo cambio:
@@ -374,13 +374,14 @@ async def ingest_batch_events(events: List[LogEvent], tenant: TenantContext = De
 ```python
 # services/window_manager.py
 def get_window_key(self, log_line: LogEvent) -> str:
-    return f"window:{log_line.tenant_id}:{log_line.source_ip}"
+  return f"window:{log_line.client_id}:{log_line.source_ip}"
+
 
 async def get_active_windows(self) -> List[str]:
-    keys = []
-    async for key in db.redis_client.scan_iter(match="window:*", count=200):
-        keys.append(key)
-    return keys
+  keys = []
+  async for key in db.redis_client.scan_iter(match="window:*", count=200):
+    keys.append(key)
+  return keys
 ```
 
 `TelemetryWindow` y el documento persistido en `analysis_reports`/`raw_telemetry` heredan el mismo `tenant_id`, y **todas** las consultas de `analytics.py` (`get_reports`, `get_stats`, `get_source_ids`) agregan `{"tenant_id": tenant.tenant_id}` al filtro — sin excepción, incluyendo el pipeline de `$facet` en `get_stats`.
@@ -410,8 +411,9 @@ async def get_active_rules(self, tenant_id: str) -> RulesBundle:
 ```
 
 Punto de invocación en `orchestrator.py`:
+
 ```python
-rules_bundle = await get_rules_engine().get_active_rules(tenant.tenant_id)
+rules_bundle = await get_rules_engine().get_active_rules(tenant.client_id)
 ```
 
 En Redis DB3, las claves pasan de `rules:active:all` a `rules:active:{tenant_id}` (más `rules:active:global` para el baseline), evitando que la caché de un cliente pise la de otro.
@@ -439,7 +441,7 @@ La tool MCP `analyze_web_activity` (`server.py`) agrega el parámetro `tenant_id
 **d) Caché de resultados de análisis**
 
 ```python
-cache_key = f"cache:analysis:{tenant.tenant_id}:{json.dumps(telemetry_payload, sort_keys=True, default=str)}"
+cache_key = f"cache:analysis:{tenant.client_id}:{json.dumps(telemetry_payload, sort_keys=True, default=str)}"
 ```
 Aislamiento explícito, sin depender de que el contenido de la ventana sea suficientemente distinto entre clientes.
 

@@ -10,6 +10,8 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+import httpx
+
 try:
     from mcp import ClientSession
 except ImportError:
@@ -36,7 +38,13 @@ class MCPClientManager:
         self._max_retries = max_retries
 
     async def _open_http_session(self, url: str) -> ClientSession:
-        self._transport_cm = _streamable_http_client(url)
+        headers = {}
+        mcp_token = os.getenv("MCP_INTERNAL_TOKEN")
+        if mcp_token:
+            headers["Authorization"] = f"Bearer {mcp_token}"
+
+        http_client = httpx.AsyncClient(headers=headers)
+        self._transport_cm = _streamable_http_client(url, http_client=http_client)
         transport = await self._transport_cm.__aenter__()
 
         try:
@@ -103,6 +111,7 @@ class MCPClientManager:
                 async with self._call_semaphore:
                     # Ensure session is still valid; _ensure_active_session will reconnect if needed
                     session = await self._ensure_active_session()
+                    logger.info("Calling MCP tool '%s' (attempt %d/%d)", tool_name, attempt, self._max_retries)
                     return await session.call_tool(tool_name, arguments)
             except Exception as exc:
                 last_exc = exc

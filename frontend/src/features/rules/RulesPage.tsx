@@ -51,16 +51,16 @@ function getErrorMessage(error: unknown): string {
     }
 
     if (error.status === 403) {
-      return 'No tienes permisos para esta accion.';
+      return 'You do not have permission to perform this action.';
     }
 
     if (error.status === 401) {
-      return 'Tu sesion expiro. Inicia sesion nuevamente.';
+      return 'Your session has expired. Please log in again.';
     }
   }
 
   if (!(error instanceof Error)) {
-    return 'Error inesperado';
+    return 'Unexpected error';
   }
 
   const payload = error.message;
@@ -210,7 +210,7 @@ export default function RulesPage() {
 
   function openCreateEditor() {
     if (!isAdmin) {
-      setError('Solo un admin puede crear reglas.');
+      setError('Only an admin can create rules.');
       return;
     }
 
@@ -222,7 +222,7 @@ export default function RulesPage() {
 
   function openEditEditor(rule: HeuristicRule) {
     if (!isAdmin) {
-      setError('Solo un admin puede editar reglas.');
+      setError('Only an admin can edit rules.');
       return;
     }
 
@@ -234,7 +234,7 @@ export default function RulesPage() {
 
   async function handleSubmitEditor() {
     if (!isAdmin) {
-      setError('Solo un admin puede modificar reglas.');
+      setError('Only an admin can modify rules.');
       return;
     }
 
@@ -243,21 +243,21 @@ export default function RulesPage() {
 
     try {
       if (!draft.rule_id.trim()) {
-        throw new Error('El campo rule_id es obligatorio.');
+        throw new Error('The rule_id field is mandatory.');
       }
 
       if (!draft.description.trim()) {
-        throw new Error('El campo description es obligatorio.');
+        throw new Error('The description field is mandatory.');
       }
 
       if (editorMode === 'create') {
         const payload = draftToRule(draft);
         await createRule(payload);
-        setActionMessage(`Regla creada: ${payload.rule_id}`);
+        setActionMessage(`Rule created: ${payload.rule_id}`);
       } else if (selectedRuleId) {
         const payload = ruleToUpdatePayload(draft);
         await updateRule(selectedRuleId, payload);
-        setActionMessage(`Regla actualizada: ${selectedRuleId}`);
+        setActionMessage(`Updated rule: ${selectedRuleId}`);
       }
 
       setEditorOpen(false);
@@ -269,19 +269,19 @@ export default function RulesPage() {
 
   async function handleDeactivate(ruleId: string) {
     if (!isAdmin) {
-      setError('Solo un admin puede desactivar reglas.');
+      setError('Only an admin can deactivate rules.');
       return;
     }
 
-    const reason = window.prompt('Motivo de desactivacion', 'Rule deactivated from frontend');
+    const reason = window.prompt('Reason for deactivation', 'Rule deactivated from frontend');
     if (!reason) {
       return;
     }
-    const user = window.prompt('Usuario que aplica el cambio', 'admin') || 'admin';
+    const user = window.prompt('User applying the change', 'admin') || 'admin';
 
     try {
       await deleteRule(ruleId, user, reason);
-      setActionMessage(`Regla desactivada: ${ruleId}`);
+      setActionMessage(`Rule disabled: ${ruleId}`);
       await refreshData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -293,7 +293,7 @@ export default function RulesPage() {
       const result = await validateRules(activeRules);
       setValidation(result);
       if (result.valid) {
-        setActionMessage('Validacion exitosa del bundle activo.');
+        setActionMessage('Successful validation of the active bundle.');
       }
     } catch (err) {
       setError(getErrorMessage(err));
@@ -302,7 +302,7 @@ export default function RulesPage() {
 
   async function handleCreateVersion() {
     if (!isAdmin) {
-      setError('Solo un admin puede crear versiones.');
+      setError('Only an admin can create versions.');
       return;
     }
 
@@ -312,7 +312,7 @@ export default function RulesPage() {
       .filter(Boolean);
 
     if (rulesIncluded.length === 0) {
-      setError('Debes ingresar al menos un rule_id para crear version.');
+      setError('You must enter at least one rule_id to create a version.');
       return;
     }
 
@@ -322,7 +322,7 @@ export default function RulesPage() {
         changelog: versionChangelog,
         deployed_by: versionDeployedBy,
       });
-      setActionMessage('Version creada exitosamente.');
+      setActionMessage('Version successfully created.');
       await refreshData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -331,13 +331,13 @@ export default function RulesPage() {
 
   async function handleActivateVersion(versionHash: string) {
     if (!isAdmin) {
-      setError('Solo un admin puede activar versiones.');
+      setError('Only an admin can activate versions.');
       return;
     }
 
     try {
       await activateVersion(versionHash);
-      setActionMessage(`Version activada: ${versionHash}`);
+      setActionMessage(`Active version: ${versionHash}`);
       await refreshData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -355,15 +355,15 @@ export default function RulesPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Rules Management</h2>
-            <p className="text-xs text-slate-400">CRUD de reglas heuristicas y gestion de versiones</p>
+            <p className="text-xs text-slate-400">Heuristic rule CRUD and version management</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button className="rounded border border-surface-border px-3 py-1.5 text-sm" onClick={() => void refreshData()}>
-              Refrescar
+              Refresh
             </button>
             {isAdmin ? (
               <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={openCreateEditor}>
-                Nueva regla
+                New rule
               </button>
             ) : null}
           </div>
@@ -376,7 +376,7 @@ export default function RulesPage() {
               checked={includeInactive}
               onChange={(event) => setIncludeInactive(event.target.checked)}
             />
-            Incluir inactivas
+            Include inactive ones
           </label>
           {health ? (
             <>
@@ -398,7 +398,7 @@ export default function RulesPage() {
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Reglas ({rules.length})</h3>
           <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={() => void handleValidateBundle()}>
-            Validar bundle activo
+            Validate active bundle
           </button>
         </div>
 
@@ -425,7 +425,7 @@ export default function RulesPage() {
                 <th className="px-2 py-2">version</th>
                 <th className="px-2 py-2">activo</th>
                 <th className="px-2 py-2">updated_at</th>
-                <th className="px-2 py-2">acciones</th>
+                <th className="px-2 py-2">actions</th>
               </tr>
             </thead>
             <tbody>
@@ -441,18 +441,18 @@ export default function RulesPage() {
                     {isAdmin ? (
                       <div className="flex gap-2">
                         <button className="rounded border border-surface-border px-2 py-1" onClick={() => openEditEditor(rule)}>
-                          Editar
+                          Edit
                         </button>
                         <button
                           className="rounded border border-red-500/40 px-2 py-1 text-red-300 disabled:opacity-50"
                           onClick={() => void handleDeactivate(rule.rule_id)}
                           disabled={!rule.is_active}
                         >
-                          Desactivar
+                          Deactivate
                         </button>
                       </div>
                     ) : (
-                      <span className="text-slate-500">Sin permisos de edicion</span>
+                      <span className="text-slate-500">No editing permissions</span>
                     )}
                   </td>
                 </tr>
@@ -464,8 +464,8 @@ export default function RulesPage() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
-          <h3 className="text-sm font-semibold">Crear version</h3>
-          <p className="mt-1 text-xs text-slate-400">Usa `rule_id` separados por coma.</p>
+          <h3 className="text-sm font-semibold">Create version</h3>
+          <p className="mt-1 text-xs text-slate-400">Use comma-separated `rule_id`s.</p>
           <div className="mt-3 space-y-2 text-sm">
             <textarea
               className="h-24 w-full rounded border border-surface-border bg-slate-950 px-2 py-2 font-mono text-xs"
@@ -481,7 +481,7 @@ export default function RulesPage() {
                 placeholder="deployed_by"
               />
               <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={useActiveRulesForVersion}>
-                Usar activas
+                Use active
               </button>
             </div>
             <input
@@ -492,14 +492,14 @@ export default function RulesPage() {
             />
             {isAdmin ? (
               <button className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300" onClick={() => void handleCreateVersion()}>
-                Crear version
+                Create Version
               </button>
             ) : null}
           </div>
         </div>
 
         <div className="rounded-lg border border-surface-border bg-surface-elevated p-4">
-          <h3 className="text-sm font-semibold">Versiones ({versions.length})</h3>
+          <h3 className="text-sm font-semibold">Versions ({versions.length})</h3>
           <div className="mt-2 max-h-72 space-y-2 overflow-auto pr-1">
             {versions.map((version) => (
               <div key={version.version_hash} className="rounded border border-surface-border bg-slate-950/40 p-2 text-xs">
@@ -517,7 +517,7 @@ export default function RulesPage() {
                       disabled={version.is_active}
                       onClick={() => void handleActivateVersion(version.version_hash)}
                     >
-                      Activar
+                      Activate
                     </button>
                   ) : null}
                 </div>
@@ -676,7 +676,7 @@ export default function RulesPage() {
 
             <div className="mt-4 flex justify-end gap-2">
               <button className="rounded border border-surface-border px-3 py-1.5 text-sm" onClick={() => setEditorOpen(false)}>
-                Cancelar
+                Cancel
               </button>
               <button
                 className="rounded border border-accent-cyan/50 bg-accent-glow px-3 py-1.5 text-sm text-cyan-300"

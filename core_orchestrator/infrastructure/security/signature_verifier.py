@@ -24,4 +24,3 @@ class HmacSignatureVerifier(SignatureVerifierPort):
             timestamp=timestamp,
             redis_secrets={public_key: secret},
         )
-
