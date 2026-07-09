@@ -16,11 +16,13 @@ export class ApiError extends Error {
 
 interface ApiClientConfig {
   getAccessToken?: () => string | null;
+  getTenantApiKey?: () => string | null;
   onUnauthorized?: () => void;
 }
 
 export interface ApiFetchOptions extends RequestInit {
   skipAuth?: boolean;
+  skipTenantAuth?: boolean;
   skipJsonContentType?: boolean;
   skipUnauthorizedHandler?: boolean;
 }
@@ -55,6 +57,13 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     const accessToken = apiClientConfig.getAccessToken?.();
     if (accessToken) {
       headers.set('Authorization', `Bearer ${accessToken}`);
+    }
+  }
+
+  if (!options.skipTenantAuth && !headers.has('X-Api-Key')) {
+    const tenantApiKey = apiClientConfig.getTenantApiKey?.();
+    if (tenantApiKey) {
+      headers.set('X-Api-Key', tenantApiKey);
     }
   }
 

@@ -55,14 +55,14 @@ async def get_tenant_context(
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Tenant resolution requires a connected database.")
         # fallback to derived tenant below
 
-    sentinel_db = None
+    auth_db = None
     if db_manager.mongo_client is not None:
-        sentinel_db = db_manager.get_sentinel_db()
+        auth_db = db_manager.get_auth_db()
 
     # Primary flow: explicit tenant API key header
-    if x_api_key and sentinel_db is not None:
+    if x_api_key and auth_db is not None:
         key_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
-        tenant_doc = await sentinel_db.tenants.find_one({"api_key_hash": key_hash, "is_active": True})
+        tenant_doc = await auth_db.tenants.find_one({"api_key_hash": key_hash, "is_active": True})
         if not tenant_doc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or inactive tenant credentials.")
 

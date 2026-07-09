@@ -6,16 +6,23 @@ const persistSession = String(import.meta.env.VITE_AUTH_PERSIST_SESSION ?? 'true
 
 interface AuthState {
   accessToken: string | null;
+  tenantApiKey: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
   isBootstrapping: boolean;
   authError: string | null;
   hydrateSession: () => void;
-  setSession: (token: string, user: AuthUser) => void;
+  setSession: (token: string, user: AuthUser, tenantApiKey?: string | null) => void;
   setUser: (user: AuthUser) => void;
   setBootstrapping: (value: boolean) => void;
   setAuthError: (error: string | null) => void;
   clearSession: () => void;
+}
+
+interface AuthStateSnapshot {
+  accessToken: string;
+  tenantApiKey: string | null;
+  user: AuthUser;
 }
 
 function readSessionStorage(): AuthStateSnapshot | null {
@@ -36,6 +43,7 @@ function readSessionStorage(): AuthStateSnapshot | null {
 
     return {
       accessToken: parsed.accessToken,
+      tenantApiKey: parsed.tenantApiKey || null,
       user: parsed.user,
     };
   } catch {
@@ -62,6 +70,7 @@ function writeSessionStorage(snapshot: AuthStateSnapshot | null) {
 
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
+  tenantApiKey: null,
   user: null,
   isAuthenticated: false,
   isBootstrapping: true,
@@ -72,6 +81,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!snapshot) {
       set(() => ({
         accessToken: null,
+        tenantApiKey: null,
         user: null,
         isAuthenticated: false,
       }));
@@ -80,15 +90,17 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     set(() => ({
       accessToken: snapshot.accessToken,
+      tenantApiKey: snapshot.tenantApiKey,
       user: snapshot.user,
       isAuthenticated: true,
       authError: null,
     }));
   },
-  setSession: (token, user) => {
-    writeSessionStorage({ accessToken: token, user });
+  setSession: (token, user, tenantApiKey = null) => {
+    writeSessionStorage({ accessToken: token, tenantApiKey, user });
     set(() => ({
       accessToken: token,
+      tenantApiKey,
       user,
       isAuthenticated: true,
       authError: null,
@@ -97,7 +109,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUser: (user) => {
     set((state) => {
       if (state.accessToken) {
-        writeSessionStorage({ accessToken: state.accessToken, user });
+        writeSessionStorage({
+          accessToken: state.accessToken,
+          tenantApiKey: state.tenantApiKey,
+          user,
+        });
       }
 
       return {
@@ -112,6 +128,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     writeSessionStorage(null);
     set(() => ({
       accessToken: null,
+      tenantApiKey: null,
       user: null,
       isAuthenticated: false,
       authError: null,

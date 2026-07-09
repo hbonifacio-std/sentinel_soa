@@ -22,6 +22,7 @@ const LoginPage = lazy(() => import('@/features/auth/LoginPage'));
 
 configureApiClient({
   getAccessToken: () => useAuthStore.getState().accessToken,
+  getTenantApiKey: () => useAuthStore.getState().tenantApiKey,
   onUnauthorized: () => {
     useAuthStore.getState().setAuthError('Tu sesion expiro. Inicia sesion nuevamente.');
     useAuthStore.getState().clearSession();

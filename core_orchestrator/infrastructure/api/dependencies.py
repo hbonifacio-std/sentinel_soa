@@ -13,6 +13,7 @@ from core_orchestrator.infrastructure.api.container import Container, get_contai
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
 from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
+from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
@@ -54,6 +55,9 @@ def get_telemetry_processing_service(container: Container = Depends(get_containe
 
 def get_user_service(container: Container = Depends(get_container)) -> UserService:
     return container.user_service
+
+def get_tenant_service(container: Container = Depends(get_container)) -> TenantService:
+    return container.tenant_service
 
 def get_forensic_service(container: Container = Depends(get_container)) -> ForensicService:
     return container.forensic_service

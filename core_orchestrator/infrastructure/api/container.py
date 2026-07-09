@@ -9,6 +9,7 @@ from datetime import timedelta
 from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AnalysisService
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
 from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
+from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
@@ -28,6 +29,7 @@ from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repos
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
 from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepository
 from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
+from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepository
 from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
 
 # Core Infrastructure
@@ -71,6 +73,7 @@ class Container:
         self.telemetry_repository = None
         self.token_blacklist_repository = None
         self.user_repository = None
+        self.tenant_repository = None
         self.rules_bundle_cache = None
         self.forensic_repository = None
         self.rule_validator = None
@@ -80,6 +83,7 @@ class Container:
 
         self.analytics_service = None
         self.user_service = None
+        self.tenant_service = None
         self.auth_service = None
         self.rule_service = None
         self.rules_engine_service = None
@@ -118,6 +122,7 @@ class Container:
         self.telemetry_repository = MongoTelemetryRepository(db_manager=self.db_manager)
         self.token_blacklist_repository = RedisTokenBlacklistRepository(redis_client=redis_client)
         self.user_repository = MongoUserRepository(db_manager=self.db_manager)
+        self.tenant_repository = MongoTenantRepository(db_manager=self.db_manager)
         self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
 
         # Services
@@ -129,6 +134,7 @@ class Container:
             user_repository=self.user_repository,
             password_hasher=self.password_hasher,
         )
+        self.tenant_service = TenantService(tenant_repository=self.tenant_repository)
         self.auth_service = AuthService(
             user_provider=self.user_service,
             token_blacklist_repository=self.token_blacklist_repository,

@@ -15,6 +15,7 @@ class UserBase(BaseModel):
     email: EmailStr
     role: Literal["admin", "analyst", "viewer"] = Field(default="viewer")
     is_active: bool = Field(default=True)
+    tenant_id: str | None = Field(default=None, description="Tenant ID this user belongs to")
 
 
 class UserCreate(UserBase):
@@ -48,6 +49,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+    tenant_api_key: str | None = Field(default=None, description="API key for the user's tenant (for direct API calls)")
 
 
 class TokenPayload(BaseModel):

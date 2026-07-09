@@ -57,4 +57,6 @@ docker-compose up --build
 Further setup instructions and data-seeding scripts can be found by exploring the `scripts` directory.
 
 ---
-*This documentation set was regenerated from a direct investigation of the codebase (core_orchestrator, mcp_servers, frontend, docker-compose.yml) to replace outdated material while preserving accurate legacy content.*
+*Este README fue generado para proporcionar una visión completa y detallada del proyecto Sentinel SOA.*
+
+

@@ -19,7 +19,7 @@ from core_orchestrator.infrastructure.api.container import get_container
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
     analytics, auth, clients, forensic, rules as refactored_rules_router,
-    telemetry as agent_telemetry, users
+    telemetry as agent_telemetry, users, tenants
 )
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
 from core_orchestrator.infrastructure.handlers.exceptions import validation_exception_handler
@@ -104,6 +104,11 @@ app.include_router(
     users.router,
     prefix="/api/v1/users",
     tags=["User Management"]
+)
+app.include_router(
+    tenants.router,
+    prefix="/api/v1/tenants",
+    tags=["Tenant Management"]
 )
 app.include_router(
     clients.router,

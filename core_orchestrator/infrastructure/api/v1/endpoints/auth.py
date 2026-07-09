@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import OAuth2PasswordRequestForm
 
 from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
-from core_orchestrator.infrastructure.api.dependencies import get_auth_service
+from core_orchestrator.infrastructure.api.dependencies import get_auth_service, get_db_manager
 from core_orchestrator.domain.models.auth.user import TokenResponse, UserResponse
 from core_orchestrator.infrastructure.security.dependencies import get_current_user
 
@@ -27,7 +27,8 @@ router = APIRouter()
 )
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    auth_service: AuthService = Depends(get_auth_service)
+    auth_service: AuthService = Depends(get_auth_service),
+    db_manager = Depends(get_db_manager)
 ):
     """
     OAuth2 compatible token endpoint.
@@ -38,7 +39,7 @@ async def login_for_access_token(
         form_data: OAuth2 password request form (username and password)
     
     Returns:
-        Token response with access token and user info
+        Token response with access token and user info, plus tenant API key if user is assigned to a tenant
     
     Raises:
         HTTPException: If credentials are invalid
@@ -55,6 +56,23 @@ async def login_for_access_token(
     
     user, access_token = login_result
     
+    # Look up tenant API key if user has a tenant_id
+    tenant_api_key = None
+    if user.tenant_id and db_manager.mongo_client is not None:
+        try:
+            auth_db = db_manager.get_auth_db()
+            tenant_doc = await auth_db.tenants.find_one({
+                "tenant_id": user.tenant_id,
+                "is_active": True
+            })
+            if tenant_doc and "api_key_plaintext" in tenant_doc:
+                # NOTE: api_key_plaintext should only be shown at creation time.
+                # This is a convenience for development. In production, users should
+                # retrieve the key from a secure endpoint after it's been created.
+                tenant_api_key = tenant_doc.get("api_key_plaintext")
+        except Exception as e:
+            logger.warning(f"Could not retrieve tenant API key for user {user.username}: {e}")
+    
     # Return token and user info
     user_response = UserResponse(
         user_id=user.user_id,
@@ -62,6 +80,7 @@ async def login_for_access_token(
         email=user.email,
         role=user.role,
         is_active=user.is_active,
+        tenant_id=user.tenant_id,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -70,6 +89,7 @@ async def login_for_access_token(
         access_token=access_token,
         token_type="bearer",
         user=user_response,
+        tenant_api_key=tenant_api_key,
     )
 
 
