@@ -15,7 +15,7 @@ def _normalize_tenant_id(value: str) -> str:
 
 @dataclass
 class TenantContext:
-    tenant_id: str
+    client_id: str
     display_name: str
     rate_limit_per_minute: int
 
@@ -72,13 +72,13 @@ async def get_tenant_context(
         if not tenant_doc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or inactive tenant credentials.")
 
-        tenant_id = tenant_doc["tenant_id"]
-        tenant_id = _normalize_tenant_id(tenant_id)
-        request.state.client_id = tenant_id
+        client_id = tenant_doc["client_id"]
+        client_id = _normalize_tenant_id(client_id)
+        request.state.client_id = client_id
         request.state.tenant_rate = int(tenant_doc.get("rate_limit_per_minute", 60))
         return TenantContext(
-            tenant_id=tenant_id,
-            display_name=tenant_doc.get("display_name", tenant_id),
+            client_id=client_id,
+            display_name=tenant_doc.get("display_name", client_id),
             rate_limit_per_minute=int(tenant_doc.get("rate_limit_per_minute", 60)),
         )
 
@@ -90,11 +90,11 @@ async def get_tenant_context(
     # Backwards-compatible fallback: derive tenant from verified telemetry client
     # (useful for tests and PoC environments where tenants are not yet registered)
     if client:
-        derived_tenant = _normalize_tenant_id(client.client_id)
-        request.state.client_id = derived_tenant
+        derived_client = _normalize_tenant_id(client.client_id)
+        request.state.client_id = derived_client
         request.state.tenant_rate = int(os.getenv("DEFAULT_TENANT_RATE", "60"))
         return TenantContext(
-            tenant_id=derived_tenant,
+            client_id=derived_client,
             display_name=client.display_name,
             rate_limit_per_minute=int(os.getenv("DEFAULT_TENANT_RATE", "60")),
         )

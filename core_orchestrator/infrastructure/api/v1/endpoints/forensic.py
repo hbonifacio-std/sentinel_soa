@@ -10,9 +10,10 @@ from core_orchestrator.domain.models.forensic.forensic_analysis import (
     ForensicHistoryQuery,
     ForensicHistoryResponse,
 )
+from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.domain.ports.forensic import ForensicServicePort
 from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
-from core_orchestrator.infrastructure.security.dependencies import get_analyst_user
+from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
 
 router = APIRouter()
 
@@ -21,24 +22,31 @@ router = APIRouter()
 async def run_forensic_analysis(
     request: ForensicAnalyzeRequest,
     forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
-    _: Annotated[object, Depends(get_analyst_user)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ) -> ForensicAnalysisRecord:
     """Run a forensic query and persist the generated report."""
 
-    return await forensic_service.analyze_activity(request)
+    return await forensic_service.analyze_activity(
+        request.model_copy(update={"client_id": current_user.client_id})
+    )
 
 
 @router.get("/history")
 async def get_forensic_history(
     forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
-    _: Annotated[object, Depends(get_analyst_user)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
     source_id: str | None = None,
     page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
 ) -> ForensicHistoryResponse:
     """List paginated forensic reports."""
 
-    history_query = ForensicHistoryQuery(source_id=source_id, page=page, limit=limit)
+    history_query = ForensicHistoryQuery(
+        source_id=source_id,
+        client_id=current_user.client_id,
+        page=page,
+        limit=limit,
+    )
     return await forensic_service.get_analysis_history(history_query)
 
 
@@ -46,12 +54,11 @@ async def get_forensic_history(
 async def get_forensic_report(
     analysis_id: str,
     forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
-    _: Annotated[object, Depends(get_analyst_user)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ) -> ForensicAnalysisRecord:
     """Return one forensic report by id."""
 
-    report = await forensic_service.get_analysis_by_id(analysis_id)
+    report = await forensic_service.get_analysis_by_id(analysis_id, current_user.client_id)
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Forensic report not found")
     return report
-

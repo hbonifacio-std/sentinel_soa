@@ -36,18 +36,20 @@ async def verify_api_key_header(
         tenant_service: TenantService = Depends(get_tenant_service)
 ) -> TelemetryClientAuthContext:
     """
-    Unified API key verification for both telemetry clients and tenants.
-    
-    Headers are optional to allow fallback to tenant authentication (X-Api-Key).
-    If headers are present, they are validated as telemetry client credentials.
-    If absent, returns None to allow get_tenant_context to handle tenant-based auth.
+    API key verification for telemetry client ingestion.
+
+    Requires both `X-Sentinel-Client-ID` and `X-Sentinel-Api-Key` headers and
+    validates them against the authorized telemetry clients store.
 
     Returns:
-        TelemetryClientAuthContext: The verified client context metadata, or None if headers not provided.
+        TelemetryClientAuthContext: The verified client context metadata.
     """
-    # If telemetry headers not provided, return None to allow tenant auth fallback
+    # Telemetry ingestion must always provide telemetry credentials.
     if not x_sentinel_client_id or not x_sentinel_api_key:
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing telemetry authentication headers"
+        )
 
     # Verify via unified tenant service (now handles telemetry clients too)
     client_context = await tenant_service.authorize_api_key(
@@ -179,6 +181,30 @@ async def get_analyst_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Analyst or Admin role required"
+        )
+
+    return current_user
+
+
+async def get_analyst_user_with_client(
+        current_user: UserInDB = Depends(get_analyst_user),
+        tenant_service: TenantService = Depends(get_tenant_service),
+) -> UserInDB:
+    """Ensure the analyst/admin user is linked to an active tenant client."""
+    if not current_user.client_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not assigned to any client"
+        )
+
+    tenant = await tenant_service.get_client_by_client_id(
+        current_user.client_id,
+        include_inactive=False,
+    )
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User client is inactive or not authorized"
         )
 
     return current_user

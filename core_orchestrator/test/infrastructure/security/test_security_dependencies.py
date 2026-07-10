@@ -6,7 +6,8 @@ from core_orchestrator.infrastructure.security.dependencies import (
     verify_hmac_signature_header,
     get_current_user,
     get_admin_user,
-    get_analyst_user
+    get_analyst_user,
+    get_analyst_user_with_client,
 )
 from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
@@ -21,7 +22,7 @@ async def test_verify_api_key_header_success():
         request=MagicMock(),
         x_sentinel_client_id="client-1",
         x_sentinel_api_key="api-key",
-        telemetry_client_service=service
+        tenant_service=service
     )
     assert result == context
 
@@ -35,7 +36,20 @@ async def test_verify_api_key_header_unauthorized():
             request=MagicMock(),
             x_sentinel_client_id="client-1",
             x_sentinel_api_key="api-key",
-            telemetry_client_service=service
+            tenant_service=service
+        )
+    assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+@pytest.mark.asyncio
+async def test_verify_api_key_header_missing_headers():
+    service = AsyncMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await verify_api_key_header(
+            request=MagicMock(),
+            x_sentinel_client_id=None,
+            x_sentinel_api_key=None,
+            tenant_service=service
         )
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -53,7 +67,7 @@ async def test_verify_hmac_signature_header_success():
         x_public_key="pub-key",
         x_signature="sig",
         x_timestamp=12345,
-        telemetry_client_service=service
+        tenant_service=service
     )
     assert result == context
 
@@ -71,7 +85,7 @@ async def test_verify_hmac_signature_header_unauthorized():
             x_public_key="pub-key",
             x_signature="sig",
             x_timestamp=12345,
-            telemetry_client_service=service
+            tenant_service=service
         )
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -146,4 +160,23 @@ async def test_get_analyst_user():
     # Forbidden
     with pytest.raises(HTTPException) as exc:
         await get_analyst_user(regular_user)
+    assert exc.value.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_get_analyst_user_with_client():
+    analyst_user = UserInDB(
+        user_id="u-1", username="analyst", email="analyst@example.com", role="analyst", is_active=True, hashed_password="", client_id="client-1"
+    )
+    no_client_user = UserInDB(
+        user_id="u-2", username="analyst2", email="analyst2@example.com", role="analyst", is_active=True, hashed_password="", client_id=None
+    )
+
+    tenant_service = AsyncMock()
+    tenant_service.get_client_by_client_id.return_value = MagicMock(client_id="client-1")
+
+    assert await get_analyst_user_with_client(analyst_user, tenant_service) == analyst_user
+
+    with pytest.raises(HTTPException) as exc:
+        await get_analyst_user_with_client(no_client_user, tenant_service)
     assert exc.value.status_code == status.HTTP_403_FORBIDDEN

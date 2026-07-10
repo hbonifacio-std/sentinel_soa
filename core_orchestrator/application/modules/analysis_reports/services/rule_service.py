@@ -39,23 +39,23 @@ class RuleService:
         await self.cache.invalidate_bundle()
         return new_rule
 
-    async def fetch_rule_by_id(self, rule_id: str) -> Optional[HeuristicRule]:
-        return await self.repo.get_by_id(rule_id)
+    async def fetch_rule_by_id(self, rule_id: str, client_id: Optional[str]) -> Optional[HeuristicRule]:
+        return await self.repo.get_by_id(rule_id, client_id)
 
-    async def fetch_all_rules(self, include_inactive: bool = False) -> List[HeuristicRule]:
-        return await self.repo.get_all(include_inactive=include_inactive)
+    async def fetch_all_rules(self, include_inactive: bool = False, client_id: Optional[str] = None) -> List[HeuristicRule]:
+        return await self.repo.get_all(include_inactive=include_inactive, client_id=client_id)
 
-    async def rule_exists(self, rule_id: str) -> bool:
-        return await self.repo.rule_exists(rule_id)
+    async def rule_exists(self, rule_id: str, client_id: Optional[str]) -> bool:
+        return await self.repo.rule_exists(rule_id, client_id)
 
-    async def update_rule(self, rule_id: str, updates: Dict[str, Any]) -> bool:
-        success = await self.repo.update_rule(rule_id, updates)
+    async def update_rule(self, rule_id: str, client_id: Optional[str], updates: Dict[str, Any]) -> bool:
+        success = await self.repo.update_rule(rule_id, client_id, updates)
         if success:
             await self.cache.invalidate_bundle()
         return success
 
-    async def delete_rule(self, rule_id: str) -> bool:
-        success = await self.repo.delete_rule(rule_id)
+    async def delete_rule(self, rule_id: str, client_id: Optional[str]) -> bool:
+        success = await self.repo.delete_rule(rule_id, client_id)
         if success:
             await self.cache.invalidate_bundle()
         return success
@@ -89,8 +89,8 @@ class RuleService:
     # ------------------------------------------------------------------ #
     # Versioning
     # ------------------------------------------------------------------ #
-    async def create_new_version(self, rule_ids: List[str], changelog: str, deployed_by: str) -> RuleVersion:
-        rules = await self.repo.get_by_ids(rule_ids)
+    async def create_new_version(self, rule_ids: List[str], changelog: str, deployed_by: str, client_id: Optional[str]) -> RuleVersion:
+        rules = await self.repo.get_by_ids(rule_ids, client_id)
         found_ids = {r.rule_id for r in rules}
         missing_ids = [rid for rid in rule_ids if rid not in found_ids]
         if missing_ids:
@@ -103,6 +103,7 @@ class RuleService:
         version_hash = hash_version(rules)
         version = RuleVersion(
             version_hash=version_hash,
+            client_id=client_id,
             created_at=datetime.now(timezone.utc),
             is_active=False,
             rules_included=rule_ids,
@@ -116,27 +117,27 @@ class RuleService:
         await self.cache.invalidate_bundle()
         return new_version
 
-    async def get_version(self, version_hash: str) -> Optional[RuleVersion]:
-        return await self.repo.get_version(version_hash)
+    async def get_version(self, version_hash: str, client_id: Optional[str]) -> Optional[RuleVersion]:
+        return await self.repo.get_version(version_hash, client_id)
 
-    async def get_active_version(self) -> Optional[RuleVersion]:
-        return await self.repo.get_active_version()
+    async def get_active_version(self, client_id: Optional[str]) -> Optional[RuleVersion]:
+        return await self.repo.get_active_version(client_id)
 
-    async def list_versions(self, limit: int = 50) -> List[RuleVersion]:
-        return await self.repo.list_versions(limit=limit)
+    async def list_versions(self, client_id: Optional[str], limit: int = 50) -> List[RuleVersion]:
+        return await self.repo.list_versions(client_id=client_id, limit=limit)
 
-    async def activate_version(self, version_hash: str) -> bool:
-        success = await self.repo.activate_version(version_hash)
+    async def activate_version(self, version_hash: str, client_id: Optional[str]) -> bool:
+        success = await self.repo.activate_version(version_hash, client_id)
         if success:
             await self.cache.invalidate_bundle()
         return success
 
-    async def deploy_version(self, version_hash: str) -> RulesBundle:
-        version = await self.repo.get_version(version_hash)
+    async def deploy_version(self, version_hash: str, client_id: Optional[str]) -> RulesBundle:
+        version = await self.repo.get_version(version_hash, client_id)
         if not version:
             raise ValueError(f"Version not found: {version_hash}")
 
-        rules = await self.repo.get_by_ids(version.rules_included)
+        rules = await self.repo.get_by_ids(version.rules_included, client_id)
         found_ids = {r.rule_id for r in rules}
         missing = [rid for rid in version.rules_included if rid not in found_ids]
         if missing:
@@ -146,7 +147,7 @@ class RuleService:
         if not validation.valid:
             raise ValueError("; ".join(validation.errors))
 
-        await self.repo.activate_version(version_hash)
+        await self.repo.activate_version(version_hash, client_id)
 
         bundle = rules_to_bundle(rules, version_hash=version_hash)
 
@@ -184,18 +185,15 @@ class RuleService:
     # ------------------------------------------------------------------ #
     async def list_all_active_rules_internal(self) -> List[HeuristicRule]:
         """Trae absolutamente todas las reglas activas usando cursores (Sin paginación)."""
-        return await self.repo.get_all(include_inactive=False)
+        return await self.repo.get_all(include_inactive=False, client_id=None)
 
-    async def get_active_rules_by_tenant(self, tenant_id: Optional[str]) -> List[HeuristicRule]:
-        """Get active rules for a specific tenant + global rules (merged)."""
-        global_rules = await self.repo.get_rules_by_tenant(tenant_id=None, include_inactive=False)
-        tenant_rules = await self.repo.get_rules_by_tenant(tenant_id=tenant_id, include_inactive=False)
-        return global_rules + tenant_rules
+    async def get_active_rules_by_client(self, client_id: Optional[str]) -> List[HeuristicRule]:
+        """Get active rules with client override and global fallback."""
+        return await self.repo.get_rules_by_client(client_id=client_id, include_inactive=False)
 
     async def get_rules_by_ids_internal(self, rule_ids: List[str]) -> List[HeuristicRule]:
         """
         Busca un lote completo de reglas por ID en la base de datos sin límite de paginación.
         Útil para procesos internos del sistema como el RulesEngine.
         """
-        return await self.repo.get_by_ids(rule_ids)
-
+        return await self.repo.get_by_ids(rule_ids, client_id=None)

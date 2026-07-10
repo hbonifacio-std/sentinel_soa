@@ -18,7 +18,6 @@ def mask_secret(value: str) -> str:
 
 class TelemetryClientBase(BaseModel):
     client_id: str = Field(..., min_length=3, max_length=120)
-    source_id: str = Field(..., min_length=3, max_length=120)
     display_name: str = Field(..., min_length=3, max_length=150)
     description: Optional[str] = None
     is_active: bool = True

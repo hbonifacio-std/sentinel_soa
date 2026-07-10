@@ -16,6 +16,7 @@ from mcp_servers.log_analysis_server.tools.threat_context import ThreatContextRe
 from mcp_servers.log_analysis_server.tools.error_responses import (
     build_analyze_web_activity_error,
     build_threat_context_error,
+    sanitize_internal_error,
 )
 from mcp_servers.log_analysis_server.security import (
     verify_rules_bundle_signature,
@@ -152,7 +153,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         return build_analyze_web_activity_error(
             source_ip=source_ip,
             unique_uris_requested=unique_uris_requested,
-            error=str(e),
+            error=sanitize_internal_error(e),
         )
 
 @server.tool()
@@ -222,7 +223,7 @@ async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str
         return await execute_get_threat_context(request_payload)
     except Exception as e:
         logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
-        return build_threat_context_error(source_ip=source_ip, error=str(e))
+        return build_threat_context_error(source_ip=source_ip, error=sanitize_internal_error(e))
 
 # --- Server Startup Logic ---
 async def main():

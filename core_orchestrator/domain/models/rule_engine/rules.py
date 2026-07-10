@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from shared.rules_seed import build_bundle_payload_from_rules, build_seed_bundle_payload
 
@@ -62,7 +62,12 @@ class ValidationRules(BaseModel):
 
 class HeuristicRule(BaseModel):
     rule_id: str
-    tenant_id: Optional[str] = Field(default=None, description="Tenant ID (None or '*' for global rules)")
+    client_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("client_id", "tenant_id"),
+        serialization_alias="client_id",
+        description="Client ID for tenant-specific rules (None for global rules)",
+    )
     rule_type: RuleType
     category: RuleCategory
     version: int = Field(ge=1)
@@ -96,6 +101,7 @@ class HeuristicRuleUpdate(BaseModel):
 
 class RuleVersion(BaseModel):
     version_hash: str
+    client_id: Optional[str] = Field(default=None, description="Client ID this version belongs to (None for global)")
     created_at: datetime
     is_active: bool = False
     rules_included: List[str]

@@ -38,6 +38,7 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
     }
 
     result = await service.analyze_activity(telemetry_payload)
+    rules_engine_service.get_active_rules.assert_awaited_once_with(client_id="tenant-42")
 
     forwarded = llm_analysis_port.analyze_web_activity.await_args.args[0]
 

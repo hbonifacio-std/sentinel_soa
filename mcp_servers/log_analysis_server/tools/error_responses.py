@@ -5,6 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 
+def sanitize_internal_error(error: object) -> str:
+    """Maps internal exceptions to stable, non-sensitive error codes."""
+    if isinstance(error, TimeoutError):
+        return "analysis_timeout"
+    if isinstance(error, ValueError):
+        return "invalid_input"
+    return "internal_analysis_error"
+
+
 def build_analyze_web_activity_error(
     *,
     source_ip: str,

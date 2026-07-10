@@ -9,7 +9,7 @@ from core_orchestrator.infrastructure.api.dependencies import (
     get_rule_validator,
     get_rules_engine_service,
 )
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user
+from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user_with_client
 from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion, RulesBundle
 
@@ -19,6 +19,7 @@ dummy_analyst = UserInDB(
     email="analyst@example.com",
     role="analyst",
     is_active=True,
+    client_id="client-1",
     hashed_password="hashed_pwd"
 )
 
@@ -28,6 +29,7 @@ dummy_admin = UserInDB(
     email="admin@example.com",
     role="admin",
     is_active=True,
+    client_id="client-1",
     hashed_password="hashed_pwd"
 )
 
@@ -63,7 +65,7 @@ def client(mock_rule_service, mock_rules_engine_service, mock_validator):
     app.dependency_overrides[get_rule_service] = lambda: mock_rule_service
     app.dependency_overrides[get_rules_engine_service] = lambda: mock_rules_engine_service
     app.dependency_overrides[get_rule_validator] = lambda: mock_validator
-    app.dependency_overrides[get_analyst_user] = lambda: dummy_analyst
+    app.dependency_overrides[get_analyst_user_with_client] = lambda: dummy_analyst
     app.dependency_overrides[get_admin_user] = lambda: dummy_admin
     yield TestClient(app)
     app.dependency_overrides.clear()
@@ -127,6 +129,7 @@ def test_list_versions(client, mock_rule_service):
     response = client.get("/rules/versions")
     assert response.status_code == 200
     assert len(response.json()) == 1
+    mock_rule_service.list_versions.assert_called_once_with(client_id="client-1", limit=50)
 
 def test_get_version(client, mock_rule_service):
     version = RuleVersion(
@@ -139,6 +142,7 @@ def test_get_version(client, mock_rule_service):
     response = client.get("/rules/versions/vhash-1")
     assert response.status_code == 200
     assert response.json()["version_hash"] == "vhash-1"
+    mock_rule_service.get_version.assert_called_with("vhash-1", "client-1")
     
     mock_rule_service.get_version.return_value = None
     response = client.get("/rules/versions/vhash-2")
@@ -161,6 +165,12 @@ def test_create_version(client, mock_rule_service):
     response = client.post("/rules/versions", json=payload)
     assert response.status_code == 201
     assert response.json()["version_hash"] == "vhash-1"
+    mock_rule_service.create_new_version.assert_called_once_with(
+        rule_ids=["rule-1"],
+        changelog="init version",
+        deployed_by="admin",
+        client_id="client-1",
+    )
     
     # ValueError case
     mock_rule_service.create_new_version.side_effect = ValueError("invalid rules")
@@ -186,6 +196,9 @@ def test_activate_version(client, mock_rule_service):
     response = client.post("/rules/versions/activate/vhash-1")
     assert response.status_code == 200
     assert response.json()["active_version"] == "vhash-1"
+    mock_rule_service.get_version.assert_called_with("vhash-1", "client-1")
+    mock_rule_service.get_active_version.assert_called_with("client-1")
+    mock_rule_service.deploy_version.assert_called_with("vhash-1", "client-1")
     
     # ValueError case
     mock_rule_service.deploy_version.side_effect = ValueError("deploy error")
@@ -204,12 +217,14 @@ def test_list_rules(client, mock_rule_service):
     response = client.get("/rules")
     assert response.status_code == 200
     assert len(response.json()["rules"]) == 1
+    mock_rule_service.fetch_all_rules.assert_called_once_with(include_inactive=False, client_id="client-1")
 
 def test_get_rule(client, mock_rule_service):
     mock_rule_service.fetch_rule_by_id.return_value = dummy_rule
     response = client.get("/rules/rule-1")
     assert response.status_code == 200
     assert response.json()["rule_id"] == "rule-1"
+    mock_rule_service.fetch_rule_by_id.assert_called_with("rule-1", "client-1")
     
     # Not found case
     mock_rule_service.fetch_rule_by_id.return_value = None
@@ -229,6 +244,7 @@ def test_create_rule(client, mock_rule_service, mock_validator):
     response = client.post("/rules", json=payload)
     assert response.status_code == 201
     assert response.json()["rule_id"] == "rule-1"
+    mock_rule_service.rule_exists.assert_any_call("rule-1", "client-1")
     
     # Already exists case
     mock_rule_service.rule_exists.return_value = True
@@ -254,6 +270,7 @@ def test_update_rule(client, mock_rule_service, mock_validator):
     # Test update with X-Forwarded-For header to hit _client_ip line 107
     response = client.patch("/rules/rule-1", json=payload, headers={"X-Forwarded-For": "1.1.1.1, 2.2.2.2"})
     assert response.status_code == 200
+    mock_rule_service.fetch_rule_by_id.assert_called_with("rule-1", "client-1")
     
     # Not found case
     mock_rule_service.fetch_rule_by_id.return_value = None
@@ -284,6 +301,7 @@ def test_delete_rule(client, mock_rule_service):
     
     response = client.delete("/rules/rule-1?user=admin&reason=test")
     assert response.status_code == 200
+    mock_rule_service.delete_rule.assert_called_with("rule-1", "client-1")
     
     # Not found case
     mock_rule_service.fetch_rule_by_id.return_value = None
@@ -323,4 +341,3 @@ def test_serialize_datetime_helper():
 
     # Test invalid type returns None (line 118)
     assert _serialize_datetime(123) is None
-

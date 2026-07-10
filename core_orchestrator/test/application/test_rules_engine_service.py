@@ -11,11 +11,11 @@ async def test_rules_engine_service_instances_keep_independent_state() -> None:
     rule_service_a = AsyncMock()
     rule_service_b = AsyncMock()
 
-    rule_service_a.get_cached_rules.return_value = RulesBundle(
+    rule_service_a.get_cached_rules_for_tenant.return_value = RulesBundle(
         malicious_ua_keywords={"scanner-a": 90},
         version_hash="v-a",
     )
-    rule_service_b.get_cached_rules.return_value = RulesBundle(
+    rule_service_b.get_cached_rules_for_tenant.return_value = RulesBundle(
         malicious_ua_keywords={"scanner-b": 70},
         version_hash="v-b",
     )
@@ -29,4 +29,3 @@ async def test_rules_engine_service_instances_keep_independent_state() -> None:
     assert bundle_a.version_hash == "v-a"
     assert bundle_b.version_hash == "v-b"
     assert engine_a is not engine_b
-

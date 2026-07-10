@@ -3,8 +3,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
+from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
-from core_orchestrator.infrastructure.security.dependencies import get_analyst_user
+from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,17 @@ async def get_logs_row_telemetry(
     page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
     analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-    _: None = Depends(get_analyst_user)
+    current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """
     Get paginated raw telemetry logs.
     """
-    paginated_data = await analytics_service.get_paginated_logs(page=page, limit=limit,query={"source_id": source_id})
+    paginated_data = await analytics_service.get_paginated_logs(
+        page=page,
+        limit=limit,
+        client_id=current_user.client_id,
+        query={"source_id": source_id},
+    )
 
     info = paginated_data.get("info", {})
     total_records = info.get("total_records", 0)
@@ -55,9 +61,9 @@ async def get_logs_row_telemetry(
 async def mark_report_reviewed(
         report_id: str,
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
-    report = await analytics_service.mark_report_as_reviewed(report_id)
+    report = await analytics_service.mark_report_as_reviewed(report_id, current_user.client_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
@@ -69,10 +75,14 @@ async def add_report_action(
         report_id: str,
         action_request: ReportActionRequest,
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     try:
-        report = await analytics_service.add_action_to_report(report_id, action_request.model_dump())
+        report = await analytics_service.add_action_to_report(
+            report_id,
+            current_user.client_id,
+            action_request.model_dump(),
+        )
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         return report
@@ -84,9 +94,9 @@ async def add_report_action(
 async def mark_report_resolved(
         report_id: str,
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
-    report = await analytics_service.mark_report_as_resolved(report_id)
+    report = await analytics_service.mark_report_as_resolved(report_id, current_user.client_id)
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
@@ -96,12 +106,12 @@ async def mark_report_resolved(
 @router.get("/analytics/source_ids")
 async def get_source_ids(
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """
     Get a list of all unique source_ids from the analysis_reports collection.
     """
-    source_ids = await analytics_service.get_distinct_source_ids()
+    source_ids = await analytics_service.get_distinct_source_ids(current_user.client_id)
     return source_ids
 
 
@@ -111,13 +121,16 @@ async def get_reports(
         page: int = Query(default=1, ge=1, description="Numero de pagina (minimo 1)"),
         limit: int = Query(default=10, ge=1, le=100, description="Cantidad de reportes por pagina (maximo 100)"),
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """
     Get analysis reports, optionally filtered by source_id and time_range.
     """
     paginated_data = await analytics_service.get_paginated_reports(
-        page=page, limit=limit, source_id=source_id
+        page=page,
+        limit=limit,
+        source_id=source_id,
+        client_id=current_user.client_id,
     )
 
     info = paginated_data.get("info", {})
@@ -140,22 +153,25 @@ async def get_reports(
 async def get_stats(
         source_id: str = None,
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """
     Get aggregated statistics, optionally filtered by source_id and time_range.
     """
-    stats = await analytics_service.get_aggregated_stats(source_id=source_id)
+    stats = await analytics_service.get_aggregated_stats(
+        client_id=current_user.client_id,
+        source_id=source_id,
+    )
     return stats
 
 
 @router.get("/analytics/debug_reports")
 async def debug_reports(
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
-        _: None = Depends(get_analyst_user)
+        current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """
     Debug endpoint to get a few sample documents from the analysis_reports collection.
     """
-    reports = await analytics_service.get_debug_reports()
+    reports = await analytics_service.get_debug_reports(current_user.client_id)
     return reports

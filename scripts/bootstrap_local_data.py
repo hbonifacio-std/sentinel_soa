@@ -86,7 +86,6 @@ async def seed_users(user_service: UserService, seed_path: Path, overwrite_exist
 
     for user_data in users_data:
         user_create = UserCreate(**user_data)
-
         # Verificar si el usuario ya existe con un método real de UserService
         existing_user = await user_service.get_user_by_username(user_create.username)
 
@@ -121,7 +120,7 @@ async def seed_telemetry_clients(telemetry_client_service: TelemetryClientServic
             summary.clients_updated += 1
         else:
             summary.clients_skipped += 1
-        logger.info("Bootstrap telemetry client ready: %s -> %s", client.client_id, client.source_id)
+        logger.info("Bootstrap telemetry client ready: %s", client.client_id)
     return summary
 
 

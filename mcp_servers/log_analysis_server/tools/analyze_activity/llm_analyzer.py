@@ -79,7 +79,11 @@ class LLMAnalyzer:
             max_input_tokens=model_def.max_input_tokens,
             config=config,
         )
-        logger.info(f"LLMAnalyzer initialized with provider: {self._provider.provider_name}, model: {self._provider.model_name}")
+        logger.info(
+            "LLMAnalyzer initialized with provider=%s model=%s",
+            self._provider.provider_name,
+            self._provider.model_name,
+        )
 
     async def analyze_with_context(self, telemetry: Any, history: list) -> Dict[str, Any]:
         """Performs the analysis by requesting the specific prompt from the active provider
@@ -93,7 +97,7 @@ class LLMAnalyzer:
             Dictionary with LLM decision fields (threat_score, reasoning_summary, recommendation).
         """
         try:
-            logger.debug(f"Sending analysis to provider: {self._provider.provider_name}")
+            logger.debug("Sending analysis to provider=%s", self._provider.provider_name)
 
             # The provider generates its own situational prompt polymorphically
             prompt = build_web_activity_prompt(
@@ -101,9 +105,22 @@ class LLMAnalyzer:
                 history,
                 provider_name=self._provider.provider_name
             )
+            logger.debug(
+                "Built analysis prompt provider=%s model=%s prompt_chars=%d history_items=%d",
+                self._provider.provider_name,
+                self._provider.model_name,
+                len(prompt),
+                len(history),
+            )
 
             # Invoke the provider with the generated prompt
             response_text = await self._provider.call_model(prompt)
+            logger.debug(
+                "Received provider response provider=%s model=%s response_chars=%d",
+                self._provider.provider_name,
+                self._provider.model_name,
+                len(response_text),
+            )
 
             # Validate response
             validated_response = await self._provider.validate_response(response_text)
@@ -123,5 +140,5 @@ class LLMAnalyzer:
             return decision
 
         except Exception as exc:
-            logger.error(f"Error in LLMAnalyzer.analyze_with_context: {str(exc)}", exc_info=True)
+            logger.error("Error in LLMAnalyzer.analyze_with_context: %s", str(exc), exc_info=True)
             raise

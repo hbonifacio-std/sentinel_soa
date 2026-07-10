@@ -43,8 +43,8 @@ class RulesEngineService:
     async def initialize(self) -> bool:
         """Load active rules at startup; fall back to defaults if DB is empty."""
         try:
-            # For backward compatibility, initialize with None tenant_id (loads all rules globally)
-            bundle = await self.get_active_rules(tenant_id=None)
+            # Initialize global bundle by default (client_id=None).
+            bundle = await self.get_active_rules(client_id=None)
             self._memory_bundle = bundle
             self._initialized = True
             self._logger.info(
@@ -61,14 +61,14 @@ class RulesEngineService:
             self._initialized = True
             return False
 
-    async def get_active_rules(self, tenant_id: Optional[str] = None) -> RulesBundle:
+    async def get_active_rules(self, client_id: Optional[str] = None) -> RulesBundle:
         """Return active rules from cache, MongoDB, or hardcoded fallback.
         
-        For backward compatibility, if tenant_id is None, loads all global rules.
-        For multi-tenancy, pass the tenant_id to get global + tenant-specific rules merged.
+        If client_id is None, loads only global rules.
+        For multi-tenancy, pass client_id to get client overrides with global fallback.
         """
-        # Try cache first (key includes tenant_id for isolation)
-        cache_key_suffix = tenant_id or "global"
+        # Try cache first (key includes client_id for isolation)
+        cache_key_suffix = client_id or "global"
         cached = await self._service.get_cached_rules_for_tenant(cache_key_suffix)
         if cached and cached.malicious_ua_keywords:
             self._memory_bundle = cached
@@ -76,8 +76,8 @@ class RulesEngineService:
             return cached
 
         try:
-            # Load global + tenant-specific rules merged
-            rules = await self._service.get_active_rules_by_tenant(tenant_id)
+            # Load client + global rules merged with client precedence.
+            rules = await self._service.get_active_rules_by_client(client_id)
             if not rules:
                 seeded_bundle = await self._seed_rules_store_if_empty()
                 if seeded_bundle is not None:
@@ -85,7 +85,7 @@ class RulesEngineService:
                     self._last_source = "mongodb"
                     return seeded_bundle
             if rules:
-                active_version = await self._service.get_active_version()
+                active_version = await self._service.get_active_version(client_id)
                 version_hash = active_version.version_hash if active_version else hash_version(rules)
                 bundle = rules_to_bundle(rules, version_hash=version_hash)
 
@@ -101,22 +101,22 @@ class RulesEngineService:
         self._last_source = "fallback"
         return fallback
 
-    async def reload_rules(self, tenant_id: Optional[str] = None) -> bool:
+    async def reload_rules(self, client_id: Optional[str] = None) -> bool:
         """Force reload from MongoDB and refresh cache."""
         await self._service.invalidate_rules_cache()
-        bundle = await self.get_active_rules(tenant_id=tenant_id)
+        bundle = await self.get_active_rules(client_id=client_id)
         self._memory_bundle = bundle
         return bundle.version_hash != "default"
 
-    async def deploy_version(self, version_hash: str) -> RulesBundle:
+    async def deploy_version(self, version_hash: str, client_id: Optional[str]) -> RulesBundle:
         """Activate a version, rebuild cache, and return the deployed bundle."""
-        bundle = await self._service.deploy_version(version_hash)
+        bundle = await self._service.deploy_version(version_hash, client_id)
         self._memory_bundle = bundle
         self._last_source = "mongodb"
         return bundle
 
-    async def get_rule_by_id(self, rule_id: str) -> Optional[HeuristicRule]:
-        return await self._service.fetch_rule_by_id(rule_id)
+    async def get_rule_by_id(self, rule_id: str, client_id: Optional[str] = None) -> Optional[HeuristicRule]:
+        return await self._service.fetch_rule_by_id(rule_id, client_id)
 
     async def get_rules_stats(self) -> RulesStatistics:
         bundle = self._memory_bundle or await self.get_active_rules()
@@ -180,4 +180,3 @@ class RulesEngineService:
             "Seeded rules store with active rules from seed payload"
         )
         return bundle
-

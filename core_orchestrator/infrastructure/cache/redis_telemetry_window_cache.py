@@ -39,9 +39,9 @@ class RedisTelemetryWindowCache(TelemetryWindowCachePort):
         if not self._redis:
             logger.warning("Redis client not connected.")
             return []
-        keys = []
-        async for key in self._redis.scan_iter(pattern):
-            keys.append(key)
+        keys: List[str] = []
+        async for key in self._redis.scan_iter(match=pattern, count=200):
+            keys.append(key.decode("utf-8") if isinstance(key, bytes) else key)
         return keys
 
     async def get_window_size(self, key: str) -> int:

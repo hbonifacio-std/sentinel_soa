@@ -24,28 +24,39 @@ class ReportTelemetryService(ReportTelemetryServicePort):
     def __init__(self, analytics_repository: AnalyticsRepository):
         self.analytics_repository = analytics_repository
 
-    async def get_paginated_reports(self, page: int, limit: int, source_id: Optional[str] = None) -> Dict[str, Any]:
-        query = {}
+    async def get_paginated_reports(
+        self,
+        page: int,
+        limit: int,
+        client_id: str,
+        source_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        query: Dict[str, Any] = {"client_id": client_id}
         if source_id:
             query["source_id"] = source_id
 
         return await self.analytics_repository.get_paginated_reports(query=query, page=page, limit=limit)
 
-    async def get_report_by_id(self, report_id: str) -> Optional[Dict[str, Any]]:
-        return await self.analytics_repository.get_report_by_id(report_id)
+    async def get_report_by_id(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        return await self.analytics_repository.get_report_by_id(report_id, client_id)
 
-    async def mark_report_as_reviewed(self, report_id: str) -> Optional[Dict[str, Any]]:
-        report = await self.get_report_by_id(report_id)
+    async def mark_report_as_reviewed(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        report = await self.get_report_by_id(report_id, client_id)
         if not report:
             return None
 
-        await self.analytics_repository.update_report(report_id, {"reviewed": True})
+        await self.analytics_repository.update_report(report_id, client_id, {"reviewed": True})
 
-        updated_report = await self.get_report_by_id(report_id)
+        updated_report = await self.get_report_by_id(report_id, client_id)
         return updated_report
 
-    async def add_action_to_report(self, report_id: str, action_request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        report = await self.get_report_by_id(report_id)
+    async def add_action_to_report(
+        self,
+        report_id: str,
+        client_id: str,
+        action_request: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        report = await self.get_report_by_id(report_id, client_id)
         if not report:
             return None # Report not found
 
@@ -60,31 +71,31 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         action_doc = action_model.model_dump(mode="json", by_alias=True)
 
 
-        await self.analytics_repository.add_action_to_report(report_id, action_doc)
+        await self.analytics_repository.add_action_to_report(report_id, client_id, action_doc)
 
-        updated_report = await self.get_report_by_id(report_id)
+        updated_report = await self.get_report_by_id(report_id, client_id)
         return updated_report
 
-    async def mark_report_as_resolved(self, report_id: str) -> Optional[Dict[str, Any]]:
-        report = await self.get_report_by_id(report_id)
+    async def mark_report_as_resolved(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        report = await self.get_report_by_id(report_id, client_id)
         if not report:
             return None
 
         updates = ReportResolutionPayload().to_dict()
 
-        await self.analytics_repository.update_report(report_id, updates)
+        await self.analytics_repository.update_report(report_id, client_id, updates)
 
-        updated_report = await self.get_report_by_id(report_id)
+        updated_report = await self.get_report_by_id(report_id, client_id)
         return updated_report
 
-    async def get_distinct_source_ids(self) -> List[str]:
-        source_ids = await self.analytics_repository.get_distinct_source_ids()
+    async def get_distinct_source_ids(self, client_id: str) -> List[str]:
+        source_ids = await self.analytics_repository.get_distinct_source_ids(client_id)
         logger.info(f"Source IDs from repository: {source_ids}")
         return source_ids
 
-    async def get_aggregated_stats(self, source_id: Optional[str] = None) -> Dict[str, Any]:
+    async def get_aggregated_stats(self, client_id: str, source_id: Optional[str] = None) -> Dict[str, Any]:
         pipeline = []
-        match_stage = {}
+        match_stage: Dict[str, Any] = {"client_id": client_id}
         if source_id:
             match_stage["source_id"] = source_id
 
@@ -110,11 +121,20 @@ class ReportTelemetryService(ReportTelemetryServicePort):
             return stats_list[0]
         return {}
 
-    async def get_paginated_logs(self, page: int, limit: int, query: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return await self.analytics_repository.get_paginated_logs(query=query or {}, page=page, limit=limit)
+    async def get_paginated_logs(
+        self,
+        page: int,
+        limit: int,
+        client_id: str,
+        query: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        resolved_query = {"client_id": client_id}
+        if query:
+            resolved_query.update({k: v for k, v in query.items() if v is not None})
+        return await self.analytics_repository.get_paginated_logs(query=resolved_query, page=page, limit=limit)
 
-    async def get_debug_reports(self) -> List[Dict[str, Any]]:
-        return await self.analytics_repository.get_debug_reports(limit=5)
+    async def get_debug_reports(self, client_id: str) -> List[Dict[str, Any]]:
+        return await self.analytics_repository.get_debug_reports(client_id=client_id, limit=5)
 
     async def create_analysis_report(self, report_data: BaseModel) -> str:
         """
@@ -130,4 +150,3 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         except Exception as e:
             logger.error(f"Failed to create analysis report for {source_ip}: {e}", exc_info=True)
             raise
-

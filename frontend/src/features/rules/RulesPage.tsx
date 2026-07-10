@@ -63,23 +63,7 @@ function getErrorMessage(error: unknown): string {
     return 'Unexpected error';
   }
 
-  const payload = error.message;
-  try {
-    const parsed = JSON.parse(payload) as { detail?: unknown };
-    if (typeof parsed?.detail === 'string') {
-      return parsed.detail;
-    }
-    if (Array.isArray(parsed?.detail)) {
-      return parsed.detail.map((item) => JSON.stringify(item)).join(' | ');
-    }
-    if (parsed?.detail && typeof parsed.detail === 'object') {
-      return JSON.stringify(parsed.detail);
-    }
-  } catch {
-    return payload;
-  }
-
-  return payload;
+  return error.message;
 }
 
 function buildDefaultDraft(changedBy = 'admin'): RuleDraft {
@@ -163,6 +147,7 @@ function ruleToUpdatePayload(draft: RuleDraft): HeuristicRuleUpdate {
 
 export default function RulesPage() {
   const currentUser = useAuthStore((state) => state.user);
+  const currentTenantId = currentUser?.tenant_id ?? null;
   const isAdmin = currentUser?.role === 'admin';
   const [rules, setRules] = useState<HeuristicRule[]>([]);
   const [versions, setVersions] = useState<RuleVersion[]>([]);
@@ -208,6 +193,22 @@ export default function RulesPage() {
     void refreshData();
   }, [refreshData]);
 
+  function isGlobalRule(rule: HeuristicRule): boolean {
+    return !rule.tenant_id || rule.tenant_id === '*';
+  }
+
+  function canMutateRule(rule: HeuristicRule): boolean {
+    if (!isAdmin || isGlobalRule(rule)) {
+      return false;
+    }
+
+    if (!currentTenantId) {
+      return true;
+    }
+
+    return rule.tenant_id === currentTenantId;
+  }
+
   function openCreateEditor() {
     if (!isAdmin) {
       setError('Only an admin can create rules.');
@@ -221,8 +222,8 @@ export default function RulesPage() {
   }
 
   function openEditEditor(rule: HeuristicRule) {
-    if (!isAdmin) {
-      setError('Only an admin can edit rules.');
+    if (!canMutateRule(rule)) {
+      setError('You can only edit custom rules owned by your tenant.');
       return;
     }
 
@@ -267,9 +268,9 @@ export default function RulesPage() {
     }
   }
 
-  async function handleDeactivate(ruleId: string) {
-    if (!isAdmin) {
-      setError('Only an admin can deactivate rules.');
+  async function handleDeactivate(rule: HeuristicRule) {
+    if (!canMutateRule(rule)) {
+      setError('You can only deactivate custom rules owned by your tenant.');
       return;
     }
 
@@ -280,8 +281,8 @@ export default function RulesPage() {
     const user = window.prompt('User applying the change', 'admin') || 'admin';
 
     try {
-      await deleteRule(ruleId, user, reason);
-      setActionMessage(`Rule disabled: ${ruleId}`);
+      await deleteRule(rule.rule_id, user, reason);
+      setActionMessage(`Rule disabled: ${rule.rule_id}`);
       await refreshData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -401,6 +402,7 @@ export default function RulesPage() {
             Validate active bundle
           </button>
         </div>
+        <p className="mb-2 text-xs text-slate-400">Global rules are read-only. Only tenant custom rules can be edited.</p>
 
         {validation ? (
           <div className="mb-3 rounded border border-surface-border bg-slate-950/40 p-3 text-xs">
@@ -422,6 +424,7 @@ export default function RulesPage() {
                 <th className="px-2 py-2">rule_id</th>
                 <th className="px-2 py-2">tipo</th>
                 <th className="px-2 py-2">categoria</th>
+                <th className="px-2 py-2">scope</th>
                 <th className="px-2 py-2">version</th>
                 <th className="px-2 py-2">activo</th>
                 <th className="px-2 py-2">updated_at</th>
@@ -434,23 +437,30 @@ export default function RulesPage() {
                   <td className="px-2 py-2 font-mono">{rule.rule_id}</td>
                   <td className="px-2 py-2">{rule.rule_type}</td>
                   <td className="px-2 py-2">{rule.category}</td>
+                  <td className="px-2 py-2">
+                    <span className={isGlobalRule(rule) ? 'rounded border border-slate-500/40 px-2 py-0.5 text-slate-300' : 'rounded border border-cyan-500/40 px-2 py-0.5 text-cyan-300'}>
+                      {isGlobalRule(rule) ? 'Global' : 'Custom'}
+                    </span>
+                  </td>
                   <td className="px-2 py-2">{rule.version}</td>
                   <td className="px-2 py-2">{rule.is_active ? 'si' : 'no'}</td>
                   <td className="px-2 py-2">{new Date(rule.updated_at).toLocaleString()}</td>
                   <td className="px-2 py-2">
-                    {isAdmin ? (
+                    {canMutateRule(rule) ? (
                       <div className="flex gap-2">
                         <button className="rounded border border-surface-border px-2 py-1" onClick={() => openEditEditor(rule)}>
                           Edit
                         </button>
                         <button
                           className="rounded border border-red-500/40 px-2 py-1 text-red-300 disabled:opacity-50"
-                          onClick={() => void handleDeactivate(rule.rule_id)}
+                          onClick={() => void handleDeactivate(rule)}
                           disabled={!rule.is_active}
                         >
                           Deactivate
                         </button>
                       </div>
+                    ) : isGlobalRule(rule) ? (
+                      <span className="text-slate-500">Global rule (read-only)</span>
                     ) : (
                       <span className="text-slate-500">No editing permissions</span>
                     )}
@@ -691,4 +701,3 @@ export default function RulesPage() {
     </div>
   );
 }
-

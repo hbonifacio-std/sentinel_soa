@@ -73,8 +73,8 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         paginated["results"] = [self._normalize_document_id(report) for report in raw_results]
         return paginated
 
-    async def get_report_by_id(self, report_id: str) -> Optional[dict]:
-        query = self._build_report_id_query(report_id)
+    async def get_report_by_id(self, report_id: str, client_id: str) -> Optional[dict]:
+        query = self._build_report_query_with_client(report_id, client_id)
         if query is None:
             return None
 
@@ -86,22 +86,22 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
             doc["id"] = str(doc.pop("_id"))
         return dict(doc)
 
-    async def update_report(self, report_id: str, updates: dict) -> bool:
-        query = self._build_report_id_query(report_id)
+    async def update_report(self, report_id: str, client_id: str, updates: dict) -> bool:
+        query = self._build_report_query_with_client(report_id, client_id)
         if query is None:
             return False
         return await self.update_partial(query, updates)
 
-    async def add_action_to_report(self, report_id: str, action: dict) -> bool:
-        query = self._build_report_id_query(report_id)
+    async def add_action_to_report(self, report_id: str, client_id: str, action: dict) -> bool:
+        query = self._build_report_query_with_client(report_id, client_id)
         if query is None:
             return False
 
         result = await self.collection.update_one(query, {"$push": {"actions": action}})
         return result.modified_count > 0
 
-    async def get_distinct_source_ids(self) -> List[str]:
-        return await self.collection.distinct("source_id")
+    async def get_distinct_source_ids(self, client_id: str) -> List[str]:
+        return await self.collection.distinct("source_id", {"client_id": client_id})
 
     async def get_aggregated_stats(self, pipeline: list) -> List[dict]:
         cursor = await self.collection.aggregate(pipeline)
@@ -139,8 +139,8 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
             "results": docs,
         }
 
-    async def get_debug_reports(self, limit: int) -> List[Dict[str, Any]]:
-        reports_cursor = self.analysis_reports_collection.find({}).limit(limit)
+    async def get_debug_reports(self, client_id: str, limit: int) -> List[Dict[str, Any]]:
+        reports_cursor = self.analysis_reports_collection.find({"client_id": client_id}).limit(limit)
         reports = [dict(report) for report in await reports_cursor.to_list(length=limit)]
 
         for report in reports:
@@ -182,6 +182,12 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
                 for item in value:
                     if isinstance(item, dict):
                         self._normalize_document_id(item)
+
+    def _build_report_query_with_client(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        report_id_query = self._build_report_id_query(report_id)
+        if report_id_query is None:
+            return None
+        return {"$and": [report_id_query, {"client_id": client_id}]}
 
     @staticmethod
     def _build_report_id_query(report_id: str) -> Optional[Dict[str, Any]]:

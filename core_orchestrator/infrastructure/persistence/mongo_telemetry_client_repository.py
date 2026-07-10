@@ -65,7 +65,6 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
             current = TelemetryClientInDB(**existing)
             updated = current.model_copy(
                 update={
-                    "source_id": payload.source_id,
                     "display_name": payload.display_name,
                     "description": payload.description,
                     "is_active": payload.is_active,
@@ -76,7 +75,7 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
                 }
             )
             await self.collection.update_one({"client_id": payload.client_id}, {"$set": updated.model_dump(mode="python")})
-            logger.info("Telemetry client updated: %s -> source=%s", updated.client_id, updated.source_id)
+            logger.info("Telemetry client updated: %s", updated.client_id)
             return updated, False, True
 
         client = TelemetryClientInDB(
@@ -85,7 +84,7 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
             updated_at=now,
         )
         await self.collection.insert_one(client.model_dump(mode="python"))
-        logger.info("Telemetry client created: %s -> source=%s", client.client_id, client.source_id)
+        logger.info("Telemetry client created: %s", client.client_id)
         return client, True, False
 
     async def ensure_indexes(self) -> None:

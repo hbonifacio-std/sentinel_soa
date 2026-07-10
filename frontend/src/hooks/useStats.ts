@@ -80,6 +80,24 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
 
   const stats = statsQuery.data ?? null;
 
+  const logsByBucket = useMemo(() => {
+    const map = new Map<string, LogEntry[]>();
+    logs.forEach((log) => {
+      const key = getBucketKey(log.timestamp);
+      if (!key) {
+        return;
+      }
+      const rows = map.get(key) ?? [];
+      rows.push(log);
+      map.set(key, rows);
+    });
+    return map;
+  }, [logs]);
+
+  const logsByThreatId = useMemo(() => {
+    return new Map(logs.map((log) => [log.id, log] as const));
+  }, [logs]);
+
   const timelineData = useMemo((): TimelineRow[] => {
     const bucket = new Map<
       string,
@@ -111,18 +129,6 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
       bucket.set(key, existing);
     });
 
-    const logsByBucket = new Map<string, LogEntry[]>();
-    logs.forEach((log) => {
-      const key = getBucketKey(log.timestamp);
-      if (!key) {
-        return;
-      }
-
-      const rows = logsByBucket.get(key) ?? [];
-      rows.push(log);
-      logsByBucket.set(key, rows);
-    });
-
     return Array.from(bucket.values())
       .map((entry) => {
         const dominantIp = getTopKey(entry.ipCounts);
@@ -149,7 +155,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
         };
       })
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  }, [logs, threats]);
+  }, [logsByBucket, threats]);
 
   const mitreTactics = useMemo((): MitreTacticRow[] => {
     if (!useMockData && stats?.mitre_tactics?.length) {
@@ -162,7 +168,6 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
       }));
     }
 
-    const logsByThreatId = new Map(logs.map((log) => [log.id, log]));
     const counts = new Map<
       string,
       {
@@ -212,7 +217,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
           .map(([path]) => path),
       }))
       .sort((a, b) => b.count - a.count || a._id.localeCompare(b._id));
-  }, [logs, stats, threats]);
+  }, [logsByThreatId, stats, threats]);
 
   const threatLevelData = useMemo((): ThreatLevelRow[] => {
     const map = new Map<string, { count: number; activeCount: number; mitigatedCount: number }>();

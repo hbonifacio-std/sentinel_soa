@@ -103,20 +103,21 @@ async def test_mongo_analytics_repository_get_report_by_id(mock_db_manager):
     collection = collections["analysis_reports"]
 
     repo = MongoAnalyticsRepository(manager)
+    client_id = "client-1"
 
     # Invalid ID
-    assert await repo.get_report_by_id("invalid-id") is None
+    assert await repo.get_report_by_id("invalid-id", client_id) is None
 
     # Valid ID found
     doc_id = ObjectId()
     collection.find_one.return_value = {"_id": doc_id, "status": "analyzed"}
-    res = await repo.get_report_by_id(str(doc_id))
+    res = await repo.get_report_by_id(str(doc_id), client_id)
     assert res is not None
     assert res["id"] == str(doc_id)
 
     # Valid ID not found
     collection.find_one.return_value = None
-    assert await repo.get_report_by_id(str(doc_id)) is None
+    assert await repo.get_report_by_id(str(doc_id), client_id) is None
 
 
 @pytest.mark.asyncio
@@ -125,14 +126,15 @@ async def test_mongo_analytics_repository_update_report(mock_db_manager):
     collection = collections["analysis_reports"]
 
     repo = MongoAnalyticsRepository(manager)
+    client_id = "client-1"
 
     # Invalid ID
-    assert await repo.update_report("invalid", {}) is False
+    assert await repo.update_report("invalid", client_id, {}) is False
 
     # Valid update
     doc_id = ObjectId()
     collection.update_one.return_value = MagicMock(modified_count=1)
-    res = await repo.update_report(str(doc_id), {"status": "done"})
+    res = await repo.update_report(str(doc_id), client_id, {"status": "done"})
     assert res is True
 
 
@@ -142,14 +144,15 @@ async def test_mongo_analytics_repository_add_action_to_report(mock_db_manager):
     collection = collections["analysis_reports"]
 
     repo = MongoAnalyticsRepository(manager)
+    client_id = "client-1"
 
     # Invalid ID
-    assert await repo.add_action_to_report("invalid", {}) is False
+    assert await repo.add_action_to_report("invalid", client_id, {}) is False
 
     # Valid add action
     doc_id = ObjectId()
     collection.update_one.return_value = MagicMock(modified_count=1)
-    res = await repo.add_action_to_report(str(doc_id), {"type": "block"})
+    res = await repo.add_action_to_report(str(doc_id), client_id, {"type": "block"})
     assert res is True
 
 
@@ -161,7 +164,7 @@ async def test_mongo_analytics_repository_distinct_and_aggregated_stats(mock_db_
     repo = MongoAnalyticsRepository(manager)
 
     collection.distinct.return_value = ["src-1", "src-2"]
-    distinct = await repo.get_distinct_source_ids()
+    distinct = await repo.get_distinct_source_ids("client-1")
     assert distinct == ["src-1", "src-2"]
 
     cursor = AsyncMock()
@@ -195,7 +198,7 @@ async def test_mongo_analytics_repository_get_debug_reports(mock_db_manager):
     collection.find.return_value.to_list.return_value = [{"_id": doc_id}]
 
     repo = MongoAnalyticsRepository(manager)
-    reports = await repo.get_debug_reports(5)
+    reports = await repo.get_debug_reports("client-1", 5)
     assert reports[0]["_id"] == str(doc_id)
 
 
@@ -220,18 +223,19 @@ async def test_mongo_analytics_repository_accepts_string_report_ids(mock_db_mana
     collection = collections["analysis_reports"]
 
     repo = MongoAnalyticsRepository(manager)
+    client_id = "client-1"
     report_id = str(uuid.uuid4())
     collection.find_one.return_value = {"_id": report_id, "source_ip": "10.0.0.1"}
     collection.update_one.return_value = MagicMock(modified_count=1)
 
-    report = await repo.get_report_by_id(report_id)
+    report = await repo.get_report_by_id(report_id, client_id)
     assert report is not None
     assert report["id"] == report_id
 
-    updated = await repo.update_report(report_id, {"reviewed": True})
+    updated = await repo.update_report(report_id, client_id, {"reviewed": True})
     assert updated is True
 
-    action_added = await repo.add_action_to_report(report_id, {"type": "block"})
+    action_added = await repo.add_action_to_report(report_id, client_id, {"type": "block"})
     assert action_added is True
 
 
@@ -261,28 +265,28 @@ async def test_mongo_rule_repository_crud(mock_db_manager, dummy_rule):
     repo = MongoRuleRepository(manager)
 
     collection.find_one.return_value = dummy_rule.model_dump(mode="json")
-    rule = await repo.get_by_id("rule-test")
+    rule = await repo.get_by_id("rule-test", "client-1")
     assert rule.rule_id == "rule-test"
 
     # get_all
     collection.find.return_value.to_list.return_value = [dummy_rule.model_dump(mode="json")]
     collection.count_documents.return_value = 1
-    all_rules = await repo.get_all(include_inactive=False)
+    all_rules = await repo.get_all(include_inactive=False, client_id="client-1")
     assert len(all_rules) == 1
 
     # get_by_ids
     collection.find.return_value.to_list.return_value = [dummy_rule.model_dump(mode="json")]
-    by_ids = await repo.get_by_ids(["rule-test"])
+    by_ids = await repo.get_by_ids(["rule-test"], "client-1")
     assert len(by_ids) == 1
-    assert await repo.get_by_ids([]) == []
+    assert await repo.get_by_ids([], "client-1") == []
 
     # rule_exists
     collection.count_documents.return_value = 1
-    assert await repo.rule_exists("rule-test") is True
+    assert await repo.rule_exists("rule-test", "client-1") is True
 
     # update_rule
     collection.update_one.return_value = MagicMock(modified_count=1)
-    assert await repo.update_rule("rule-test", {"description": "new"}) is True
+    assert await repo.update_rule("rule-test", "client-1", {"description": "new"}) is True
 
     # create_rule
     collection.insert_one.return_value = MagicMock()
@@ -290,7 +294,7 @@ async def test_mongo_rule_repository_crud(mock_db_manager, dummy_rule):
     assert created.rule_id == "rule-test"
 
     # delete_rule
-    assert await repo.delete_rule("rule-test") is True
+    assert await repo.delete_rule("rule-test", "client-1") is True
 
 
 @pytest.mark.asyncio
@@ -302,6 +306,7 @@ async def test_mongo_rule_repository_versions(mock_db_manager):
 
     version = RuleVersion(
         version_hash="vhash-1",
+        client_id="client-1",
         created_at=datetime.now(timezone.utc),
         rules_included=["rule-1"],
     )
@@ -313,14 +318,14 @@ async def test_mongo_rule_repository_versions(mock_db_manager):
 
     # get_version
     versions_collection.find_one.return_value = version.model_dump(mode="json")
-    v = await repo.get_version("vhash-1")
+    v = await repo.get_version("vhash-1", "client-1")
     assert v.version_hash == "vhash-1"
     versions_collection.find_one.return_value = None
-    assert await repo.get_version("vhash-2") is None
+    assert await repo.get_version("vhash-2", "client-1") is None
 
     # get_active_version
     versions_collection.find_one.return_value = version.model_dump(mode="json")
-    v_act = await repo.get_active_version()
+    v_act = await repo.get_active_version("client-1")
     assert v_act.version_hash == "vhash-1"
 
     # list_versions
@@ -331,7 +336,7 @@ async def test_mongo_rule_repository_versions(mock_db_manager):
 
     cursor.__aiter__ = _async_iter
 
-    versions = await repo.list_versions(50)
+    versions = await repo.list_versions("client-1", 50)
     assert len(versions) == 1
     assert versions[0].version_hash == "vhash-1"
 
@@ -358,7 +363,7 @@ async def test_mongo_rule_repository_activate_version_success(mock_db_manager):
     versions_collection.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
     repo = MongoRuleRepository(manager)
-    res = await repo.activate_version("vhash-1")
+    res = await repo.activate_version("vhash-1", "client-1")
     assert res is True
     session.end_session.assert_called_once()
 
@@ -384,7 +389,7 @@ async def test_mongo_rule_repository_activate_version_fail(mock_db_manager):
     versions_collection.update_one = AsyncMock(return_value=MagicMock(modified_count=0))
 
     repo = MongoRuleRepository(manager)
-    res = await repo.activate_version("vhash-1")
+    res = await repo.activate_version("vhash-1", "client-1")
     assert res is False
     session.end_session.assert_called_once()
 
@@ -431,6 +436,7 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
         analysis_id="any-id",
         query="test",
         source_id="src-1",
+        client_id="client-1",
         total_matches=10,
         markdown_report="some report",
     )
@@ -441,7 +447,7 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
     analysis_collection.find_one.side_effect = [
         record.model_dump(mode="json"),  # first call in _find_analysis_document
     ]
-    res = await repo.get_analysis_by_id(analysis_id)
+    res = await repo.get_analysis_by_id(analysis_id, "client-1")
     assert res is not None
     assert res.source_id == "src-1"
 
@@ -450,16 +456,16 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
         None,  # not found by analysis_id
         {"_id": doc_id, "analysis_id": str(doc_id), "source_id": "src-1", "query": "test", "total_matches": 10, "markdown_report": "some report"},
     ]
-    res = await repo.get_analysis_by_id(analysis_id)
+    res = await repo.get_analysis_by_id(analysis_id, "client-1")
     assert res is not None
 
     # Get by ID not found at all
     analysis_collection.find_one.side_effect = [None, None]
-    assert await repo.get_analysis_by_id(analysis_id) is None
+    assert await repo.get_analysis_by_id(analysis_id, "client-1") is None
 
     # Get by ID invalid ObjectId fallback
     analysis_collection.find_one.side_effect = [None]
-    assert await repo.get_analysis_by_id("invalid-obj-id") is None
+    assert await repo.get_analysis_by_id("invalid-obj-id", "client-1") is None
 
 
 @pytest.mark.asyncio
@@ -475,7 +481,7 @@ async def test_mongo_forensic_repository_history(mock_db_manager):
 
     repo = MongoForensicAnalysisRepository(manager)
 
-    query = ForensicHistoryQuery(source_id="src-1", limit=10, page=1)
+    query = ForensicHistoryQuery(source_id="src-1", client_id="client-1", limit=10, page=1)
     res = await repo.get_history(query)
     assert res["info"]["total_records"] == 1
     assert res["results"][0].source_id == "src-1"

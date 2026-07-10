@@ -34,3 +34,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={"detail": errors},
     )
+
+
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """
+    Handles unanticipated runtime exceptions without leaking internal details.
+    """
+    logger.error("Unhandled exception at %s: %s", request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error."},
+    )

@@ -28,7 +28,7 @@ class ForensicAnalysisRepositoryPort(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_analysis_by_id(self, analysis_id: str) -> Optional[ForensicAnalysisRecord]:
+    async def get_analysis_by_id(self, analysis_id: str, client_id: str) -> Optional[ForensicAnalysisRecord]:
         """Load a previously generated forensic report by id."""
         raise NotImplementedError
 

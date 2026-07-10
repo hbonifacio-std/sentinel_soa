@@ -1,8 +1,5 @@
 import { create } from 'zustand';
-import type { AuthStateSnapshot, AuthUser } from '@/types/auth';
-
-const AUTH_SESSION_KEY = 'sentinel.auth.session.v1';
-const persistSession = String(import.meta.env.VITE_AUTH_PERSIST_SESSION ?? 'true').toLowerCase() === 'true';
+import type { AuthUser } from '@/types/auth';
 
 interface AuthState {
   accessToken: string | null;
@@ -19,55 +16,6 @@ interface AuthState {
   clearSession: () => void;
 }
 
-interface AuthStateSnapshot {
-  accessToken: string;
-  tenantApiKey: string | null;
-  user: AuthUser;
-}
-
-function readSessionStorage(): AuthStateSnapshot | null {
-  if (!persistSession) {
-    return null;
-  }
-
-  try {
-    const raw = window.sessionStorage.getItem(AUTH_SESSION_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<AuthStateSnapshot>;
-    if (typeof parsed.accessToken !== 'string' || !parsed.user) {
-      return null;
-    }
-
-    return {
-      accessToken: parsed.accessToken,
-      tenantApiKey: parsed.tenantApiKey || null,
-      user: parsed.user,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionStorage(snapshot: AuthStateSnapshot | null) {
-  if (!persistSession) {
-    return;
-  }
-
-  try {
-    if (!snapshot) {
-      window.sessionStorage.removeItem(AUTH_SESSION_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(snapshot));
-  } catch {
-    // Ignore storage errors and keep auth state in memory only.
-  }
-}
-
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
   tenantApiKey: null,
@@ -76,28 +24,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   isBootstrapping: true,
   authError: null,
   hydrateSession: () => {
-    const snapshot = readSessionStorage();
-
-    if (!snapshot) {
-      set(() => ({
-        accessToken: null,
-        tenantApiKey: null,
-        user: null,
-        isAuthenticated: false,
-      }));
-      return;
-    }
-
     set(() => ({
-      accessToken: snapshot.accessToken,
-      tenantApiKey: snapshot.tenantApiKey,
-      user: snapshot.user,
-      isAuthenticated: true,
+      accessToken: null,
+      tenantApiKey: null,
+      user: null,
+      isAuthenticated: false,
       authError: null,
     }));
   },
   setSession: (token, user, tenantApiKey = null) => {
-    writeSessionStorage({ accessToken: token, tenantApiKey, user });
     set(() => ({
       accessToken: token,
       tenantApiKey,
@@ -107,25 +42,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     }));
   },
   setUser: (user) => {
-    set((state) => {
-      if (state.accessToken) {
-        writeSessionStorage({
-          accessToken: state.accessToken,
-          tenantApiKey: state.tenantApiKey,
-          user,
-        });
-      }
-
-      return {
-        user,
-        isAuthenticated: Boolean(state.accessToken),
-      };
-    });
+    set((state) => ({
+      user,
+      isAuthenticated: Boolean(state.accessToken),
+    }));
   },
   setBootstrapping: (value) => set(() => ({ isBootstrapping: value })),
   setAuthError: (error) => set(() => ({ authError: error })),
   clearSession: () => {
-    writeSessionStorage(null);
     set(() => ({
       accessToken: null,
       tenantApiKey: null,
@@ -136,4 +60,3 @@ export const useAuthStore = create<AuthState>((set) => ({
     }));
   },
 }));
-

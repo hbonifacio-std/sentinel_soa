@@ -86,7 +86,7 @@ describe('apiClient', () => {
       await apiFetch('/server-error');
     } catch (err: any) {
       expect(err.status).toBe(500);
-      expect(err.message).toBe('Internal Server Error');
+      expect(err.message).toBe('Server error. Please try again later.');
     }
   });
 

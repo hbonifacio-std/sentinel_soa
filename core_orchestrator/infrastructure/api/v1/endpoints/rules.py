@@ -27,9 +27,10 @@ from core_orchestrator.domain.models.rule_engine.rules import (
     RuleVersion,
     hash_version,
 )
+from core_orchestrator.domain.models.auth.user import UserInDB
 
 from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user
+from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user_with_client
 
 logger = logging.getLogger("core_orchestrator.api.rules")
 
@@ -118,6 +119,12 @@ def _serialize_datetime(value: Any) -> Optional[datetime]:
     return None
 
 
+def _require_client_scope(user: UserInDB) -> str:
+    if not user.client_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Client scope required")
+    return user.client_id
+
+
 # ============================================================================
 # Endpoints de la API
 # ============================================================================
@@ -125,9 +132,10 @@ def _serialize_datetime(value: Any) -> Optional[datetime]:
 @router.get("/health", response_model=RulesHealthResponse, tags=["Rules Health"])
 async def rules_health(
     rules_engine_service: RulesEngineService = Depends(get_rules_engine_service),
-    _: None = Depends(get_analyst_user),
+    current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
     """Health check for rules engine (requires analyst/admin role)."""
+    _require_client_scope(current_user)
     health = await rules_engine_service.health_check()
     stats = await rules_engine_service.get_rules_stats()
     return RulesHealthResponse(
@@ -146,7 +154,7 @@ async def get_audit_log(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_analyst_user)
+    _: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """Get audit log (requires analyst/admin role)."""
     logs = await rule_service.get_audit_logs(rule_id=rule_id, limit=limit, offset=offset)
@@ -159,7 +167,7 @@ async def validate_rules(
     request: Request,
     body: ValidateRulesRequest = Body(...),
     validator: RuleValidatorPort = Depends(get_rule_validator),
-    _: None = Depends(get_analyst_user)
+    _: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """Validate rules (requires analyst/admin role)."""
     validation = validator.validate_rule_bundle(body.rules)
@@ -181,20 +189,20 @@ async def validate_rules(
 async def list_versions(
     limit: int = Query(default=50, ge=1, le=200),
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_analyst_user)
+    current_user: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """List rule versions (requires analyst/admin role)."""
-    return await rule_service.list_versions(limit=limit)
+    return await rule_service.list_versions(client_id=_require_client_scope(current_user), limit=limit)
 
 
 @router.get("/versions/{version_hash}", response_model=RuleVersion, tags=["Rule Versions"])
 async def get_version(
     version_hash: str,
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_analyst_user)
+    current_user: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """Get specific rule version (requires analyst/admin role)."""
-    version = await rule_service.get_version(version_hash)
+    version = await rule_service.get_version(version_hash, _require_client_scope(current_user))
     if not version:
         raise HTTPException(status_code=404, detail=f"Version not found: {version_hash}")
     return version
@@ -211,14 +219,16 @@ async def create_version(
     request: Request,
     body: CreateVersionRequest = Body(...),
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_admin_user)
+    current_user: UserInDB = Depends(get_admin_user)
 ):
     """Create new rule version (requires admin role)."""
+    client_id = _require_client_scope(current_user)
     try:
         version = await rule_service.create_new_version(
             rule_ids=body.rules_included,
             changelog=body.changelog,
-            deployed_by=body.deployed_by
+            deployed_by=body.deployed_by,
+            client_id=client_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -244,16 +254,17 @@ async def activate_version(
     request: Request,
     version_hash: str,
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_admin_user)
+    current_user: UserInDB = Depends(get_admin_user)
 ):
     """Activate rule version (requires admin role)."""
-    version = await rule_service.get_version(version_hash)
+    client_id = _require_client_scope(current_user)
+    version = await rule_service.get_version(version_hash, client_id)
     if not version:
         raise HTTPException(status_code=404, detail=f"Version not found: {version_hash}")
 
-    previous = await rule_service.get_active_version()
+    previous = await rule_service.get_active_version(client_id)
     try:
-        bundle = await rule_service.deploy_version(version_hash)
+        bundle = await rule_service.deploy_version(version_hash, client_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -282,11 +293,12 @@ async def activate_version(
 async def list_rules(
     include_inactive: bool = Query(default=False),
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_analyst_user)
+    current_user: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """List all rules (requires analyst/admin role)."""
-    rules = await rule_service.fetch_all_rules(include_inactive=include_inactive)
-    active_version = await rule_service.get_active_version() 
+    client_id = _require_client_scope(current_user)
+    rules = await rule_service.fetch_all_rules(include_inactive=include_inactive, client_id=client_id)
+    active_version = await rule_service.get_active_version(client_id)
     version_hash = active_version.version_hash if active_version else hash_version(rules)
 
     return RulesListResponse(rules=rules, version_hash=version_hash, total=len(rules))
@@ -296,10 +308,10 @@ async def list_rules(
 async def get_rule(
     rule_id: str,
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_analyst_user)
+    current_user: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """Get specific rule (requires analyst/admin role)."""
-    rule = await rule_service.fetch_rule_by_id(rule_id)
+    rule = await rule_service.fetch_rule_by_id(rule_id, _require_client_scope(current_user))
     if not rule:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
     return rule
@@ -312,17 +324,19 @@ async def create_rule(
     rule: HeuristicRule = Body(...),
     rule_service: RuleService = Depends(get_rule_service),
     validator: RuleValidatorPort = Depends(get_rule_validator),
-    _: None = Depends(get_admin_user)
+    current_user: UserInDB = Depends(get_admin_user)
 ):
     """Create new rule (requires admin role)."""
-    if await rule_service.rule_exists(rule.rule_id):
+    client_id = _require_client_scope(current_user)
+    scoped_rule = rule.model_copy(update={"client_id": client_id})
+    if await rule_service.rule_exists(scoped_rule.rule_id, client_id):
         raise HTTPException(status_code=409, detail=f"Rule already exists: {rule.rule_id}")
 
-    validation = validator.validate_rule(rule)
+    validation = validator.validate_rule(scoped_rule)
     if not validation.valid:
         raise HTTPException(status_code=422, detail={"errors": validation.errors})
 
-    new_rule = await rule_service.create_rule(rule)
+    new_rule = await rule_service.create_rule(scoped_rule)
     version_hash = hash_version([new_rule])
 
     await rule_service.log_rule_action(
@@ -351,10 +365,11 @@ async def update_rule(
     updates: HeuristicRuleUpdate = Body(...),
     rule_service: RuleService = Depends(get_rule_service),
     validator: RuleValidatorPort = Depends(get_rule_validator),
-    _: None = Depends(get_admin_user)
+    current_user: UserInDB = Depends(get_admin_user)
 ):
     """Update rule (requires admin role)."""
-    existing = await rule_service.fetch_rule_by_id(rule_id)
+    client_id = _require_client_scope(current_user)
+    existing = await rule_service.fetch_rule_by_id(rule_id, client_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
 
@@ -368,11 +383,11 @@ async def update_rule(
     if not validation.valid:
         raise HTTPException(status_code=422, detail={"errors": validation.errors})
 
-    success = await rule_service.update_rule(rule_id, update_data)
+    success = await rule_service.update_rule(rule_id, client_id, update_data)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to update rule")
 
-    updated = await rule_service.fetch_rule_by_id(rule_id)
+    updated = await rule_service.fetch_rule_by_id(rule_id, client_id)
     await rule_service.log_rule_action(
         action="UPDATE",
         rule_id=rule_id,
@@ -398,17 +413,18 @@ async def delete_rule(
     user: str = Query(default="admin"),
     reason: str = Query(default="Rule deactivated"),
     rule_service: RuleService = Depends(get_rule_service),
-    _: None = Depends(get_admin_user)
+    current_user: UserInDB = Depends(get_admin_user)
 ):
     """Delete/deactivate rule (requires admin role)."""
-    existing = await rule_service.fetch_rule_by_id(rule_id)
+    client_id = _require_client_scope(current_user)
+    existing = await rule_service.fetch_rule_by_id(rule_id, client_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
     if not existing.is_active:
         raise HTTPException(status_code=409, detail=f"Rule already inactive: {rule_id}")
 
     before = existing.model_dump(mode="json")
-    success = await rule_service.delete_rule(rule_id)
+    success = await rule_service.delete_rule(rule_id, client_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to deactivate rule")
 

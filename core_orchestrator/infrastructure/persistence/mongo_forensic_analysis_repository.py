@@ -49,6 +49,8 @@ class MongoForensicAnalysisRepository(ForensicAnalysisRepositoryPort):
     ) -> dict[str, Any]:
         base_filter = self._default_regex_filter(request.query)
         resolved = dict(query_filter) if isinstance(query_filter, dict) and query_filter else base_filter
+        if request.client_id:
+            resolved = {"$and": [resolved, {"client_id": request.client_id}]}
 
         if request.source_id:
             resolved = {"$and": [resolved, {"source_id": request.source_id}]}
@@ -80,12 +82,14 @@ class MongoForensicAnalysisRepository(ForensicAnalysisRepositoryPort):
 
         return analysis_id
 
-    async def get_analysis_by_id(self, analysis_id: str) -> Optional[ForensicAnalysisRecord]:
-        document = await self._find_analysis_document(analysis_id)
+    async def get_analysis_by_id(self, analysis_id: str, client_id: str) -> Optional[ForensicAnalysisRecord]:
+        document = await self._find_analysis_document(analysis_id, client_id)
         return ForensicAnalysisRecord(**document) if document else None
 
     async def get_history(self, query: ForensicHistoryQuery) -> dict[str, Any]:
         filter_query: dict[str, Any] = {}
+        if query.client_id:
+            filter_query["client_id"] = query.client_id
         if query.source_id:
             filter_query["source_id"] = query.source_id
 
@@ -113,14 +117,15 @@ class MongoForensicAnalysisRepository(ForensicAnalysisRepositoryPort):
             "results": results,
         }
 
-    async def _find_analysis_document(self, analysis_id: str) -> Optional[dict[str, Any]]:
-        document = await self._analysis_collection.find_one({"analysis_id": analysis_id})
+    async def _find_analysis_document(self, analysis_id: str, client_id: str) -> Optional[dict[str, Any]]:
+        client_filter = {"client_id": client_id}
+        document = await self._analysis_collection.find_one({"analysis_id": analysis_id, **client_filter})
         if not document:
             try:
                 object_id = ObjectId(analysis_id)
             except Exception:
                 return None
-            document = await self._analysis_collection.find_one({"_id": object_id})
+            document = await self._analysis_collection.find_one({"_id": object_id, **client_filter})
 
         if not document:
             return None

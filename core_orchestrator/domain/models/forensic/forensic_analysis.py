@@ -11,6 +11,7 @@ class ForensicAnalyzeRequest(BaseModel):
 
     query: str = Field(..., min_length=3, max_length=200)
     source_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    client_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=25, ge=1, le=100)
 
@@ -19,6 +20,7 @@ class ForensicHistoryQuery(BaseModel):
     """Pagination/filter contract for forensic history listing."""
 
     source_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    client_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=10, ge=1, le=100)
 
@@ -29,6 +31,7 @@ class ForensicAnalysisRecord(BaseModel):
     analysis_id: str
     query: str
     source_id: Optional[str] = None
+    client_id: Optional[str] = None
     created_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     total_matches: int = Field(default=0, ge=0)
     highlights: list[str] = Field(default_factory=list)
@@ -41,4 +44,3 @@ class ForensicHistoryResponse(BaseModel):
 
     info: dict[str, Any]
     results: list[ForensicAnalysisRecord]
-

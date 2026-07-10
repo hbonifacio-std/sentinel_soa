@@ -5,6 +5,7 @@ describe('authStore', () => {
   beforeEach(() => {
     useAuthStore.setState({
       accessToken: null,
+      tenantApiKey: null,
       user: null,
       isAuthenticated: false,
       isBootstrapping: true,
@@ -22,7 +23,7 @@ describe('authStore', () => {
     expect(state.authError).toBeNull();
   });
 
-  it('sets session and writes to sessionStorage', () => {
+  it('sets session in memory', () => {
     const fakeUser = {
       user_id: 'user-1',
       username: 'analyst1',
@@ -36,18 +37,13 @@ describe('authStore', () => {
 
     const state = useAuthStore.getState();
     expect(state.accessToken).toBe('token-xyz');
+    expect(state.tenantApiKey).toBeNull();
     expect(state.user).toEqual(fakeUser);
     expect(state.isAuthenticated).toBe(true);
-
-    const stored = window.sessionStorage.getItem('sentinel.auth.session.v1');
-    expect(stored).not.toBeNull();
-    expect(JSON.parse(stored!)).toEqual({
-      accessToken: 'token-xyz',
-      user: fakeUser,
-    });
+    expect(window.sessionStorage.getItem('sentinel.auth.session.v1')).toBeNull();
   });
 
-  it('hydrates session correctly when sessionStorage is populated', () => {
+  it('ignores sessionStorage during hydrateSession', () => {
     const fakeUser = {
       user_id: 'user-2',
       username: 'admin1',
@@ -65,9 +61,10 @@ describe('authStore', () => {
     useAuthStore.getState().hydrateSession();
 
     const state = useAuthStore.getState();
-    expect(state.accessToken).toBe('token-abc');
-    expect(state.user).toEqual(fakeUser);
-    expect(state.isAuthenticated).toBe(true);
+    expect(state.accessToken).toBeNull();
+    expect(state.tenantApiKey).toBeNull();
+    expect(state.user).toBeNull();
+    expect(state.isAuthenticated).toBe(false);
   });
 
   it('handles hydrateSession when storage is empty', () => {
@@ -77,7 +74,7 @@ describe('authStore', () => {
     expect(state.isAuthenticated).toBe(false);
   });
 
-  it('updates user in state and sessionStorage', () => {
+  it('updates user in state', () => {
     const initialUser = {
       user_id: 'user-3',
       username: 'viewer1',
@@ -94,9 +91,6 @@ describe('authStore', () => {
 
     const state = useAuthStore.getState();
     expect(state.user?.username).toBe('viewer-updated');
-
-    const stored = JSON.parse(window.sessionStorage.getItem('sentinel.auth.session.v1')!);
-    expect(stored.user.username).toBe('viewer-updated');
   });
 
   it('clears session correctly', () => {

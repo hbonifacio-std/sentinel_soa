@@ -29,7 +29,6 @@ router = APIRouter()
 
 
 from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
 
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("10/minute")
@@ -38,7 +37,6 @@ async def ingest_single_event(
     event: LogEvent,
     background_tasks: BackgroundTasks,
     client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
-    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
     telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
     agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]
@@ -46,7 +44,7 @@ async def ingest_single_event(
     """Ingest a single event and stamp it with tenant context."""
 
     # Stamp tenant_id on the event server-side (never trust incoming tenant_id)
-    event.client_id = tenant.tenant_id
+    event.client_id = client.client_id
 
     event_dict = event.model_dump()
     sanitized_event_json = json.dumps(redact_sensitive_data(event_dict))
@@ -69,7 +67,6 @@ async def ingest_batch_events(
     events: List[LogEvent],
     background_tasks: BackgroundTasks,
     client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
-    tenant: Annotated[TenantContext, Depends(get_tenant_context)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
     telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
     x_sentinel_source_id: Annotated[str, Header(alias="X-Sentinel-SOURCE-ID")],
@@ -90,7 +87,7 @@ async def ingest_batch_events(
 
     # Stamp tenant_id server-side on every event
     for ev in events:
-        ev.client_id = tenant.tenant_id
+        ev.client_id = client.client_id
         ev.source_id = x_sentinel_source_id
 
     # Apply redaction to batch events before logging

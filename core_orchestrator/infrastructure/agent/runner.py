@@ -87,6 +87,12 @@ class AgentRunner:
         """Public property to check if the MCP session is active."""
         return self._is_mcp_session_alive()
 
+    async def is_mcp_healthy(self) -> bool:
+        """Performs an active health check against the MCP session."""
+        if self.mcp_manager is None:
+            return False
+        return await self.mcp_manager.is_session_healthy()
+
     async def run_analysis(self, telemetry_window: Dict[str, Any]) -> str:
         """
         Runs an analysis for a completed telemetry window.

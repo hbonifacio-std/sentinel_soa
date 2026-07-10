@@ -5,6 +5,7 @@ Initializes the FastAPI application, orchestrates the MCP subprocess lifecycles,
 and mounts the HTTP routes exposed to the corporate network.
 """
 import logging
+import inspect
 from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
@@ -22,7 +23,10 @@ from core_orchestrator.infrastructure.api.v1.endpoints import (
     telemetry as agent_telemetry, users, tenants
 )
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
-from core_orchestrator.infrastructure.handlers.exceptions import validation_exception_handler
+from core_orchestrator.infrastructure.handlers.exceptions import (
+    validation_exception_handler,
+    unhandled_exception_handler,
+)
 from core_orchestrator.infrastructure.api import dependencies as deps
 from core_orchestrator.infrastructure.api.auth import require_api_key, get_tenant_context
 
@@ -81,6 +85,7 @@ async def add_limiter_to_state(request: Request, call_next: Callable[[Request], 
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # Configurable CORS security middleware
 cors_origins = orchestrator_settings.get_cors_origins()
@@ -142,10 +147,30 @@ async def health_check(agent_runner: AgentRunner = Depends(deps.get_agent_runner
     """
     Basic monitoring endpoint to check the operational availability of the API.
     """
+    mcp_connected = False
+    if agent_runner:
+        active_probe = getattr(agent_runner, "is_mcp_healthy", None)
+        probe_declared = (
+            "is_mcp_healthy" in getattr(agent_runner, "__dict__", {})
+            or hasattr(type(agent_runner), "is_mcp_healthy")
+        )
+        if active_probe and probe_declared:
+            try:
+                probe_result = active_probe()
+                if inspect.isawaitable(probe_result):
+                    mcp_connected = await probe_result
+                else:
+                    mcp_connected = bool(probe_result)
+            except Exception as exc:
+                logger.warning("MCP active health check failed: %s", exc)
+                mcp_connected = False
+        else:
+            mcp_connected = bool(getattr(agent_runner, "is_mcp_connected", False))
+
     return {
         "status": "healthy",
         "component": "core_orchestrator",
-        "mcp_status": "connected" if agent_runner and agent_runner.is_mcp_connected else "disconnected"
+        "mcp_status": "connected" if mcp_connected else "disconnected"
     }
 
 if __name__ == "__main__":

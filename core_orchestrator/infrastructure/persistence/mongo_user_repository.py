@@ -54,6 +54,7 @@ class MongoUserRepository(UserRepository):
             "hashed_password": hashed_password,
             "role": user_create.role or "viewer",
             "is_active": user_create.is_active if user_create.is_active is not None else True,
+            "client_id": user_create.client_id,
             "created_at": now,
             "updated_at": now,
         }

@@ -50,6 +50,7 @@ class ForensicService(ForensicServicePort):
             analysis_id="",
             query=request.query,
             source_id=request.source_id,
+            client_id=request.client_id,
             created_at_utc=datetime.now(timezone.utc),
             total_matches=total_matches,
             highlights=highlights,
@@ -64,8 +65,8 @@ class ForensicService(ForensicServicePort):
         history = await self.forensic_repository.get_history(query)
         return ForensicHistoryResponse(**history)
 
-    async def get_analysis_by_id(self, analysis_id: str) -> ForensicAnalysisRecord | None:
-        return await self.forensic_repository.get_analysis_by_id(analysis_id)
+    async def get_analysis_by_id(self, analysis_id: str, client_id: str) -> ForensicAnalysisRecord | None:
+        return await self.forensic_repository.get_analysis_by_id(analysis_id, client_id)
 
     async def _build_query_plan(self, request: ForensicAnalyzeRequest) -> dict[str, Any]:
         try:

@@ -34,10 +34,24 @@ export function configureApiClient(config: ApiClientConfig) {
 }
 
 function getErrorMessage(status: number, detail: unknown, fallback: string): string {
+  if (status === 401) {
+    return 'Unauthorized request.';
+  }
+  if (status === 403) {
+    return 'Forbidden request.';
+  }
+  if (status === 404) {
+    return 'Resource not found.';
+  }
+  if (status >= 500) {
+    return 'Server error. Please try again later.';
+  }
+  if (status === 422) {
+    return 'Validation error in request data.';
+  }
   if (typeof detail === 'string' && detail.trim()) {
     return detail;
   }
-
   return fallback || `HTTP ${status}`;
 }
 
@@ -83,7 +97,7 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
       bodyText = JSON.stringify(body);
     } else {
       bodyText = await response.text();
-      detail = bodyText;
+      detail = null;
     }
 
     if (response.status === 401 && !options.skipUnauthorizedHandler) {

@@ -74,7 +74,7 @@ async def test_redis_telemetry_window_cache(mock_redis):
     await cache.add_multiple_to_window("win-1", ["val1", "val2"], 10)
     
     # Scan keys
-    async def mock_scan_iter(pattern):
+    async def mock_scan_iter(*args, **kwargs):
         yield "key-1"
         yield "key-2"
     mock_redis.scan_iter = mock_scan_iter

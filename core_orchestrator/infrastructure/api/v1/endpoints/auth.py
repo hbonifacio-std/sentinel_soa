@@ -55,23 +55,40 @@ async def login_for_access_token(
         )
     
     user, access_token = login_result
-    
-    # Look up tenant API key if user has a tenant_id
-    tenant_api_key = None
-    if user.tenant_id and db_manager.mongo_client is not None:
-        try:
-            auth_db = db_manager.get_auth_db()
-            tenant_doc = await auth_db.tenants.find_one({
-                "tenant_id": user.tenant_id,
-                "is_active": True
-            })
-            if tenant_doc and "api_key_plaintext" in tenant_doc:
-                # NOTE: api_key_plaintext should only be shown at creation time.
-                # This is a convenience for development. In production, users should
-                # retrieve the key from a secure endpoint after it's been created.
-                tenant_api_key = tenant_doc.get("api_key_plaintext")
-        except Exception as e:
-            logger.warning(f"Could not retrieve tenant API key for user {user.username}: {e}")
+
+    if not user.client_id:
+        logger.warning("Authentication denied due to invalid user tenant assignment.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if db_manager.mongo_client is None:
+        logger.warning("Authentication denied due to unavailable tenant store.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    auth_db = db_manager.get_auth_db()
+    tenant_doc = await auth_db.authorized_telemetry_clients.find_one({
+        "client_id": user.client_id,
+        "is_active": True
+    })
+    if not tenant_doc:
+        logger.warning("Authentication denied due to invalid tenant assignment.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication error",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # NOTE: api_key_plaintext should only be shown at creation time.
+    # This is a convenience for development. In production, users should
+    # retrieve the key from a secure endpoint after it's been created.
+    tenant_api_key = tenant_doc.get("api_key")
     
     # Return token and user info
     user_response = UserResponse(
@@ -80,7 +97,7 @@ async def login_for_access_token(
         email=user.email,
         role=user.role,
         is_active=user.is_active,
-        tenant_id=user.tenant_id,
+        client_id=user.client_id,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
@@ -89,7 +106,7 @@ async def login_for_access_token(
         access_token=access_token,
         token_type="bearer",
         user=user_response,
-        tenant_api_key=tenant_api_key,
+        client_api_key=tenant_api_key,
     )
 
 
@@ -162,5 +179,3 @@ async def logout(
     logger.info(f"User {current_user.username} logged out successfully.")
     
     return {"message": "Logged out successfully"}
-
-

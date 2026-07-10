@@ -6,7 +6,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
-from core_orchestrator.infrastructure.handlers.exceptions import validation_exception_handler
+from core_orchestrator.infrastructure.handlers.exceptions import (
+    validation_exception_handler,
+    unhandled_exception_handler,
+)
 
 
 def _make_request(path: str = "/test") -> Request:
@@ -89,6 +92,17 @@ async def test_validation_exception_handler_loc_formatting():
     # Should not raise
     response = await validation_exception_handler(request, exc)
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_unhandled_exception_handler_returns_500():
+    request = _make_request("/api/v1/health")
+    response = await unhandled_exception_handler(request, RuntimeError("sensitive traceback"))
+    assert isinstance(response, JSONResponse)
+    assert response.status_code == 500
+    import json
+    content = json.loads(response.body.decode())
+    assert content["detail"] == "Internal server error."
 
 
 @pytest.mark.asyncio

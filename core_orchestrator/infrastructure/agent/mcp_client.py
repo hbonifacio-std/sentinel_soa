@@ -126,6 +126,17 @@ class MCPClientManager:
         logger.error("MCP call '%s' failed after %d attempts: %s", tool_name, self._max_retries, last_exc)
         return {"error": f"Exception during remote tool execution after {self._max_retries} attempts: {last_exc}"}
 
+    async def is_session_healthy(self, timeout: float = 3.0) -> bool:
+        """Checks if the current MCP session responds to a lightweight heartbeat."""
+        if self._session is None:
+            return False
+        try:
+            await asyncio.wait_for(self._session.list_tools(), timeout=timeout)
+            return True
+        except Exception:
+            logger.warning("MCP health check failed: session is not responding.")
+            return False
+
     async def close(self):
         if self._session_cm:
             logger.info("Closing MCP session...")
@@ -141,4 +152,3 @@ class MCPClientManager:
             except Exception:
                 pass
             self._transport_cm = None
-

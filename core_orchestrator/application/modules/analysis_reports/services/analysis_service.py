@@ -142,7 +142,9 @@ class AnalysisService(AnalysisServicePort):
         }
         tool_arguments = {k: v for k, v in telemetry_payload.items() if k in allowed_fields}
 
-        rules_bundle = await self.rules_engine_service.get_active_rules()
+        rules_bundle = await self.rules_engine_service.get_active_rules(
+            client_id=telemetry_payload.get("client_id")
+        )
         signed_bundle = self._sign_rules_bundle(rules_bundle.to_cache_dict())
         tool_arguments["rules_bundle"] = signed_bundle
         logger.info(
