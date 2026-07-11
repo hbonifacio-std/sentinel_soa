@@ -97,6 +97,13 @@ class LogAnalysisServerSettings(BaseSettings):
         gt=0,
         description="Maximum output token limit allowed in the Gemini agent verdict."
     )
+
+    gemini_timeout_seconds: int = Field(
+        default=60,
+        validation_alias="GEMINI_TIMEOUT_SECONDS",
+        gt=0,
+        description="Timeout in seconds for Gemini requests."
+    )
     
     # ========== OLLAMA CONFIGURATION (Local) ==========
     
@@ -237,6 +244,7 @@ class LogAnalysisServerSettings(BaseSettings):
         return {
             'gemini_api_key': self.gemini_api_key.get_secret_value() if self.gemini_api_key else None,
             'gemini_max_output_tokens': self.gemini_max_output_tokens,
+            'gemini_timeout_seconds': self.gemini_timeout_seconds,
             'ollama_base_url': self.ollama_base_url,
             'ollama_timeout_seconds': self.ollama_timeout_seconds,
             'openai_api_key': self.openai_api_key.get_secret_value() if self.openai_api_key else None,

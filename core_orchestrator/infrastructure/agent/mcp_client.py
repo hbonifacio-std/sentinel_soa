@@ -24,6 +24,13 @@ except ImportError:
 
 logger = logging.getLogger("core_orchestrator.mcp_client")
 
+_MCP_HTTP_CONNECT_TIMEOUT_SECONDS = 10.0
+_MCP_HTTP_READ_TIMEOUT_SECONDS = 180.0
+_MCP_HTTP_WRITE_TIMEOUT_SECONDS = 180.0
+_MCP_HTTP_POOL_TIMEOUT_SECONDS = 180.0
+_MCP_HTTP_KEEPALIVE_EXPIRY_SECONDS = 300.0
+_MCP_SESSION_HEARTBEAT_TIMEOUT_SECONDS = 15.0
+
 
 class MCPClientManager:
     """Manages a persistent MCP session against the HTTP MCP server."""
@@ -37,13 +44,28 @@ class MCPClientManager:
         self._call_semaphore = asyncio.Semaphore(10)
         self._max_retries = max_retries
 
+    def _build_http_client(self, headers: dict[str, str]) -> httpx.AsyncClient:
+        """Build the MCP HTTP client with long-lived read and keep-alive settings."""
+        timeout = httpx.Timeout(
+            connect=_MCP_HTTP_CONNECT_TIMEOUT_SECONDS,
+            read=_MCP_HTTP_READ_TIMEOUT_SECONDS,
+            write=_MCP_HTTP_WRITE_TIMEOUT_SECONDS,
+            pool=_MCP_HTTP_POOL_TIMEOUT_SECONDS,
+        )
+        limits = httpx.Limits(
+            max_connections=100,
+            max_keepalive_connections=20,
+            keepalive_expiry=_MCP_HTTP_KEEPALIVE_EXPIRY_SECONDS,
+        )
+        return httpx.AsyncClient(headers=headers, timeout=timeout, limits=limits)
+
     async def _open_http_session(self, url: str) -> ClientSession:
         headers = {}
         mcp_token = os.getenv("MCP_INTERNAL_TOKEN")
         if mcp_token:
             headers["Authorization"] = f"Bearer {mcp_token}"
 
-        http_client = httpx.AsyncClient(headers=headers)
+        http_client = self._build_http_client(headers)
         self._transport_cm = _streamable_http_client(url, http_client=http_client)
         transport = await self._transport_cm.__aenter__()
 
@@ -82,7 +104,7 @@ class MCPClientManager:
         """Verifica si la sesión existe y sigue respondiendo. Si no, intenta reconectar."""
         if self._session:
             try:
-                await asyncio.wait_for(self._session.list_tools(), timeout=3.0)
+                await asyncio.wait_for(self._session.list_tools(), timeout=_MCP_SESSION_HEARTBEAT_TIMEOUT_SECONDS)
                 return self._session
             except Exception:
                 logger.warning("La sesión MCP existente no responde (Timeout/Disconnect). Limpiando e intentando reconexión...")

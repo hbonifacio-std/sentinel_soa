@@ -7,9 +7,7 @@ import type { PageInfo, PaginatedResponse } from '@/types/api';
 import { threatKeys } from '@/lib/queryKeys';
 import type { Threat } from '@/types/threat';
 
-const pollingMs = Number(import.meta.env.VITE_POLLING_INTERVAL_MS ?? 30000);
 const useMockData = String(import.meta.env.VITE_MOCK_DATA ?? 'false').toLowerCase() === 'true';
-const enablePolling = String(import.meta.env.VITE_ENABLE_POLLING ?? 'false').toLowerCase() === 'true';
 
 interface UseThreatsOptions {
   page?: number;
@@ -71,7 +69,6 @@ export function useThreats(sourceId: string | null, options: UseThreatsOptions =
       const payload = await apiFetch<PaginatedResponse<Threat> | Threat[]>(`/api/v1/analytics/reports?${queryString}`);
       return parseReportsPage(payload, page, limit);
     },
-    refetchInterval: enablePolling && pollingMs > 0 ? pollingMs : false,
   });
 
   const normalizedThreats = useMemo(

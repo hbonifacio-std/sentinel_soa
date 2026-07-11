@@ -63,7 +63,8 @@ def create_llm_provider(
             init_args = {
                 "model_name": model_name,
                 "api_key": config.get('gemini_api_key'),
-                "max_output_tokens": max_output_tokens or config.get('gemini_max_output_tokens')
+                "max_output_tokens": max_output_tokens or config.get('gemini_max_output_tokens'),
+                "timeout": config.get('gemini_timeout_seconds'),
             }
             provider_instance = GeminiProvider(**init_args)
         elif provider_name_lower == 'ollama':

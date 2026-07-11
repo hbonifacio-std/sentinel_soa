@@ -543,7 +543,7 @@ export default function RulesPage() {
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">{editorMode === 'create' ? 'Nueva regla' : `Editar ${selectedRuleId}`}</h3>
               <button className="rounded border border-surface-border px-2 py-1 text-xs" onClick={() => setEditorOpen(false)}>
-                Cerrar
+                close
               </button>
             </div>
 

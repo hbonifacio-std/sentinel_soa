@@ -199,15 +199,20 @@ async def generate_forensic_report_from_logs(
         A dictionary with `highlights`, `markdown_report`, and risk metadata.
     """
     
-    final_model_id = model_id or server_settings.default_model_id
-
+    logger.info(
+        "MCP tool 'generate_forensic_report_from_logs' invoked for source_id=%r query=%r total_matches=%s rows=%s",
+        source_id,
+        query,
+        total_matches,
+        len(rows),
+    )
     return await generate_forensic_report(
         {
             "query": query,
             "source_id": source_id,
             "total_matches": total_matches,
             "rows": rows,
-            "model_id": final_model_id,
+            "model_id": model_id,
         }
     )
 

@@ -63,8 +63,10 @@ class TranslateMongo:
         )
         
         try:
+            logger.info("Translating forensic query to Mongo filter")
             # The system prompt is now embedded in the user_prompt by the factory
             response_text = await self._provider.call_model(prompt=user_prompt)
+            logger.info("Mongo translation completed")
             
             parsed_response = extract_json_object(response_text, strict=False)
 
@@ -87,4 +89,3 @@ class TranslateMongo:
                 "error": "An exception occurred during translation.",
                 "details": str(e)
             }
-

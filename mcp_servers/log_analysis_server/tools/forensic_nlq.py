@@ -177,11 +177,12 @@ async def _generate_llm_forensic_report(
         system_context_note=system_context_note,
         max_input_tokens=model_def.max_input_tokens,
     )
-    
+    logger.info("Sending prompt to LLM provider '%s' for forensic report generation.", provider.provider_name)
     response_text = await asyncio.wait_for(
         provider.call_model(prompt),
         timeout=float(_DEFAULT_FORENSIC_REPORT_TIMEOUT_SECONDS),
     )
+    logger.info("Received response from LLM provider '%s'.", provider.provider_name)
     parsed = extract_json_object(response_text, strict=False)
     return parsed
 
@@ -198,15 +199,12 @@ async def build_forensic_mongo_query(arguments: dict[str, Any]) -> dict[str, Any
             "detected_status_codes": [],
         }
 
-    default_model_info = server_settings.available_models.get(server_settings.default_model_id)
-    active_provider = default_model_info.provider if default_model_info else 'ollama'
-
-    if active_provider == 'ollama':
-        translator_model_id = "sentinel-translator-mongodb"
-    else:
-        translator_model_id = server_settings.default_model_id
-    
-    logger.info(f"Using translator model: {translator_model_id} (determined by active provider: {active_provider})")
+    translator_model_id = (
+        "sentinel-translator-mongodb"
+        if "sentinel-translator-mongodb" in server_settings.available_models
+        else server_settings.default_model_id
+    )
+    logger.info("Using translator model: %s", translator_model_id)
 
     translator = TranslateMongo(model_id=translator_model_id)
     
@@ -241,6 +239,17 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
     payload = ForensicReportInput(**arguments)
     rows = payload.rows
     system_context_note = None
+    model_id_to_use = (
+        payload.model_id
+        or ("sentinel-analyst" if "sentinel-analyst" in server_settings.available_models else server_settings.default_model_id)
+    )
+    logger.info(
+        "Starting forensic report generation for source_id=%r query=%r rows=%s model_id=%s",
+        payload.source_id,
+        payload.query,
+        len(rows),
+        model_id_to_use,
+    )
 
     # Triage based on the number of logs (using config thresholds)
     if len(rows) > server_settings.forensic_low_volume_log_threshold:
@@ -249,7 +258,12 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
     
     # For both low volume and sampled high volume, generate the report
     try:
-        llm_result = await _generate_llm_forensic_report(payload, rows, system_context_note)
+        llm_result = await _generate_llm_forensic_report(
+            payload.model_copy(update={"model_id": model_id_to_use}),
+            rows,
+            system_context_note,
+        )
+        logger.info("Forensic LLM report generation completed")
         
         # Basic validation of the LLM output
         if llm_result.get("markdown_report") and llm_result.get("highlights"):
@@ -270,4 +284,3 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
             "error": "Forensic report generation failed.",
             "details": f"The AI model could not generate a report. Reason: {str(exc)}"
         }
-

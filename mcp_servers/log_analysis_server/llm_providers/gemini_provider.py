@@ -38,7 +38,14 @@ class GeminiProvider(LLMProviderInterface):
 
     _PROVIDER_NAME = "gemini"
 
-    def __init__(self, *, model_name: str, api_key: str, max_output_tokens: Optional[int] = None):
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        api_key: str,
+        max_output_tokens: Optional[int] = None,
+        timeout: Optional[int] = None,
+    ):
         """
         Initialize the Gemini provider with specific configuration.
         
@@ -51,6 +58,7 @@ class GeminiProvider(LLMProviderInterface):
         self._api_key = api_key
         self._model_name = model_name
         self._max_tokens = max_output_tokens or 4160
+        self._timeout = timeout or 60
         
         if not self._api_key:
             raise LLMException("Gemini API key is required.")
@@ -98,11 +106,14 @@ class GeminiProvider(LLMProviderInterface):
             runtime_config.max_output_tokens = current_max_tokens
 
             # 4. Safe invocation using lambda to prevent thread signature issues
-            response = await asyncio.to_thread(
-                lambda: self._model.generate_content(
-                    prompt,
-                    generation_config=runtime_config
-                )
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    lambda: self._model.generate_content(
+                        prompt,
+                        generation_config=runtime_config
+                    )
+                ),
+                timeout=float(self._timeout),
             )
 
             if not response or not response.text:
@@ -111,6 +122,10 @@ class GeminiProvider(LLMProviderInterface):
 
             logger.debug("Response received from Gemini successfully")
             return response.text.strip()
+
+        except asyncio.TimeoutError as exc:
+            logger.error("Gemini call timed out after %ss", self._timeout)
+            raise LLMException(f"Gemini API timed out after {self._timeout}s") from exc
 
         except Exception as exc:
             logger.error(f"Error in Gemini API call: {str(exc)}", exc_info=True)

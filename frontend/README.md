@@ -13,7 +13,6 @@ Frontend migrado a Vite + React 18 + TypeScript + Tailwind + Zustand.
 Revisar `.env.example`:
 
 - `VITE_API_BASE_URL`
-- `VITE_POLLING_INTERVAL_MS`
 - `VITE_MOCK_DATA`
 - `VITE_AUTH_PERSIST_SESSION`: `true` para respaldar token en `sessionStorage` (por pestaña), `false` para memoria-only.
 

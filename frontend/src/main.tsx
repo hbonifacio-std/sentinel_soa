@@ -44,8 +44,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                     <Route index element={<DashboardPage />} />
                     <Route path="alerts" element={<AlertsPage />} />
                     <Route path="logs" element={<LogsPage />} />
-                    <Route path="rules" element={<RulesPage />} />
                     <Route path="forensic" element={<ForensicPage />} />
+                    <Route path="rules" element={<RulesPage />} />
                   </Route>
                 </Route>
               </Route>

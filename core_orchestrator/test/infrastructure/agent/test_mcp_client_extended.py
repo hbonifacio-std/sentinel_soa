@@ -12,6 +12,7 @@ Extended tests for MCPClientManager covering lines NOT yet hit:
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +54,29 @@ class TestStartServerSession:
         with patch.object(manager, "_open_http_session", side_effect=ConnectionRefusedError("refused")):
             with pytest.raises(RuntimeError, match="Could not initialize MCP session"):
                 await manager.start_server_session()
+
+    @pytest.mark.asyncio
+    async def test_http_client_uses_long_read_timeout_and_keepalive(self, monkeypatch):
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
+        monkeypatch.setenv("MCP_SERVER_HOST", "localhost")
+        manager = _make_manager()
+
+        mock_transport = AsyncMock()
+        mock_transport.__aenter__.return_value = (AsyncMock(), AsyncMock())
+        mock_session = AsyncMock()
+        mock_session.__aenter__.return_value = mock_session
+
+        with patch("core_orchestrator.infrastructure.agent.mcp_client.httpx.AsyncClient") as mock_client_cls:
+            with patch("core_orchestrator.infrastructure.agent.mcp_client._streamable_http_client", return_value=mock_transport) as mock_streamable:
+                with patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession", return_value=mock_session):
+                    await manager.start_server_session()
+
+        client_kwargs = mock_client_cls.call_args.kwargs
+        assert client_kwargs["timeout"].read == 180.0
+        assert client_kwargs["timeout"].connect == 10.0
+        assert client_kwargs["limits"].keepalive_expiry == 300.0
+        mock_streamable.assert_called_once()
+        assert mock_streamable.call_args.kwargs["http_client"] is mock_client_cls.return_value
 
 
 # ---------------------------------------------------------------------------

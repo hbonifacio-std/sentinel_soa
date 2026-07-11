@@ -42,6 +42,7 @@ from mcp_servers.log_analysis_server.llm_providers.groq_provider import GroqProv
 # ---------------------------------------------------------------------------
 _BASE_CONFIG = {
     "gemini_api_key": "test-gemini-key",
+    "gemini_timeout_seconds": 30,
     "ollama_base_url": "http://localhost:11434",
     "ollama_timeout_seconds": 30,
     "openai_api_key": "test-openai-key",
@@ -140,6 +141,21 @@ async def test_gemini_call_model():
     assert "threat_score" in result
     validated = await prov.validate_response(result)
     assert validated.threat_score == 30
+
+
+@pytest.mark.asyncio
+async def test_gemini_call_model_times_out():
+    prov = GeminiProvider(model_name="gemini-3.5-flash", api_key="key", timeout=0.01)
+    async def slow_to_thread(*args, **kwargs):
+        await asyncio.sleep(0.05)
+        return MagicMock(text='{"threat_score": 1}')
+
+    prov._model = MagicMock()
+    prov._model.generate_content.return_value = MagicMock(text='{"threat_score": 1}')
+
+    with patch("asyncio.to_thread", new=slow_to_thread):
+        with pytest.raises(LLMException, match="timed out"):
+            await prov.call_model("test prompt")
 
 
 # ---------------------------------------------------------------------------

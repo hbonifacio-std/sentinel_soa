@@ -33,11 +33,21 @@ class ForensicService(ForensicServicePort):
         self.forensic_intelligence_port = forensic_intelligence_port
 
     async def analyze_activity(self, request: ForensicAnalyzeRequest) -> ForensicAnalysisRecord:
+        logger.info(
+            "Starting forensic analysis for query=%r source_id=%r client_id=%r page=%s limit=%s",
+            request.query,
+            request.source_id,
+            request.client_id,
+            request.page,
+            request.limit,
+        )
         query_plan = await self._build_query_plan(request)
+
         rows, total_matches = await self.forensic_repository.query_telemetry(
             request,
             query_filter=query_plan.get("mongo_filter"),
         )
+        logger.info("Forensic telemetry query returned %s matches and %s rows", total_matches, len(rows))
 
         report_payload = await self._build_intelligence_report(request, total_matches, rows)
         highlights = self._safe_highlights(report_payload, rows, total_matches)
@@ -45,6 +55,7 @@ class ForensicService(ForensicServicePort):
             report_payload.get("markdown_report")
             or self._build_markdown_report(request=request, total_matches=total_matches, rows=rows)
         )
+        logger.info("Forensic report payload resolved; persisting analysis record")
 
         record = ForensicAnalysisRecord(
             analysis_id="",
@@ -59,6 +70,7 @@ class ForensicService(ForensicServicePort):
         )
 
         analysis_id = await self.forensic_repository.save_analysis(record)
+        logger.info("Forensic analysis persisted with analysis_id=%s", analysis_id)
         return record.model_copy(update={"analysis_id": analysis_id})
 
     async def get_analysis_history(self, query: ForensicHistoryQuery) -> ForensicHistoryResponse:
@@ -74,6 +86,7 @@ class ForensicService(ForensicServicePort):
                 query=request.query,
                 source_id=request.source_id,
             )
+            logger.info("MCP forensic NLQ returned query plan: %s", plan.get("mongo_filter", {}).get("query", "N/A"))
             if isinstance(plan, dict) and isinstance(plan.get("mongo_filter"), dict):
                 return plan
             logger.warning("MCP forensic NLQ returned payload without mongo_filter; using fallback query plan")

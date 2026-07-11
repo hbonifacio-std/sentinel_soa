@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class ForensicAnalyzeRequest(BaseModel):
     """Input payload used to run a forensic analysis query."""
 
-    query: str = Field(..., min_length=3, max_length=200)
+    query: str = Field(..., min_length=3, max_length=1000)
     source_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     client_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     page: int = Field(default=1, ge=1)

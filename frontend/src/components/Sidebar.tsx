@@ -74,7 +74,8 @@ export function Sidebar() {
           disabled={loggingOut}
         >
           <LogOut size={14} />
-          {loggingOut ? 'Cerrando sesion...' : 'Cerrar sesion'}
+          {loggingOut ? '\n' +
+              'Logging out...' : 'Log out'}
         </button>
       </div>
     </aside>

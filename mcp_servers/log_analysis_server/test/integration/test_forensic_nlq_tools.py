@@ -1,6 +1,6 @@
 """Tests for deterministic forensic NLQ MCP tooling."""
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from mcp_servers.log_analysis_server.tools.forensic_nlq import (
     build_forensic_mongo_query,
@@ -121,3 +121,50 @@ def test_build_forensic_mongo_query_does_not_extract_http_status_from_ip_octets(
     assert result.get("detected_ips") == ["172.18.0.2"]
     assert result.get("detected_status_codes") == []
 
+
+@patch("mcp_servers.log_analysis_server.tools.forensic_nlq.TranslateMongo")
+def test_build_forensic_mongo_query_prefers_dedicated_translator_model(mock_translate_cls) -> None:
+    mock_translate = mock_translate_cls.return_value
+    mock_translate.translate_query = AsyncMock(
+        return_value={
+            "mongo_filter": {},
+            "detected_terms": [],
+            "detected_ips": [],
+            "detected_status_codes": [],
+        }
+    )
+
+    result = asyncio.run(
+        build_forensic_mongo_query(
+            {
+                "query": "find suspicious activity",
+                "source_id": "victim-app",
+            }
+        )
+    )
+
+    assert result["mongo_filter"] == {}
+    assert mock_translate_cls.call_args.kwargs["model_id"] == "sentinel-translator-mongodb"
+
+
+@patch("mcp_servers.log_analysis_server.tools.forensic_nlq._generate_llm_forensic_report")
+def test_generate_forensic_report_prefers_dedicated_analyst_model(mock_llm_report) -> None:
+    mock_llm_report.return_value = {
+        "markdown_report": "# Report",
+        "highlights": ["h1"],
+    }
+
+    result = asyncio.run(
+        generate_forensic_report(
+            {
+                "query": "suspicious auth",
+                "source_id": "victim-app",
+                "total_matches": 1,
+                "rows": [{"source_ip": "10.0.0.1"}],
+                "model_id": None,
+            }
+        )
+    )
+
+    assert result["markdown_report"] == "# Report"
+    assert mock_llm_report.call_args[0][0].model_id == "sentinel-analyst"
