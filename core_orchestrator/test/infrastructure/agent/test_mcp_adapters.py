@@ -123,7 +123,7 @@ async def test_orchestrator_agent():
     assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].client_id == "tenant-42"
 
 @pytest.mark.asyncio
-@patch("core_orchestrator.infrastructure.agent.mcp_client._streamable_http_client")
+@patch("core_orchestrator.infrastructure.agent.mcp_client._sse_client")
 @patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession")
 async def test_mcp_client_manager(mock_session_cls, mock_streamable_client):
     manager = MCPClientManager()
@@ -138,7 +138,7 @@ async def test_mcp_client_manager(mock_session_cls, mock_streamable_client):
     mock_session.__aenter__.return_value = mock_session
     
     # Connect
-    with patch.dict("os.environ", {"MCP_TRANSPORT": "http", "MCP_SERVER_HOST": "localhost"}):
+    with patch.dict("os.environ", {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "localhost"}):
         session = await manager.start_server_session()
         assert session == mock_session
         

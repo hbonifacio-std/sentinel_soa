@@ -6,14 +6,14 @@ from pydantic import BaseModel, Field
 class ForensicQueryPlannerInput(BaseModel):
     """Validated payload for NLQ-to-Mongo forensic planning."""
 
-    query: str = Field(..., min_length=3, max_length=400)
+    query: str = Field(..., min_length=3, max_length=1000)
     source_id: str = Field(default=None, min_length=1, max_length=100)
 
 
 class ForensicReportInput(BaseModel):
     """Validated payload for forensic markdown report generation."""
 
-    query: str = Field(..., min_length=3, max_length=400)
+    query: str = Field(..., min_length=3, max_length=1000)
     source_id: str = Field(default=None, min_length=1, max_length=100)
     total_matches: int = Field(default=0, ge=0)
     model_id: Optional[str] = Field(default=None, min_length=3, max_length=100)

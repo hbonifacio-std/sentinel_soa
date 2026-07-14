@@ -236,7 +236,7 @@ async def main():
     Initializes and runs the MCP server, selecting the transport
     based on the MCP_TRANSPORT environment variable.
     """
-    transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
+    transport_mode = os.getenv('MCP_TRANSPORT', 'sse').lower()
     
     # Warn if MCP_INTERNAL_TOKEN is not configured
     if not get_internal_token():
@@ -249,15 +249,15 @@ async def main():
             logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
             await server.run_async(transport='stdio')
 
-        elif transport_mode == 'http':
+        elif transport_mode == 'sse':
             host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
             port = int(os.getenv('MCP_SERVER_PORT', '8080'))
-            logger.info(f"Starting FastMCP Log Analysis Server on HTTP at {host}:{port}...")
-            logger.info("Authorization: Bearer token validation via mcp_client.py headers")
-            await server.run_async(transport='http', host=host, port=port)
+            logger.info(f"Starting FastMCP Log Analysis Server on SSE at {host}:{port}...")
+            logger.info("SSE endpoints exposed at /sse and /messages/")
+            await server.run_http_async(transport='sse', host=host, port=port)
             
         else:
-            logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'http'.")
+            logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'sse'.")
             sys.exit(1)
 
     finally:

@@ -12,7 +12,6 @@ Extended tests for MCPClientManager covering lines NOT yet hit:
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import httpx
 
 
 # ---------------------------------------------------------------------------
@@ -28,36 +27,36 @@ def _make_manager():
 # ---------------------------------------------------------------------------
 class TestStartServerSession:
     @pytest.mark.asyncio
-    async def test_non_http_transport_raises(self, monkeypatch):
+    async def test_non_sse_transport_raises(self, monkeypatch):
         monkeypatch.setenv("MCP_TRANSPORT", "stdio")
         manager = _make_manager()
-        with pytest.raises(RuntimeError, match="Only HTTP transport"):
+        with pytest.raises(RuntimeError, match="Only SSE transport"):
             await manager.start_server_session()
 
     @pytest.mark.asyncio
     async def test_timeout_raises_runtime_error(self, monkeypatch):
-        monkeypatch.setenv("MCP_TRANSPORT", "http")
+        monkeypatch.setenv("MCP_TRANSPORT", "sse")
         manager = _make_manager()
 
         async def _slow(*args, **kwargs):
             await asyncio.sleep(100)
 
-        with patch.object(manager, "_open_http_session", side_effect=_slow):
+        with patch.object(manager, "_open_sse_session", side_effect=_slow):
             with pytest.raises(RuntimeError, match="Timeout"):
                 await manager.start_server_session(timeout=0.001)
 
     @pytest.mark.asyncio
     async def test_generic_exception_wraps_runtime_error(self, monkeypatch):
-        monkeypatch.setenv("MCP_TRANSPORT", "http")
+        monkeypatch.setenv("MCP_TRANSPORT", "sse")
         manager = _make_manager()
 
-        with patch.object(manager, "_open_http_session", side_effect=ConnectionRefusedError("refused")):
+        with patch.object(manager, "_open_sse_session", side_effect=ConnectionRefusedError("refused")):
             with pytest.raises(RuntimeError, match="Could not initialize MCP session"):
                 await manager.start_server_session()
 
     @pytest.mark.asyncio
-    async def test_http_client_uses_long_read_timeout_and_keepalive(self, monkeypatch):
-        monkeypatch.setenv("MCP_TRANSPORT", "http")
+    async def test_sse_client_uses_long_read_timeout(self, monkeypatch):
+        monkeypatch.setenv("MCP_TRANSPORT", "sse")
         monkeypatch.setenv("MCP_SERVER_HOST", "localhost")
         manager = _make_manager()
 
@@ -66,17 +65,14 @@ class TestStartServerSession:
         mock_session = AsyncMock()
         mock_session.__aenter__.return_value = mock_session
 
-        with patch("core_orchestrator.infrastructure.agent.mcp_client.httpx.AsyncClient") as mock_client_cls:
-            with patch("core_orchestrator.infrastructure.agent.mcp_client._streamable_http_client", return_value=mock_transport) as mock_streamable:
-                with patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession", return_value=mock_session):
-                    await manager.start_server_session()
+        with patch("core_orchestrator.infrastructure.agent.mcp_client._sse_client", return_value=mock_transport) as mock_streamable:
+            with patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession", return_value=mock_session):
+                await manager.start_server_session()
 
-        client_kwargs = mock_client_cls.call_args.kwargs
-        assert client_kwargs["timeout"].read == 180.0
-        assert client_kwargs["timeout"].connect == 10.0
-        assert client_kwargs["limits"].keepalive_expiry == 300.0
-        mock_streamable.assert_called_once()
-        assert mock_streamable.call_args.kwargs["http_client"] is mock_client_cls.return_value
+        assert mock_streamable.call_args.kwargs["timeout"] == 600.0
+        assert mock_streamable.call_args.kwargs["sse_read_timeout"] == 600.0
+        assert mock_streamable.call_args.args[0] == "http://localhost:8080/sse"
+        assert mock_session.initialize.await_count == 1
 
 
 # ---------------------------------------------------------------------------

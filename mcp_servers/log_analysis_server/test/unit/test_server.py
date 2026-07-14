@@ -8,6 +8,7 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 from unittest.mock import AsyncMock, patch, MagicMock
+import os
 
 import mcp_servers.log_analysis_server.server as srv
 
@@ -186,3 +187,15 @@ async def test_get_threat_context_returns_error_dict_on_exception():
     assert result["source_ip"] == "10.0.0.1"
     assert result["history"] == []
     assert result["alerts_found"] == 0
+
+
+@pytest.mark.asyncio
+async def test_main_starts_sse_transport():
+    with patch.dict(os.environ, {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "0.0.0.0", "MCP_SERVER_PORT": "8080"}):
+        with patch("mcp_servers.log_analysis_server.server.get_internal_token", return_value="token"):
+            with patch("mcp_servers.log_analysis_server.server.server.run_http_async", new=AsyncMock()) as mock_run:
+                with patch("mcp_servers.log_analysis_server.llm_providers.close_all_providers", new=AsyncMock()):
+                    await srv.main()
+
+    mock_run.assert_awaited_once()
+    assert mock_run.await_args.kwargs["transport"] == "sse"

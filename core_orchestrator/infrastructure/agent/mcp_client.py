@@ -1,39 +1,35 @@
 """MCP client for the Core Orchestrator.
 
-Uses the MCP Python SDK directly over streamable HTTP so the core can talk to the
-`mcp_server` container without pulling the FastMCP client extras that conflict
-with the FastAPI stack.
+Uses the MCP Python SDK over native SSE so the core can talk to the
+`mcp_server` container without relying on streamable HTTP keep-alives.
 """
 
 import asyncio
+from datetime import timedelta
 import logging
 import os
 from typing import Any, Dict, Optional
-
-import httpx
 
 try:
     from mcp import ClientSession
 except ImportError:
     from mcp.client.session import ClientSession
 try:
-    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+    from mcp.client.sse import sse_client as _sse_client
 except ImportError:
-    from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+    from mcp.client.sse import sse_client as _sse_client
 
 
 logger = logging.getLogger("core_orchestrator.mcp_client")
 
-_MCP_HTTP_CONNECT_TIMEOUT_SECONDS = 10.0
-_MCP_HTTP_READ_TIMEOUT_SECONDS = 180.0
-_MCP_HTTP_WRITE_TIMEOUT_SECONDS = 180.0
-_MCP_HTTP_POOL_TIMEOUT_SECONDS = 180.0
-_MCP_HTTP_KEEPALIVE_EXPIRY_SECONDS = 300.0
+_MCP_SSE_CONNECT_TIMEOUT_SECONDS = 1200.0
+_MCP_SSE_READ_TIMEOUT_SECONDS = 1200.0
 _MCP_SESSION_HEARTBEAT_TIMEOUT_SECONDS = 15.0
+_MCP_SERVER_SSE_PATH = "/sse"
 
 
 class MCPClientManager:
-    """Manages a persistent MCP session against the HTTP MCP server."""
+    """Manages a persistent MCP session against the MCP SSE server."""
 
     def __init__(self, server_script_path: Optional[str] = None, max_retries: int = 3):
         self.server_script_path = server_script_path
@@ -44,29 +40,26 @@ class MCPClientManager:
         self._call_semaphore = asyncio.Semaphore(10)
         self._max_retries = max_retries
 
-    def _build_http_client(self, headers: dict[str, str]) -> httpx.AsyncClient:
-        """Build the MCP HTTP client with long-lived read and keep-alive settings."""
-        timeout = httpx.Timeout(
-            connect=_MCP_HTTP_CONNECT_TIMEOUT_SECONDS,
-            read=_MCP_HTTP_READ_TIMEOUT_SECONDS,
-            write=_MCP_HTTP_WRITE_TIMEOUT_SECONDS,
-            pool=_MCP_HTTP_POOL_TIMEOUT_SECONDS,
-        )
-        limits = httpx.Limits(
-            max_connections=100,
-            max_keepalive_connections=20,
-            keepalive_expiry=_MCP_HTTP_KEEPALIVE_EXPIRY_SECONDS,
-        )
-        return httpx.AsyncClient(headers=headers, timeout=timeout, limits=limits)
+    def _build_sse_url(self) -> str:
+        host = os.getenv("MCP_SERVER_HOST") or "mcp_server"
+        port = int(os.getenv("MCP_SERVER_PORT") or 8080)
+        sse_path = os.getenv("MCP_SERVER_SSE_PATH") or _MCP_SERVER_SSE_PATH
+        if not sse_path.startswith("/"):
+            sse_path = f"/{sse_path}"
+        return f"http://{host}:{port}{sse_path}"
 
-    async def _open_http_session(self, url: str) -> ClientSession:
+    async def _open_sse_session(self, url: str) -> ClientSession:
         headers = {}
         mcp_token = os.getenv("MCP_INTERNAL_TOKEN")
         if mcp_token:
             headers["Authorization"] = f"Bearer {mcp_token}"
 
-        http_client = self._build_http_client(headers)
-        self._transport_cm = _streamable_http_client(url, http_client=http_client)
+        self._transport_cm = _sse_client(
+            url,
+            headers=headers,
+            timeout=_MCP_SSE_CONNECT_TIMEOUT_SECONDS,
+            sse_read_timeout=_MCP_SSE_READ_TIMEOUT_SECONDS,
+        )
         transport = await self._transport_cm.__aenter__()
 
         try:
@@ -74,26 +67,27 @@ class MCPClientManager:
         except Exception as exc:
             raise RuntimeError(f"Unexpected MCP transport payload from {url}: {transport!r}") from exc
 
-        self._session_cm = ClientSession(read_stream, write_stream)
+        self._session_cm = ClientSession(
+            read_stream,
+            write_stream,
+            read_timeout_seconds=timedelta(seconds=_MCP_SSE_READ_TIMEOUT_SECONDS),
+        )
         self._session = await self._session_cm.__aenter__()
         await self._session.initialize()
         return self._session
 
-    async def start_server_session(self, timeout: float = 60.0) -> ClientSession:
-        transport_mode = (os.getenv("MCP_TRANSPORT") or "http").lower()
+    async def start_server_session(self, timeout: float = 600.0) -> ClientSession:
+        transport_mode = (os.getenv("MCP_TRANSPORT") or "sse").lower()
         logger.info("Starting MCP session in transport mode: %s", transport_mode)
 
-        if transport_mode != "http":
-            raise RuntimeError(
-                "Only HTTP transport is supported in the Dockerized core. Set MCP_TRANSPORT=http.")
+        if transport_mode != "sse":
+            raise RuntimeError("Only SSE transport is supported in the Dockerized core. Set MCP_TRANSPORT=sse.")
 
-        host = os.getenv("MCP_SERVER_HOST") or "mcp_server"
-        port = int(os.getenv("MCP_SERVER_PORT") or 8080)
-        url = f"http://{host}:{port}/mcp"
+        url = self._build_sse_url()
         logger.info("Configuring MCP client to connect to %s", url)
 
         try:
-            return await asyncio.wait_for(self._open_http_session(url), timeout=timeout)
+            return await asyncio.wait_for(self._open_sse_session(url), timeout=timeout)
         except asyncio.TimeoutError as exc:
             raise RuntimeError(f"Timeout initializing MCP session after {timeout}s") from exc
         except Exception as exc:
@@ -104,7 +98,10 @@ class MCPClientManager:
         """Verifica si la sesión existe y sigue respondiendo. Si no, intenta reconectar."""
         if self._session:
             try:
-                await asyncio.wait_for(self._session.list_tools(), timeout=_MCP_SESSION_HEARTBEAT_TIMEOUT_SECONDS)
+                await asyncio.wait_for(
+                    self._session.list_tools(),
+                    timeout=_MCP_SESSION_HEARTBEAT_TIMEOUT_SECONDS,
+                )
                 return self._session
             except Exception:
                 logger.warning("La sesión MCP existente no responde (Timeout/Disconnect). Limpiando e intentando reconexión...")
