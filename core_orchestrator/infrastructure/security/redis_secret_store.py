@@ -35,7 +35,7 @@ class RedisSecretStore:
     async def get_secret(self, public_key: str) -> Optional[str]:
         """
         Recupera un secreto por su llave pública desde Redis.
-        Incluye un fallback para el entorno local de desarrollo.
+        Retorna None si no existe en la base de datos.
         """
         key = f"{self.SECRET_PREFIX}{public_key}"
         secret = await self.redis.get(key)
@@ -43,11 +43,7 @@ class RedisSecretStore:
         if secret:
             return secret
 
-        # Fallback controlado exclusivo para desarrollo local simulado
-        if public_key == "victim-app-01":
-            logger.warning(f"Clave '{public_key}' no encontrada en Redis. Usando secreto por defecto de desarrollo.")
-            return "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
-
+        logger.error(f"Secreto no encontrado en Redis para public_key: {public_key}. Asegúrate de que fue provisionado.")
         return None
 
     async def set_secret(self, public_key: str, secret: str) -> None:

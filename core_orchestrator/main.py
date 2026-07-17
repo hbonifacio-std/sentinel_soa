@@ -12,11 +12,13 @@ from typing import Any, Awaitable, Callable
 from fastapi import FastAPI, status, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.container import get_container
+from core_orchestrator.infrastructure.api.security_headers import SecurityHeadersMiddleware
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
     analytics, auth, clients, forensic, rules as refactored_rules_router,
@@ -87,6 +89,20 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
+# ============================================================================
+# Security Middleware Stack (Order matters!)
+# ============================================================================
+
+# 1. Trusted Host Middleware - Prevent Host Header attacks
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=orchestrator_settings.get_cors_origins() + ["localhost", "127.0.0.1"]
+)
+
+# 2. Security Headers Middleware - Add comprehensive security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 3. CORS Middleware (already configured above)
 # Configurable CORS security middleware
 cors_origins = orchestrator_settings.get_cors_origins()
 logger.info(f"CORS allowed origins: {cors_origins}")

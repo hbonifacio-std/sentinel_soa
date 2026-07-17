@@ -28,12 +28,13 @@ async def test_login_issues_token_using_injected_token_service() -> None:
     user = _build_user()
     user_provider.authenticate_user.return_value = user
     token_service.create_access_token.return_value = ("jwt-token", "jti-1")
+    token_service.create_refresh_token.return_value = "refresh-jwt-token"
 
     service = AuthService(user_provider, token_blacklist_repository, token_service, ttl)
 
     result = await service.login("alice", "correct-password")
 
-    assert result == (user, "jwt-token")
+    assert result == (user, "jwt-token", "refresh-jwt-token")
     token_service.create_access_token.assert_called_once()
     assert token_service.create_access_token.call_args.kwargs == {
         "user_id": "u-1",

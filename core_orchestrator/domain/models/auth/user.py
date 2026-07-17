@@ -45,9 +45,11 @@ class UserResponse(UserBase):
 
 
 class TokenResponse(BaseModel):
-    """JWT token response."""
+    """JWT token response with refresh token support."""
     access_token: str
+    refresh_token: str | None = Field(default=None, description="Refresh token for obtaining new access token (HttpOnly cookie, also in response)")
     token_type: str = "bearer"
+    expires_in: int = Field(default=3600, description="Access token expiration in seconds")
     user: UserResponse
     client_api_key: str | None = Field(default=None, description="API key for the user's tenant (for direct API calls)")
 
@@ -60,3 +62,7 @@ class TokenPayload(BaseModel):
     exp: int  # expiration timestamp
     jti: str | None = None
 
+
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request model."""
+    refresh_token: str = Field(..., description="Refresh token to obtain new access token")

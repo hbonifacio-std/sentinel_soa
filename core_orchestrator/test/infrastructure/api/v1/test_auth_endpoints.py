@@ -27,12 +27,20 @@ def client(mock_auth_service):
     app = FastAPI()
     app.include_router(router)
 
+    # Mock the find_one method to be async and conditional
+    async def mock_find_one(filter_dict, *args, **kwargs):
+        # If client_id is non-existent, return None
+        if filter_dict.get("client_id") == "non-existent-client":
+            return None
+        # Otherwise return the valid tenant
+        return {
+            "client_id": "client-1",
+            "is_active": True,
+            "api_key": "tenant-api-key",
+        }
+    
     authorized_clients = MagicMock()
-    authorized_clients.find_one = AsyncMock(return_value={
-        "client_id": "client-1",
-        "is_active": True,
-        "api_key": "tenant-api-key",
-    })
+    authorized_clients.find_one = mock_find_one
     auth_db = MagicMock()
     auth_db.authorized_telemetry_clients = authorized_clients
     db_manager = MagicMock()
@@ -46,7 +54,7 @@ def client(mock_auth_service):
     app.dependency_overrides.clear()
 
 def test_login_for_access_token_success(client, mock_auth_service):
-    mock_auth_service.login.return_value = (dummy_user, "test-access-token")
+    mock_auth_service.login.return_value = (dummy_user, "test-access-token", "test-refresh-token")
     
     response = client.post("/token", data={"username": "alice", "password": "password"})
     assert response.status_code == 200
@@ -54,6 +62,8 @@ def test_login_for_access_token_success(client, mock_auth_service):
     assert data["access_token"] == "test-access-token"
     assert data["user"]["username"] == "alice"
     assert data["client_api_key"] == "tenant-api-key"
+    # Verify refresh_token is in HttpOnly cookie
+    assert "refresh_token" not in data  # HttpOnly cookie, not in body
 
 def test_login_for_access_token_failed(client, mock_auth_service):
     mock_auth_service.login.return_value = None
@@ -73,7 +83,7 @@ def test_login_for_access_token_missing_client_id(client, mock_auth_service):
         client_id=None,
         hashed_password="hashed_pwd",
     )
-    mock_auth_service.login.return_value = (user_without_client, "test-access-token")
+    mock_auth_service.login.return_value = (user_without_client, "test-access-token", "test-refresh-token")
 
     response = client.post("/token", data={"username": "bob", "password": "password"})
     assert response.status_code == 401
@@ -90,7 +100,7 @@ def test_login_for_access_token_invalid_client_id(client, mock_auth_service):
         client_id="non-existent-client",
         hashed_password="hashed_pwd",
     )
-    mock_auth_service.login.return_value = (user_invalid_client, "test-access-token")
+    mock_auth_service.login.return_value = (user_invalid_client, "test-access-token", "test-refresh-token")
 
     app = client.app
     db_manager = app.dependency_overrides[get_db_manager]()

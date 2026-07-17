@@ -6,7 +6,8 @@ import hmac
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set, List
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,123 @@ logger = logging.getLogger(__name__)
 _auth_header_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
     'auth_header', default=None
 )
+
+# Context variable for user role/permissions
+_user_role_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    'user_role', default=None
+)
+
+
+class UserRole(str, Enum):
+    """User roles with granular tool permissions."""
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    VIEWER = "viewer"
+
+
+# ============================================================================
+# TOOL ACCESS CONTROL - Role-Based Access to Tools
+# ============================================================================
+
+TOOL_PERMISSIONS: Dict[str, Set[UserRole]] = {
+    # Tool name: Set of allowed roles
+    
+    # Read-only analysis tools (open to analyst and above)
+    "analyze_web_activity": {UserRole.ADMIN, UserRole.ANALYST},
+    "analyze_api_logs": {UserRole.ADMIN, UserRole.ANALYST},
+    "analyze_threat_patterns": {UserRole.ADMIN, UserRole.ANALYST},
+    "search_logs": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    
+    # Export tools (admin + analyst with restrictions)
+    "export_reports": {UserRole.ADMIN, UserRole.ANALYST},
+    "export_raw_data": {UserRole.ADMIN},  # Only admin can export raw
+    
+    # Administrative tools (admin only)
+    "configure_rules": {UserRole.ADMIN},
+    "manage_users": {UserRole.ADMIN},
+    "audit_log": {UserRole.ADMIN},
+    
+    # Viewer-safe tools
+    "list_reports": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "view_report": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+}
+
+
+def set_user_role(role: Optional[str]) -> None:
+    """Set the current user role in context."""
+    _user_role_context.set(role)
+
+
+def get_user_role() -> Optional[str]:
+    """Get the current user role from context."""
+    return _user_role_context.get()
+
+
+def check_tool_permission(tool_name: str, user_role: Optional[str] = None) -> bool:
+    """
+    Check if user has permission to access a tool.
+    
+    Args:
+        tool_name: Name of the tool to check
+        user_role: User role (if None, uses context)
+    
+    Returns:
+        True if user has permission, False otherwise
+    """
+    if user_role is None:
+        user_role = get_user_role()
+    
+    if not user_role:
+        logger.warning(f"No user role set for tool access check: {tool_name}")
+        return False
+    
+    # Get allowed roles for this tool
+    allowed_roles = TOOL_PERMISSIONS.get(tool_name, set())
+    
+    if not allowed_roles:
+        logger.warning(f"Tool not registered in TOOL_PERMISSIONS: {tool_name}")
+        return False
+    
+    # Check if user role is in allowed roles
+    try:
+        user_role_enum = UserRole(user_role.lower())
+        is_allowed = user_role_enum in allowed_roles
+        
+        if not is_allowed:
+            logger.warning(
+                f"Access denied: user role '{user_role}' not in {allowed_roles} "
+                f"for tool '{tool_name}'"
+            )
+        return is_allowed
+    except ValueError:
+        logger.error(f"Invalid user role: {user_role}")
+        return False
+
+
+def list_available_tools(user_role: Optional[str] = None) -> List[str]:
+    """
+    List tools available to the user based on their role.
+    
+    Args:
+        user_role: User role (if None, uses context)
+    
+    Returns:
+        List of tool names the user can access
+    """
+    if user_role is None:
+        user_role = get_user_role()
+    
+    if not user_role:
+        return []
+    
+    try:
+        user_role_enum = UserRole(user_role.lower())
+        return [
+            tool for tool, allowed_roles in TOOL_PERMISSIONS.items()
+            if user_role_enum in allowed_roles
+        ]
+    except ValueError:
+        return []
 
 
 def get_internal_token() -> Optional[str]:
@@ -31,11 +149,33 @@ def get_auth_header() -> Optional[str]:
     return _auth_header_context.get()
 
 
-def validate_bearer_token(auth_header: Optional[str]) -> bool:
-    """Validate Bearer token from Authorization header.
+def extract_role_from_token(token_claims: Dict[str, Any]) -> Optional[str]:
+    """
+    Extract user role from JWT token claims.
+    
+    Args:
+        token_claims: Decoded JWT claims dictionary
+    
+    Returns:
+        User role string or None if not found
+    """
+    role = token_claims.get("role")
+    if role:
+        set_user_role(role)
+        logger.info(f"User role set from token: {role}")
+    return role
+
+
+def validate_bearer_token_with_role(
+    auth_header: Optional[str],
+    token_claims: Optional[Dict[str, Any]] = None
+) -> bool:
+    """
+    Validate Bearer token and extract user role.
     
     Args:
         auth_header: The Authorization header value (e.g., "Bearer <token>")
+        token_claims: Decoded JWT claims (optional, for role extraction)
     
     Returns:
         True if token is valid, False otherwise.
@@ -57,7 +197,13 @@ def validate_bearer_token(auth_header: Optional[str]) -> bool:
         return False
     
     # Constant-time comparison to prevent timing attacks
-    return hmac.compare_digest(token, expected_token)
+    is_valid = hmac.compare_digest(token, expected_token)
+    
+    # Extract and set user role if token claims provided
+    if is_valid and token_claims:
+        extract_role_from_token(token_claims)
+    
+    return is_valid
 
 
 def sign_rules_bundle(rules_bundle: Dict[str, Any]) -> Dict[str, Any]:

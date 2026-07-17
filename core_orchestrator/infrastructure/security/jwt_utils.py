@@ -108,6 +108,60 @@ def create_access_token(
     return encoded_jwt, jti
 
 
+def create_refresh_token(
+        user_id: str,
+        expires_delta: Optional[timedelta] = None,
+) -> str:
+    """
+    Create a JWT refresh token (longer-lived than access token).
+    Used to obtain new access tokens without re-authenticating.
+    """
+    if expires_delta is None:
+        expires_delta = timedelta(days=7)  # Default 7 days
+
+    expire = datetime.now(timezone.utc) + expires_delta
+    jti = str(uuid.uuid4())
+
+    payload = {
+        "sub": user_id,
+        "type": "refresh",
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "jti": jti,
+    }
+
+    encoded_jwt = jwt.encode(
+        payload,
+        settings.jwt_secret_key.get_secret_value(),
+        algorithm=settings.jwt_algorithm,
+    )
+
+    logger.info(f"Refresh token created for user: {user_id} (jti: {jti})")
+    return encoded_jwt
+
+
+def verify_refresh_token(token: str) -> Optional[dict]:
+    """
+    Verify and decode refresh token. Returns payload if valid, None otherwise.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key.get_secret_value(),
+            algorithms=[settings.jwt_algorithm],
+        )
+        
+        # Verify it's a refresh token
+        if payload.get("type") != "refresh":
+            logger.warning("Token is not a refresh token")
+            return None
+            
+        return payload
+    except jwt.PyJWTError as e:
+        logger.warning(f"Invalid refresh token: {e}")
+        return None
+
+
 def decode_token(token: str) -> Optional[TokenPayload]:
     """
     Decode and validate JWT token using PyJWT.

@@ -55,12 +55,13 @@ class TestGetSecret:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_secret_fallback_victim_app(self, secret_store):
-        """The hardcoded dev fallback for 'victim-app-01' must return the default secret."""
+    async def test_get_secret_no_fallback_requires_redis(self, secret_store):
+        """Security fix: Removed hardcoded fallback. Missing secrets must return None (require Redis provisioning)."""
         store, mock_redis = secret_store
         mock_redis.get.return_value = None
         result = await store.get_secret("victim-app-01")
-        assert result == "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
+        # SECURITY: No fallback, secrets must be provisioned in Redis
+        assert result is None
 
 
 # ---------------------------------------------------------------------------

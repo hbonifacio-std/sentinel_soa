@@ -15,6 +15,12 @@ from typing import Optional, List, Tuple
 from core_orchestrator.domain.ports.auth.tenant_repository import TenantRepository
 from core_orchestrator.domain.models.auth.tenant import TenantInDB, TenantCreate, TenantResponseWithKey
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
+from core_orchestrator.infrastructure.security.api_key_utils import (
+    hash_api_key,
+    verify_api_key,
+    is_bcrypt_hash,
+    is_sha256_hash,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +53,8 @@ class TenantService:
         """
         # Generate secure API key
         api_key_plaintext = f"sk_{secrets.token_urlsafe(32)}"
-        api_key_hash = hashlib.sha256(api_key_plaintext.encode()).hexdigest()
+        # Hash with bcrypt (rounds=12 for security)
+        api_key_hash = hash_api_key(api_key_plaintext, rounds=12)
         
         # Create tenant
         tenant_in_db = await self.tenant_repository.create(
@@ -82,11 +89,28 @@ class TenantService:
         Returns:
             Tenant if key is valid and active, None otherwise
         """
-        api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        tenant = await self.tenant_repository.get_by_api_key_hash(api_key_hash)
+        # Retrieve tenant by client_id first (if available)
+        # Then verify the API key using constant-time comparison
+        tenants = await self.tenant_repository.list_all(include_inactive=False)
         
-        if tenant and tenant.is_active:
-            return tenant
+        for tenant in tenants:
+            # Support both SHA256 (legacy) and bcrypt (new) formats
+            if is_bcrypt_hash(tenant.api_key_hash):
+                # New bcrypt format - use constant-time comparison
+                if verify_api_key(api_key, tenant.api_key_hash):
+                    logger.info(f"API key verified for tenant: {tenant.client_id}")
+                    return tenant
+            elif is_sha256_hash(tenant.api_key_hash):
+                # Legacy SHA256 format - still supported but should migrate
+                api_key_sha256 = hashlib.sha256(api_key.encode()).hexdigest()
+                if api_key_sha256 == tenant.api_key_hash:
+                    logger.warning(
+                        f"Legacy SHA256 hash detected for tenant: {tenant.client_id}. "
+                        "Please migrate to bcrypt on next authentication."
+                    )
+                    return tenant
+        
+        logger.warning(f"No tenant found for API key")
         return None
 
     async def list_tenants(self, include_inactive: bool = False) -> List[TenantInDB]:
