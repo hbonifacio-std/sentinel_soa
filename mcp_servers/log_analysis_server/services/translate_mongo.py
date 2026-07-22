@@ -15,20 +15,50 @@ class TranslateMongo:
     This class now uses the centralized prompt factory for prompt generation.
     """
 
-    def __init__(self, model_id: str, provider: Optional[LLMProviderInterface] = None):
-        self.model_id = model_id
-        model_def = server_settings.available_models.get(self.model_id)
-        if not model_def:
-            raise ValueError(f"Model ID '{self.model_id}' not found in the available models catalog.")
-        
-        self.provider_name = model_def.provider
-        self._provider = provider or self._create_default_provider()
-        logger.info(f"TranslateMongo initialized with provider: {self._provider.__class__.__name__}")
+    def __init__(
+        self,
+        model_id: Optional[str] = None,
+        provider: Optional[LLMProviderInterface] = None,
+        provider_override: Optional[dict[str, Any]] = None,
+    ):
+        self.provider_override = provider_override
+        if provider_override:
+            self.provider_name = provider_override["provider"]
+            self._provider = provider or self._create_override_provider(provider_override)
+            self.model_id = provider_override.get("model_id", "override")
+        else:
+            self.model_id = model_id or server_settings.default_model_id
+            model_def = server_settings.available_models.get(self.model_id)
+            if not model_def:
+                raise ValueError(f"Model ID '{self.model_id}' not found in the available models catalog.")
+            self.provider_name = model_def.provider
+            self._provider = provider or self._create_default_provider()
+
+        logger.info(f"TranslateMongo initialized with provider: {self._provider.__class__.__name__} (model: {self.provider_name})")
+
+    def _create_override_provider(self, override: dict[str, Any]) -> LLMProviderInterface:
+        provider_name = override["provider"]
+        model_name = override["model_name"]
+        max_output_tokens = override.get("max_output_tokens")
+        max_input_tokens = override.get("max_input_tokens")
+
+        config = server_settings.get_provider_config()
+        if override.get("api_key"):
+            config[f"{provider_name}_api_key"] = override["api_key"]
+        if override.get("base_url"):
+            config[f"{provider_name}_base_url"] = override["base_url"]
+
+        return create_llm_provider(
+            provider_name=provider_name,
+            model_name=model_name,
+            max_output_tokens=max_output_tokens,
+            max_input_tokens=max_input_tokens,
+            config=config,
+        )
 
     def _create_default_provider(self) -> LLMProviderInterface:
         """Creates the default LLM provider from settings."""
         model_def = server_settings.available_models.get(self.model_id)
-        # This check is technically redundant due to the __init__ check, but good for safety
         if not model_def:
             raise ValueError(f"Model ID '{self.model_id}' not found in the available models catalog.")
 

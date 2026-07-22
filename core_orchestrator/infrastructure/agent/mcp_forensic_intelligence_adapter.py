@@ -14,10 +14,18 @@ class MCPForensicIntelligenceAdapter(ForensicIntelligencePort):
     def __init__(self, mcp_manager: MCPClientManager):
         self.mcp_manager = mcp_manager
 
-    async def generate_mongo_query_from_nl(self, query: str, source_id: Optional[str]) -> dict[str, Any]:
+    async def generate_mongo_query_from_nl(
+        self,
+        query: str,
+        source_id: Optional[str],
+        provider_override: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        args = {"query": query, "source_id": source_id}
+        if provider_override:
+            args["provider_override"] = provider_override
         raw_result = await self.mcp_manager.call_tool(
             tool_name="generate_mongo_query_from_nl",
-            arguments={"query": query, "source_id": source_id},
+            arguments=args,
         )
         parsed = self._parse_result(raw_result)
         return parsed if isinstance(parsed.get("mongo_filter"), dict) else {"mongo_filter": {}}
@@ -28,15 +36,19 @@ class MCPForensicIntelligenceAdapter(ForensicIntelligencePort):
         source_id: Optional[str],
         total_matches: int,
         rows: list[dict[str, Any]],
+        provider_override: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
+        args = {
+            "query": query,
+            "source_id": source_id,
+            "total_matches": total_matches,
+            "rows": rows,
+        }
+        if provider_override:
+            args["provider_override"] = provider_override
         raw_result = await self.mcp_manager.call_tool(
             tool_name="generate_forensic_report_from_logs",
-            arguments={
-                "query": query,
-                "source_id": source_id,
-                "total_matches": total_matches,
-                "rows": rows,
-            },
+            arguments=args,
         )
         return self._parse_result(raw_result)
 

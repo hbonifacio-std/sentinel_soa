@@ -112,6 +112,12 @@ class OrchestratorSettings(BaseSettings):
         description="Comma-separated list of allowed CORS origins."
     )
 
+    tenant_api_key_encryption_key: SecretStr = Field(
+        default=SecretStr("3zK-aJ_xX6Y-y1H4WjZ7eR8k9L0m1N2o3P4q5R6s7T8="),
+        validation_alias="TENANT_API_KEY_ENCRYPTION_KEY",
+        description="Fernet key (base64, 32 bytes) for encrypting tenant AI provider API keys."
+    )
+
     bootstrap_on_startup: bool = Field(
         default=True,
         validation_alias="BOOTSTRAP_ON_STARTUP",

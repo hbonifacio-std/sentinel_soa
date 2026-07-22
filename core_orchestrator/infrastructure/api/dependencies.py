@@ -59,6 +59,9 @@ def get_user_service(container: Container = Depends(get_container)) -> UserServi
 def get_tenant_service(container: Container = Depends(get_container)) -> TenantService:
     return container.tenant_service
 
+def get_tenant_provider_service(container: Container = Depends(get_container)):
+    return container.tenant_provider_service
+
 def get_forensic_service(container: Container = Depends(get_container)) -> ForensicService:
     return container.forensic_service
 

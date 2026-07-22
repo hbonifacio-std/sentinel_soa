@@ -2,19 +2,25 @@ import { FormEvent, useMemo, useState } from 'react';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useForensicAnalysis } from '@/features/forensic/hooks/useForensicAnalysis';
 import { useForensicHistory, useForensicReport } from '@/features/forensic/hooks/useForensicHistory';
+import { useForensicModels } from '@/features/forensic/hooks/useForensicModels';
 import { useSentinelStore } from '@/store/sentinelStore';
 import { ForensicHighlights } from './components/ForensicHighlights';
 
 export default function ForensicPage() {
   const sourceId = useSentinelStore((state) => state.activeSourceId);
   const [query, setQuery] = useState('');
+  const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
 
   const historyQuery = useForensicHistory(sourceId, page, limit);
   const reportQuery = useForensicReport(selectedReportId);
+  const modelsQuery = useForensicModels();
   const analyzeMutation = useForensicAnalysis(sourceId, page, limit);
+
+  const availableModels = modelsQuery.data?.available_models ?? {};
+  const defaultModelId = modelsQuery.data?.default_model_id ?? 'default';
 
   const selectedReport = useMemo(() => {
     if (reportQuery.data) {
@@ -35,6 +41,7 @@ export default function ForensicPage() {
       source_id: sourceId,
       page: 1,
       limit: 25,
+      model_id: selectedModelId || undefined,
     });
     setSelectedReportId(report.analysis_id);
   }
@@ -46,9 +53,25 @@ export default function ForensicPage() {
     <div className="grid min-h-[70vh] grid-cols-1 gap-4 xl:grid-cols-[340px_1fr]">
       <section className="space-y-3 rounded border border-surface-border bg-surface-elevated/40 p-4">
         <h2 className="text-sm font-semibold text-slate-100">Analisis Forense</h2>
-        <form className="space-y-2" onSubmit={(event) => void handleSubmit(event)}>
+        <form className="space-y-3" onSubmit={(event) => void handleSubmit(event)}>
+          <div className="space-y-1">
+            <label className="text-xs font-medium text-slate-400">Modelo IA</label>
+            <select
+              className="w-full rounded border border-surface-border bg-slate-950/50 p-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              value={selectedModelId}
+              onChange={(e) => setSelectedModelId(e.target.value)}
+            >
+              <option value="">Default (Tenant: {defaultModelId})</option>
+              {Object.entries(availableModels).map(([id, m]) => (
+                <option key={id} value={id}>
+                  {id} ({m.provider} — {m.model_name})
+                </option>
+              ))}
+            </select>
+          </div>
+
           <textarea
-            className="min-h-20 w-full rounded border border-surface-border bg-slate-950/50 p-2 text-sm"
+            className="min-h-20 w-full rounded border border-surface-border bg-slate-950/50 p-2 text-sm text-slate-100"
             placeholder="Consulta forense (IP, URI, user agent, patron...)"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -123,10 +146,10 @@ export default function ForensicPage() {
         {!selectedReport ? <p className="text-sm text-slate-400">Selecciona un reporte del historial.</p> : null}
         {selectedReport ? (
           <>
-            <div className="grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-4">
               <div className="rounded border border-surface-border p-2">
                 <p className="text-slate-400">Consulta</p>
-                <p>{selectedReport.query}</p>
+                <p className="truncate">{selectedReport.query}</p>
               </div>
               <div className="rounded border border-surface-border p-2">
                 <p className="text-slate-400">Coincidencias</p>
@@ -135,6 +158,14 @@ export default function ForensicPage() {
               <div className="rounded border border-surface-border p-2">
                 <p className="text-slate-400">Fuente</p>
                 <p>{selectedReport.source_id ?? 'todas'}</p>
+              </div>
+              <div className="rounded border border-surface-border p-2">
+                <p className="text-slate-400">Modelo IA</p>
+                <p className="truncate text-cyan-300">
+                  {selectedReport.llm_model_used
+                    ? `${selectedReport.llm_provider_used}/${selectedReport.llm_model_used}`
+                    : 'Default Global'}
+                </p>
               </div>
             </div>
             <ForensicHighlights highlights={selectedReport.highlights} />

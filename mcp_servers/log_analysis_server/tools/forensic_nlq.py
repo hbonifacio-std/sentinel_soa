@@ -154,28 +154,48 @@ def _run_intelligent_sampling(rows: List[dict[str, Any]], query: str) -> Tuple[L
 async def _generate_llm_forensic_report(
     payload: ForensicReportInput,
     rows: list[dict[str, Any]],
-    system_context_note: Optional[str] = None
+    system_context_note: Optional[str] = None,
+    provider_override: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    model_id_to_use = payload.model_id or server_settings.default_model_id
+    if provider_override:
+        provider_name = provider_override["provider"]
+        model_name = provider_override["model_name"]
+        max_output_tokens = provider_override.get("max_output_tokens")
+        max_input_tokens = provider_override.get("max_input_tokens")
+        config = server_settings.get_provider_config()
+        if provider_override.get("api_key"):
+            config[f"{provider_name}_api_key"] = provider_override["api_key"]
+        if provider_override.get("base_url"):
+            config[f"{provider_name}_base_url"] = provider_override["base_url"]
 
-    model_def = server_settings.available_models.get(model_id_to_use)
-    if not model_def:
-        raise ValueError(f"Model ID '{model_id_to_use}' not found in the available models catalog.")
+        provider = create_llm_provider(
+            provider_name=provider_name,
+            model_name=model_name,
+            max_output_tokens=max_output_tokens,
+            max_input_tokens=max_input_tokens,
+            config=config,
+        )
+    else:
+        model_id_to_use = payload.model_id or server_settings.default_model_id
+        model_def = server_settings.available_models.get(model_id_to_use)
+        if not model_def:
+            raise ValueError(f"Model ID '{model_id_to_use}' not found in the available models catalog.")
 
-    provider = create_llm_provider(
-        provider_name=model_def.provider,
-        model_name=model_def.model_name,
-        max_output_tokens=model_def.max_output_tokens,
-        config=server_settings.get_provider_config(),
-        max_input_tokens=model_def.max_input_tokens,
-    )
-    
+        provider = create_llm_provider(
+            provider_name=model_def.provider,
+            model_name=model_def.model_name,
+            max_output_tokens=model_def.max_output_tokens,
+            config=server_settings.get_provider_config(),
+            max_input_tokens=model_def.max_input_tokens,
+        )
+        max_input_tokens = model_def.max_input_tokens
+
     prompt = build_forensic_prompt(
         payload,
         rows,
         provider_name=provider.provider_name,
         system_context_note=system_context_note,
-        max_input_tokens=model_def.max_input_tokens,
+        max_input_tokens=max_input_tokens,
     )
     logger.info("Sending prompt to LLM provider '%s' for forensic report generation.", provider.provider_name)
     response_text = await asyncio.wait_for(
@@ -189,6 +209,7 @@ async def _generate_llm_forensic_report(
 
 async def build_forensic_mongo_query(arguments: dict[str, Any]) -> dict[str, Any]:
     """Build a safe MongoDB filter from natural-language forensic intent using an LLM."""
+    provider_override = arguments.pop("provider_override", None)
     payload = ForensicQueryPlannerInput(**arguments)
     
     if not payload.query:
@@ -204,9 +225,9 @@ async def build_forensic_mongo_query(arguments: dict[str, Any]) -> dict[str, Any
         if "sentinel-translator-mongodb" in server_settings.available_models
         else server_settings.default_model_id
     )
-    logger.info("Using translator model: %s", translator_model_id)
+    logger.info("Using translator model: %s (override: %s)", translator_model_id, bool(provider_override))
 
-    translator = TranslateMongo(model_id=translator_model_id)
+    translator = TranslateMongo(model_id=translator_model_id, provider_override=provider_override)
     
     result = await translator.translate_query(
         query=payload.query,
@@ -236,6 +257,7 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
     - For a high volume of logs, it uses an intelligent sampling technique to distill
       the most critical events, ensuring an efficient and relevant analysis.
     """
+    provider_override = arguments.pop("provider_override", None)
     payload = ForensicReportInput(**arguments)
     rows = payload.rows
     system_context_note = None
@@ -262,6 +284,7 @@ async def generate_forensic_report(arguments: dict[str, Any]) -> dict[str, Any]:
             payload.model_copy(update={"model_id": model_id_to_use}),
             rows,
             system_context_note,
+            provider_override,
         )
         logger.info("Forensic LLM report generation completed")
         

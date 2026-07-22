@@ -133,6 +133,7 @@ async def execute_analyze_web_activity(
 
     try:
         model_id = arguments.pop("model_id", None)
+        provider_override = arguments.pop("provider_override", None)
         
         # Extract metadata that should NOT be sent to LLM analysis
         window_id = arguments.pop("window_id", None)
@@ -173,8 +174,8 @@ async def execute_analyze_web_activity(
         # Try LLM analysis, fallback to pure heuristics if it fails
         raw_assessment = None
         try:
-            # Instantiate the analyzer with the selected model
-            analyzer = LLMAnalyzer(model_id=model_id)
+            # Instantiate the analyzer with the selected model or provider_override
+            analyzer = LLMAnalyzer(model_id=model_id, provider_override=provider_override)
             logger.debug(f"Sending telemetry payload from {source_ip} to analyzer.")
 
             # We delegate telemetry and history directly to LLMAnalyzer

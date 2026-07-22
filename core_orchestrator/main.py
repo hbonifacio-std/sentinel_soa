@@ -24,7 +24,7 @@ from core_orchestrator.infrastructure.api.security_headers import SecurityHeader
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
     analytics, auth, clients, forensic, rules as refactored_rules_router,
-    telemetry as agent_telemetry, users, tenants
+    telemetry as agent_telemetry, users, tenants, tenant_providers
 )
 from core_orchestrator.infrastructure.config.config import orchestrator_settings
 from core_orchestrator.infrastructure.handlers.exceptions import (
@@ -132,6 +132,11 @@ app.include_router(
     tenants.router,
     prefix="/api/v1/tenants",
     tags=["Tenant Management"]
+)
+app.include_router(
+    tenant_providers.router,
+    prefix="/api/v1/tenants",
+    tags=["Tenant AI Provider Management"]
 )
 app.include_router(
     clients.router,

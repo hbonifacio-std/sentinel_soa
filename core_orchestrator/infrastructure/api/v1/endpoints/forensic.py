@@ -12,10 +12,28 @@ from core_orchestrator.domain.models.forensic.forensic_analysis import (
 )
 from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.domain.ports.forensic import ForensicServicePort
-from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+from core_orchestrator.infrastructure.api.dependencies import get_forensic_service, get_tenant_provider_service
 from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
 
 router = APIRouter()
+
+
+@router.get("/models")
+async def get_available_models_for_chat(
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
+    tenant_provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+):
+    """Devuelve los modelos disponibles para el tenant del usuario actual."""
+    models = await tenant_provider_service.get_available_models_for_tenant(
+        current_user.client_id
+    )
+    tenant = await tenant_provider_service._get_tenant(current_user.client_id)
+    default_model = tenant.default_log_analysis_model_id if tenant else None
+    return {
+        "default_model_id": default_model,
+        "available_models": models
+    }
 
 
 @router.post("/analyze", status_code=status.HTTP_201_CREATED)

@@ -45,40 +45,59 @@ def _extract_llm_decision_fields(raw: Dict[str, Any]) -> Dict[str, Any]:
 class LLMAnalyzer:
     """Encapsulates the LLM provider invocation logic.
 
-    This class is instantiated with a specific model definition and provides
-    an agnostic analysis method that works with any configured provider.
+    This class is instantiated with a specific model definition or provider_override
+    and provides an agnostic analysis method that works with any configured provider.
     """
 
-    def __init__(self, model_id: str):
-        """Initializes the analyzer with a specific model from the catalog.
+    def __init__(self, model_id: str = None, provider_override: Dict[str, Any] = None):
+        """Initializes the analyzer with a specific model or tenant provider_override.
 
         Args:
-            model_id: The identifier of the model to use (e.g., "ollama-mistral").
-
-        Raises:
-            ValueError: If the model_id is not found in the configuration.
+            model_id: Optional model identifier from settings catalog.
+            provider_override: Optional decrypted provider config from tenant settings.
         """
-        requested_model_id = model_id or settings.default_model_id
-        model_def = settings.available_models.get(requested_model_id)
+        if provider_override:
+            provider_name = provider_override["provider"]
+            model_name = provider_override["model_name"]
+            max_output_tokens = provider_override.get("max_output_tokens")
+            max_input_tokens = provider_override.get("max_input_tokens")
 
-        if not model_def:
-            logger.warning(
-                f"Model ID '{requested_model_id}' not found. "
-                f"Falling back to default model '{settings.default_model_id}'."
+            config = settings.get_provider_config()
+            if provider_override.get("api_key"):
+                config[f"{provider_name}_api_key"] = provider_override["api_key"]
+            if provider_override.get("base_url"):
+                config[f"{provider_name}_base_url"] = provider_override["base_url"]
+
+            self._provider = create_llm_provider(
+                provider_name=provider_name,
+                model_name=model_name,
+                max_output_tokens=max_output_tokens,
+                max_input_tokens=max_input_tokens,
+                config=config,
             )
-            requested_model_id = settings.default_model_id
+        else:
+            requested_model_id = model_id or settings.default_model_id
             model_def = settings.available_models.get(requested_model_id)
-            if not model_def:
-                raise ValueError(f"Default model ID '{settings.default_model_id}' not found in catalog.")
 
-        config = settings.get_provider_config()
-        self._provider = create_llm_provider(
-            provider_name=model_def.provider,
-            model_name=model_def.model_name,
-            max_output_tokens=model_def.max_output_tokens,
-            max_input_tokens=model_def.max_input_tokens,
-            config=config,
-        )
+            if not model_def:
+                logger.warning(
+                    f"Model ID '{requested_model_id}' not found. "
+                    f"Falling back to default model '{settings.default_model_id}'."
+                )
+                requested_model_id = settings.default_model_id
+                model_def = settings.available_models.get(requested_model_id)
+                if not model_def:
+                    raise ValueError(f"Default model ID '{settings.default_model_id}' not found in catalog.")
+
+            config = settings.get_provider_config()
+            self._provider = create_llm_provider(
+                provider_name=model_def.provider,
+                model_name=model_def.model_name,
+                max_output_tokens=model_def.max_output_tokens,
+                max_input_tokens=model_def.max_input_tokens,
+                config=config,
+            )
+
         logger.info(
             "LLMAnalyzer initialized with provider=%s model=%s",
             self._provider.provider_name,

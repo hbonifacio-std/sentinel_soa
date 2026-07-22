@@ -14,6 +14,10 @@ class ForensicAnalyzeRequest(BaseModel):
     client_id: Optional[str] = Field(default=None, min_length=1, max_length=100)
     page: int = Field(default=1, ge=1)
     limit: int = Field(default=25, ge=1, le=100)
+    model_id: Optional[str] = Field(
+        default=None,
+        description="ID del modelo a usar (de los modelos habilitados para el tenant)"
+    )
 
 
 class ForensicHistoryQuery(BaseModel):
@@ -37,6 +41,9 @@ class ForensicAnalysisRecord(BaseModel):
     highlights: list[str] = Field(default_factory=list)
     markdown_report: str
     sample_results: list[dict[str, Any]] = Field(default_factory=list)
+    llm_provider_used: Optional[str] = None
+    llm_model_used: Optional[str] = None
+    provider_source: Optional[str] = None
 
 
 class ForensicHistoryResponse(BaseModel):

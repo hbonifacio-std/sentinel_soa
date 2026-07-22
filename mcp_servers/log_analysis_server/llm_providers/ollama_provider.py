@@ -38,7 +38,7 @@ class OllamaProvider(LLMProviderInterface):
     """
 
     _PROVIDER_NAME = "ollama"
-    _TIMEOUT_SECONDS = 900  # 15 minutes by default
+    _TIMEOUT_SECONDS = 1800  # 30 minutes by default
 
     def __init__(self, *, model_name: str, base_url: str, timeout: Optional[int] = None):
         """

@@ -27,6 +27,7 @@ export const forensicKeys = {
   history: (sourceId: string | null, page: number, limit: number) =>
     [...forensicKeys.all, 'history', { sourceId, page, limit }] as const,
   report: (analysisId: string) => [...forensicKeys.all, 'report', analysisId] as const,
+  models: () => [...forensicKeys.all, 'models'] as const,
 };
 
 

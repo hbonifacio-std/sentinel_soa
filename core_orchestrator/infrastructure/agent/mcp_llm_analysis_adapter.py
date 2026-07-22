@@ -7,7 +7,7 @@ from core_orchestrator.domain.ports.shared.llm_analysis_port import LlmAnalysisP
 from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
 
 logger = logging.getLogger(__name__)
-_MCP_TOOL_TIMEOUT_S = 300.0
+_MCP_TOOL_TIMEOUT_S = 1800.0
 
 
 class MCPLlmAnalysisAdapter(LlmAnalysisPort):

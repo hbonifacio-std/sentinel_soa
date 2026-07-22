@@ -107,9 +107,15 @@ def _build_safe_analysis_result(
 
 
 class AnalysisService(AnalysisServicePort):
-    def __init__(self, llm_analysis_port: LlmAnalysisPort, rules_engine_service: RulesEngineService):
+    def __init__(
+        self,
+        llm_analysis_port: LlmAnalysisPort,
+        rules_engine_service: RulesEngineService,
+        tenant_provider_service: Any = None,
+    ):
         self.llm_analysis_port = llm_analysis_port
         self.rules_engine_service = rules_engine_service
+        self.tenant_provider_service = tenant_provider_service
 
     async def analyze_activity(self, telemetry_payload: Dict[str, Any]) -> Dict[str, Any]:
         """Calls the MCP to analyze web activity and returns a sanitized result."""
@@ -141,6 +147,15 @@ class AnalysisService(AnalysisServicePort):
             "security_state_features",
         }
         tool_arguments = {k: v for k, v in telemetry_payload.items() if k in allowed_fields}
+
+        client_id = telemetry_payload.get("client_id")
+        if client_id and self.tenant_provider_service:
+            try:
+                provider_override = await self.tenant_provider_service.get_default_provider_config(client_id)
+                if provider_override:
+                    tool_arguments["provider_override"] = provider_override
+            except Exception as e:
+                logger.warning(f"Could not resolve default provider_override for client_id {client_id}: {e}")
 
         rules_bundle = await self.rules_engine_service.get_active_rules(
             client_id=telemetry_payload.get("client_id")

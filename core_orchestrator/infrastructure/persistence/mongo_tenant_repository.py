@@ -117,3 +117,135 @@ class MongoTenantRepository(TenantRepository):
     async def ensure_indexes(self) -> None:
         """Ensure unique indexes required by the tenants collection."""
         await self.collection.create_index("client_id", unique=True)
+        await self.collection.create_index([("client_id", 1), ("ai_providers.provider", 1)])
+
+    async def update_provider(self, client_id: str, provider_config: dict) -> Optional[TenantInDB]:
+        """Add or update an AI provider configuration for a tenant."""
+        now = datetime.now(timezone.utc)
+        # Pull existing provider configuration if present
+        provider_name = provider_config["provider"]
+        await self.collection.update_one(
+            {"client_id": client_id},
+            {"$pull": {"ai_providers": {"provider": provider_name}}}
+        )
+        # Push new provider configuration
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$push": {"ai_providers": provider_config},
+                "$set": {"updated_at": now}
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None
+
+    async def remove_provider(self, client_id: str, provider_name: str) -> Optional[TenantInDB]:
+        """Remove an AI provider configuration and associated models for a tenant."""
+        now = datetime.now(timezone.utc)
+        tenant = await self.get(client_id)
+        if not tenant:
+            return None
+
+        # Clean models tied to this provider
+        new_models = {
+            mid: mdef.model_dump() for mid, mdef in tenant.available_models.items()
+            if mdef.provider != provider_name
+        }
+        new_default = tenant.default_log_analysis_model_id
+        if new_default and new_default not in new_models:
+            new_default = None
+
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$pull": {"ai_providers": {"provider": provider_name}},
+                "$set": {
+                    "available_models": new_models,
+                    "default_log_analysis_model_id": new_default,
+                    "updated_at": now
+                }
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None
+
+    async def update_model(self, client_id: str, model_id: str, model_def: dict) -> Optional[TenantInDB]:
+        """Add or update a model definition in the tenant's available_models map."""
+        now = datetime.now(timezone.utc)
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$set": {
+                    f"available_models.{model_id}": model_def,
+                    "updated_at": now
+                }
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None
+
+    async def remove_model(self, client_id: str, model_id: str) -> Optional[TenantInDB]:
+        """Remove a model definition from tenant's available_models map."""
+        now = datetime.now(timezone.utc)
+        tenant = await self.get(client_id)
+        if not tenant:
+            return None
+
+        new_default = tenant.default_log_analysis_model_id
+        if new_default == model_id:
+            new_default = None
+
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$unset": {f"available_models.{model_id}": ""},
+                "$set": {
+                    "default_log_analysis_model_id": new_default,
+                    "updated_at": now
+                }
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None
+
+    async def set_default_log_analysis_model(self, client_id: str, model_id: Optional[str]) -> Optional[TenantInDB]:
+        """Set or unset the default model used for background log analysis."""
+        now = datetime.now(timezone.utc)
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$set": {
+                    "default_log_analysis_model_id": model_id,
+                    "updated_at": now
+                }
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None
+
+    async def set_default_mongo_translator_model(self, client_id: str, model_id: Optional[str]) -> Optional[TenantInDB]:
+        """Set or unset the default model used for NLQ to MongoDB query translation."""
+        now = datetime.now(timezone.utc)
+        result = await self.collection.find_one_and_update(
+            {"client_id": client_id},
+            {
+                "$set": {
+                    "default_mongo_translator_model_id": model_id,
+                    "updated_at": now
+                }
+            },
+            return_document=True
+        )
+        if result:
+            return TenantInDB(**result)
+        return None

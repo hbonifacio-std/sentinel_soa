@@ -3,6 +3,7 @@ import type {
   ForensicAnalyzeRequest,
   ForensicAnalysisRecord,
   ForensicHistoryResponse,
+  AvailableModelsResponse,
 } from '@/types/forensic';
 
 export async function analyzeForensicActivity(payload: ForensicAnalyzeRequest): Promise<ForensicAnalysisRecord> {
@@ -27,5 +28,9 @@ export async function getForensicHistory(
 
 export async function getForensicReport(analysisId: string): Promise<ForensicAnalysisRecord> {
   return apiFetch<ForensicAnalysisRecord>(`/api/v1/forensic/history/${analysisId}`);
+}
+
+export async function getAvailableModelsForChat(): Promise<AvailableModelsResponse> {
+  return apiFetch<AvailableModelsResponse>('/api/v1/forensic/models');
 }
 

@@ -86,6 +86,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         window_id: Optional[str] = None,
         source_id: Optional[str] = None,
         client_id: Optional[str] = None,
+        provider_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Analyzes web telemetry to detect threats using heuristics + LLM.
@@ -111,6 +112,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         window_id: Window identifier (for report tracking, not sent to LLM analysis).
         source_id: Telemetry source ID (for report tracking, not sent to LLM analysis).
         client_id: Client identifier that submitted the request (for report tracking).
+        provider_override: Optional decrypted provider config from tenant settings.
     """
     # Verify rules_bundle integrity if present
     if rules_bundle and not verify_rules_bundle_signature(rules_bundle):
@@ -146,6 +148,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         "window_id": window_id,
         "source_id": source_id,
         "client_id": client_id,
+        "provider_override": provider_override,
     }
 
     logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")
@@ -163,22 +166,17 @@ async def analyze_web_activity(  # noqa: PLR0913
 
 @server.tool()
 @require_tool_permission("generate_mongo_query_from_nl")
-async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = None) -> Dict[str, Any]:
-    """Translate a natural-language forensic question into a safe Mongo filter plan.
-
-    This tool receives an analyst-style query (for example: "show failed login bursts from
-    10.0.0.7 in admin endpoints") and produces a deterministic Mongo filter using bounded
-    parsing rules for IPs, status codes, URI patterns, and keywords.
-
-    Args:
-        query: Natural-language forensic intent from SOC analysts.
-        source_id: Optional telemetry source scope. When present, the resulting filter is
-            constrained to that specific source.
-
-    Returns:
-        A dictionary containing the generated `mongo_filter` and extracted intelligence terms.
-    """
-    return await build_forensic_mongo_query({"query": query, "source_id": source_id})
+async def generate_mongo_query_from_nl(
+    query: str,
+    source_id: Optional[str] = None,
+    provider_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Translate a natural-language forensic question into a safe Mongo filter plan."""
+    return await build_forensic_mongo_query({
+        "query": query,
+        "source_id": source_id,
+        "provider_override": provider_override,
+    })
 
 
 @server.tool()
@@ -189,22 +187,9 @@ async def generate_forensic_report_from_logs(
     rows: List[Dict[str, Any]],
     source_id: Optional[str] = None,
     model_id: Optional[str] = None,
+    provider_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Generate structured forensic insights and markdown from queried telemetry rows.
-
-    The tool transforms raw log samples into analyst-friendly output that includes prioritized
-    highlights, risk estimation, and an evidence section with normalized event excerpts.
-
-    Args:
-        query: Original analyst query used to gather telemetry.
-        total_matches: Total number of matching records for the query.
-        rows: Telemetry samples returned by the orchestrator repository.
-        source_id: Optional source identifier used for filtering.
-        model_id: The identifier for the analysis model to use.
-
-    Returns:
-        A dictionary with `highlights`, `markdown_report`, and risk metadata.
-    """
+    """Generate structured forensic insights and markdown from queried telemetry rows."""
     
     logger.info(
         "MCP tool 'generate_forensic_report_from_logs' invoked for source_id=%r query=%r total_matches=%s rows=%s",
@@ -220,6 +205,7 @@ async def generate_forensic_report_from_logs(
             "total_matches": total_matches,
             "rows": rows,
             "model_id": model_id,
+            "provider_override": provider_override,
         }
     )
 

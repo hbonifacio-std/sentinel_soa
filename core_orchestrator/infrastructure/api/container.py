@@ -49,6 +49,9 @@ from core_orchestrator.infrastructure.api.rate_limiter import limiter
 from core_orchestrator.infrastructure.security.password_hasher import BcryptPasswordHasher
 from core_orchestrator.infrastructure.security.signature_verifier import HmacSignatureVerifier
 from core_orchestrator.infrastructure.security.token_service import JwtTokenService
+from core_orchestrator.infrastructure.security.api_key_cipher import ApiKeyCipher
+from core_orchestrator.infrastructure.cache.redis_tenant_provider_cache import RedisTenantProviderCache
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
 
 
 class Container:
@@ -139,6 +142,15 @@ class Container:
             password_hasher=self.password_hasher,
         )
         self.tenant_service = TenantService(tenant_repository=self.tenant_repository)
+        self.api_key_cipher = ApiKeyCipher(
+            orchestrator_settings.tenant_api_key_encryption_key.get_secret_value()
+        )
+        self.tenant_provider_cache = RedisTenantProviderCache(redis_client=redis_client)
+        self.tenant_provider_service = TenantProviderService(
+            tenant_repository=self.tenant_repository,
+            cipher=self.api_key_cipher,
+            cache=self.tenant_provider_cache,
+        )
         self.auth_service = AuthService(
             user_provider=self.user_service,
             token_blacklist_repository=self.token_blacklist_repository,
@@ -170,6 +182,7 @@ class Container:
         self.forensic_service = ForensicService(
             forensic_repository=self.forensic_repository,
             forensic_intelligence_port=self.forensic_intelligence_adapter,
+            tenant_provider_service=self.tenant_provider_service,
         )
 
         # Agent Runner — agent_factory centraliza el wiring MCP en cada reconexión
@@ -192,6 +205,7 @@ class Container:
         analysis_svc = AnalysisService(
             llm_analysis_port=llm_adapter,
             rules_engine_service=self.rules_engine_service,
+            tenant_provider_service=self.tenant_provider_service,
         )
         threat_ctx_svc = ThreatContextService(threat_context_port=threat_adapter)
         return OrchestratorAgent(
