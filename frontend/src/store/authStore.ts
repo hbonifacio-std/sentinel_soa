@@ -3,13 +3,12 @@ import type { AuthUser } from '@/types/auth';
 
 interface AuthState {
   accessToken: string | null;
-  tenantApiKey: string | null;
   user: AuthUser | null;
   isAuthenticated: boolean;
   isBootstrapping: boolean;
   authError: string | null;
   hydrateSession: () => void;
-  setSession: (token: string, user: AuthUser, tenantApiKey?: string | null) => void;
+  setSession: (token: string, user: AuthUser) => void;
   setUser: (user: AuthUser) => void;
   setBootstrapping: (value: boolean) => void;
   setAuthError: (error: string | null) => void;
@@ -18,7 +17,6 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
-  tenantApiKey: null,
   user: null,
   isAuthenticated: false,
   isBootstrapping: true,
@@ -26,16 +24,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   hydrateSession: () => {
     set(() => ({
       accessToken: null,
-      tenantApiKey: null,
       user: null,
       isAuthenticated: false,
       authError: null,
     }));
   },
-  setSession: (token, user, tenantApiKey = null) => {
+  setSession: (token, user) => {
     set(() => ({
       accessToken: token,
-      tenantApiKey,
       user,
       isAuthenticated: true,
       authError: null,
@@ -52,7 +48,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   clearSession: () => {
     set(() => ({
       accessToken: null,
-      tenantApiKey: null,
       user: null,
       isAuthenticated: false,
       authError: null,

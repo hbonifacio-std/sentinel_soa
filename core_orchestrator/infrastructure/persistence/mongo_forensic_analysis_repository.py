@@ -3,6 +3,7 @@
 from typing import Any, Optional, cast
 
 from bson import ObjectId
+from pymongo import ASCENDING, DESCENDING
 
 from core_orchestrator.domain.models.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
@@ -135,3 +136,21 @@ class MongoForensicAnalysisRepository(ForensicAnalysisRepositoryPort):
             normalized.setdefault("analysis_id", str(normalized["_id"]))
             normalized.pop("_id", None)
         return normalized
+
+    async def ensure_indexes(self) -> None:
+        await self._analysis_collection.create_index(
+            [("client_id", ASCENDING), ("created_at_utc", DESCENDING)],
+            name="forensic_analysis_client_created_idx",
+        )
+        await self._analysis_collection.create_index(
+            [("client_id", ASCENDING), ("source_id", ASCENDING), ("created_at_utc", DESCENDING)],
+            name="forensic_analysis_client_source_created_idx",
+        )
+        await self._analysis_collection.create_index(
+            [("analysis_id", ASCENDING), ("client_id", ASCENDING)],
+            name="forensic_analysis_id_client_idx",
+        )
+        await self._raw_telemetry_collection.create_index(
+            [("client_id", ASCENDING), ("source_id", ASCENDING), ("timestamp", DESCENDING)],
+            name="forensic_raw_client_source_timestamp_idx",
+        )

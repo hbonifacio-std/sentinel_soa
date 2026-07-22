@@ -24,6 +24,13 @@ class AnalyticsRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def report_exists(self, report_id: str) -> bool:
+        """
+        Checks if a report exists regardless of tenant scope.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def update_report(self, report_id: str, client_id: str, updates: dict) -> bool:
         """
         Updates an analysis report.

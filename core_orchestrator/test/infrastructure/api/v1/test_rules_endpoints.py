@@ -94,6 +94,12 @@ def test_get_audit_log(client, mock_rule_service):
     response = client.get("/rules/audit-log?limit=10&offset=0")
     assert response.status_code == 200
     assert response.json()["total"] == 1
+    mock_rule_service.get_audit_logs.assert_called_once_with(
+        client_id="client-1",
+        rule_id=None,
+        limit=10,
+        offset=0,
+    )
 
 def test_validate_rules(client, mock_validator):
     validation = Mock()
@@ -274,8 +280,15 @@ def test_update_rule(client, mock_rule_service, mock_validator):
     
     # Not found case
     mock_rule_service.fetch_rule_by_id.return_value = None
+    mock_rule_service.rule_exists_any.return_value = False
     response = client.patch("/rules/rule-2", json=payload)
     assert response.status_code == 404
+
+    # Cross-tenant forbidden case
+    mock_rule_service.fetch_rule_by_id.return_value = None
+    mock_rule_service.rule_exists_any.return_value = True
+    response = client.patch("/rules/rule-2", json=payload)
+    assert response.status_code == 403
     
     # Empty updates case (line 364)
     mock_rule_service.fetch_rule_by_id.return_value = dummy_rule
@@ -305,8 +318,15 @@ def test_delete_rule(client, mock_rule_service):
     
     # Not found case
     mock_rule_service.fetch_rule_by_id.return_value = None
+    mock_rule_service.rule_exists_any.return_value = False
     response = client.delete("/rules/rule-2")
     assert response.status_code == 404
+
+    # Cross-tenant forbidden case
+    mock_rule_service.fetch_rule_by_id.return_value = None
+    mock_rule_service.rule_exists_any.return_value = True
+    response = client.delete("/rules/rule-2")
+    assert response.status_code == 403
 
     # Already inactive case (line 408)
     inactive_rule = HeuristicRule(

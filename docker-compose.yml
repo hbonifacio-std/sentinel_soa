@@ -32,6 +32,10 @@ services:
       WINDOW_THRESHOLD_REQUESTS: ${WINDOW_THRESHOLD_REQUESTS}
       WINDOW_DURATION_SECONDS: ${WINDOW_DURATION_SECONDS}
       MAX_ALERTS_IN_MEMORY: ${MAX_ALERTS_IN_MEMORY}
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_SOURCE: ${SECRET_SOURCE:-env}
+      SECRET_ROTATION_DAYS: ${SECRET_ROTATION_DAYS:-30}
+      REQUIRE_HTTPS_IN_PRODUCTION: ${REQUIRE_HTTPS_IN_PRODUCTION:-true}
 
       # Configuración de base de datos (ejemplos, ajustar según necesidad)
       MONGO_HOST: ${MONGO_HOST}
@@ -51,6 +55,8 @@ services:
       MCP_SERVER_HOST: mcp_server
       MCP_SERVER_PORT: 8080
       MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN}
+      MCP_INTERNAL_CLIENT_TOKEN: ${MCP_INTERNAL_CLIENT_TOKEN}
+      MCP_INTERNAL_SIGNING_TOKEN: ${MCP_INTERNAL_SIGNING_TOKEN}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
 
     networks:
@@ -69,8 +75,6 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     container_name: sentinel_mcp_server
-    ports:
-      - "8080:8080"
     environment:
       # Variables de entorno para el Log Analysis Server (MCP)
       LLM_PROVIDER: ${LLM_PROVIDER}
@@ -87,9 +91,19 @@ services:
       GROQ_MODEL: ${GROQ_MODEL}
       GROQ_MAX_OUTPUT_TOKENS: ${GROQ_MAX_OUTPUT_TOKENS}
       GROQ_TIMEOUT_SECONDS: ${GROQ_TIMEOUT_SECONDS}
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_SOURCE: ${SECRET_SOURCE:-env}
+      REQUIRE_HTTPS_IN_PRODUCTION: ${REQUIRE_HTTPS_IN_PRODUCTION:-true}
       MCP_SERVER_HOST: 0.0.0.0 # Escucha en todas las interfaces dentro del contenedor
       MCP_SERVER_PORT: 8080
       MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN}
+      MCP_INTERNAL_SIGNING_TOKEN: ${MCP_INTERNAL_SIGNING_TOKEN}
+      MCP_INTERNAL_TOKEN_ADMIN: ${MCP_INTERNAL_TOKEN_ADMIN}
+      MCP_INTERNAL_TOKEN_ANALYST: ${MCP_INTERNAL_TOKEN_ANALYST}
+      MCP_INTERNAL_TOKEN_VIEWER: ${MCP_INTERNAL_TOKEN_VIEWER}
+      MCP_INTERNAL_TOKENS_ADMIN: ${MCP_INTERNAL_TOKENS_ADMIN}
+      MCP_INTERNAL_TOKENS_ANALYST: ${MCP_INTERNAL_TOKENS_ANALYST}
+      MCP_INTERNAL_TOKENS_VIEWER: ${MCP_INTERNAL_TOKENS_VIEWER}
 
     networks:
       - sentinel_net
@@ -125,10 +139,10 @@ services:
     ports:
       - "8001:8001"
     environment:
-      VICTIM_SOURCE_ID: ${VICTIM_SOURCE_ID:-acme-corp}
-      TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL:-http://core:8000/api/v1/telemetry/ingest/batch}
-      TELEMETRY_HMAC_PUBLIC_KEY: ${TELEMETRY_HMAC_PUBLIC_KEY:-acme-corp}
-      TELEMETRY_HMAC_SECRET: ${TELEMETRY_HMAC_SECRET:-sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n}
+      VICTIM_SOURCE_ID: ${VICTIM_SOURCE_ID}
+      TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL}
+      TELEMETRY_HMAC_PUBLIC_KEY: ${TELEMETRY_HMAC_PUBLIC_KEY}
+      TELEMETRY_HMAC_SECRET: ${TELEMETRY_HMAC_SECRET}
       VECTOR_INTERNAL_TOKEN: ${VECTOR_INTERNAL_TOKEN}
     networks:
       - dmz_net
@@ -142,8 +156,9 @@ services:
     command: ["--config", "/etc/vector/vector.toml"] # Forzar el uso del archivo de config .toml
     environment:
       TELEMETRY_FORWARD_URL: ${TELEMETRY_FORWARD_URL}
-      SENTINEL_CLIENT_ID: ${SENTINEL_CLIENT_ID:-victim-app-01}
-      SENTINEL_API_KEY: ${SENTINEL_API_KEY:-sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n}
+      SENTINEL_CLIENT_ID: ${SENTINEL_CLIENT_ID}
+      SENTINEL_API_KEY: ${SENTINEL_API_KEY}
+      SENTINEL_HMAC_SECRET: ${SENTINEL_HMAC_SECRET}
     volumes:
       # Mapeo del archivo de configuración nativo TOML desde tu host al contenedor
       - ./victim_app/vector.toml:/etc/vector/vector.toml:ro

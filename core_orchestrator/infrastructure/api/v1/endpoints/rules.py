@@ -125,6 +125,19 @@ def _require_client_scope(user: UserInDB) -> str:
     return user.client_id
 
 
+async def _raise_if_cross_tenant_rule_mutation(
+    rule_service: RuleService,
+    rule_id: str,
+    client_id: str,
+) -> None:
+    in_scope = await rule_service.fetch_rule_by_id(rule_id, client_id)
+    if in_scope:
+        return
+    if await rule_service.rule_exists_any(rule_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-tenant rule mutation is not allowed")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rule not found: {rule_id}")
+
+
 # ============================================================================
 # Endpoints de la API
 # ============================================================================
@@ -154,10 +167,15 @@ async def get_audit_log(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     rule_service: RuleService = Depends(get_rule_service),
-    _: UserInDB = Depends(get_analyst_user_with_client)
+    current_user: UserInDB = Depends(get_analyst_user_with_client)
 ):
     """Get audit log (requires analyst/admin role)."""
-    logs = await rule_service.get_audit_logs(rule_id=rule_id, limit=limit, offset=offset)
+    logs = await rule_service.get_audit_logs(
+        client_id=_require_client_scope(current_user),
+        rule_id=rule_id,
+        limit=limit,
+        offset=offset,
+    )
     return {"total": len(logs), "offset": offset, "limit": limit, "entries": logs}
 
 
@@ -240,6 +258,7 @@ async def create_version(
         changes={"after": version.model_dump(mode="json")},
         reason=body.changelog or "New rule version created",
         ip_address=_client_ip(request),
+        client_id=client_id,
     )
     return version
 
@@ -278,6 +297,7 @@ async def activate_version(
         },
         reason=f"Activated version {version_hash}",
         ip_address=_client_ip(request),
+        client_id=client_id,
     )
 
     deployed_at = datetime.now(timezone.utc)
@@ -346,6 +366,7 @@ async def create_rule(
         changes={"before": None, "after": new_rule.model_dump(mode="json")},
         reason=new_rule.metadata.change_reason,
         ip_address=_client_ip(request),
+        client_id=client_id,
     )
 
     logger.info("Rule created: %s by %s", new_rule.rule_id, new_rule.metadata.changed_by)
@@ -369,9 +390,10 @@ async def update_rule(
 ):
     """Update rule (requires admin role)."""
     client_id = _require_client_scope(current_user)
+    await _raise_if_cross_tenant_rule_mutation(rule_service, rule_id, client_id)
     existing = await rule_service.fetch_rule_by_id(rule_id, client_id)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rule ownership validation failed")
 
     before = existing.model_dump(mode="json")
     update_data = updates.model_dump(exclude_unset=True)
@@ -395,6 +417,7 @@ async def update_rule(
         changes={"before": before, "after": updated.model_dump(mode="json") if updated else update_data},
         reason=merged.metadata.change_reason,
         ip_address=_client_ip(request),
+        client_id=client_id,
     )
 
     updated_at = _serialize_datetime(updated.updated_at if updated else datetime.now(timezone.utc))
@@ -417,9 +440,10 @@ async def delete_rule(
 ):
     """Delete/deactivate rule (requires admin role)."""
     client_id = _require_client_scope(current_user)
+    await _raise_if_cross_tenant_rule_mutation(rule_service, rule_id, client_id)
     existing = await rule_service.fetch_rule_by_id(rule_id, client_id)
     if not existing:
-        raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rule ownership validation failed")
     if not existing.is_active:
         raise HTTPException(status_code=409, detail=f"Rule already inactive: {rule_id}")
 
@@ -435,6 +459,7 @@ async def delete_rule(
         changes={"before": before, "after": {"is_active": False}},
         reason=reason,
         ip_address=_client_ip(request),
+        client_id=client_id,
     )
 
     return RuleDeleteResponse(message="Rule deactivated successfully", rule_id=rule_id)

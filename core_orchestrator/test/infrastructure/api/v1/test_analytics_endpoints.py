@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.analytics import router
+from core_orchestrator.application.modules.analysis_reports.services.analytics_service import CrossTenantAccessError
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
 from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
 from core_orchestrator.domain.models.auth.user import UserInDB
@@ -59,6 +60,11 @@ def test_mark_report_reviewed(client, mock_analytics_service):
     assert response.status_code == 404
     mock_analytics_service.mark_report_as_reviewed.assert_any_call("rep-1", "client-1")
 
+    mock_analytics_service.mark_report_as_reviewed.side_effect = CrossTenantAccessError("Cross-tenant report mutation is not allowed")
+    response = client.patch("/analytics/reports/rep-3/review")
+    assert response.status_code == 403
+    mock_analytics_service.mark_report_as_reviewed.side_effect = None
+
 def test_add_report_action(client, mock_analytics_service):
     mock_analytics_service.add_action_to_report.return_value = {"id": "rep-1", "actions": [{"comment": "checked"}]}
     
@@ -79,6 +85,9 @@ def test_add_report_action(client, mock_analytics_service):
     mock_analytics_service.add_action_to_report.side_effect = ValueError("invalid transition")
     response = client.post("/analytics/reports/rep-1/actions", json={"comment": "checked"})
     assert response.status_code == 409
+    mock_analytics_service.add_action_to_report.side_effect = CrossTenantAccessError("Cross-tenant report mutation is not allowed")
+    response = client.post("/analytics/reports/rep-1/actions", json={"comment": "checked"})
+    assert response.status_code == 403
 
 def test_mark_report_resolved(client, mock_analytics_service):
     mock_analytics_service.mark_report_as_resolved.return_value = {"id": "rep-1", "resolved": True}
@@ -90,6 +99,9 @@ def test_mark_report_resolved(client, mock_analytics_service):
     response = client.patch("/analytics/reports/rep-2/resolve")
     assert response.status_code == 404
     mock_analytics_service.mark_report_as_resolved.assert_any_call("rep-1", "client-1")
+    mock_analytics_service.mark_report_as_resolved.side_effect = CrossTenantAccessError("Cross-tenant report mutation is not allowed")
+    response = client.patch("/analytics/reports/rep-3/resolve")
+    assert response.status_code == 403
 
 def test_get_source_ids(client, mock_analytics_service):
     mock_analytics_service.get_distinct_source_ids.return_value = ["src-1", "src-2"]

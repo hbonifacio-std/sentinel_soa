@@ -43,20 +43,20 @@ class TenantService:
 
     async def create_tenant(self, tenant_create: TenantCreate) -> TenantResponseWithKey:
         """
-        Create a new tenant with generated API key.
+        Create a new tenant with auto-generated API key.
         
         Args:
-            tenant_create: Tenant creation request
+            tenant_create: Tenant creation request (only client_id, display_name, description)
             
         Returns:
             Tenant response with plaintext API key (shown only once)
         """
         # Generate secure API key
         api_key_plaintext = f"sk_{secrets.token_urlsafe(32)}"
-        # Hash with bcrypt (rounds=12 for security)
-        api_key_hash = hash_api_key(api_key_plaintext, rounds=12)
+        # 2. Hash SHA-256 ultra rápido
+        api_key_hash = hashlib.sha256(api_key_plaintext.encode("utf-8")).hexdigest()
         
-        # Create tenant
+        # Create tenant with generated API key
         tenant_in_db = await self.tenant_repository.create(
             tenant_create=tenant_create,
             api_key_hash=api_key_hash,
@@ -65,14 +65,14 @@ class TenantService:
         
         # Return with plaintext key (only shown once)
         return TenantResponseWithKey(
+            client_id=tenant_in_db.client_id,
             display_name=tenant_in_db.display_name,
+            description=tenant_in_db.description,
             rate_limit_per_minute=tenant_in_db.rate_limit_per_minute,
             is_active=tenant_in_db.is_active,
             created_at=tenant_in_db.created_at,
             updated_at=tenant_in_db.updated_at,
-            api_key_plaintext=api_key_plaintext,
-            client_id=tenant_in_db.client_id,
-
+            api_key_plaintext=api_key_plaintext
         )
 
     async def get_tenant(self, tenant_id: str) -> Optional[TenantInDB]:

@@ -14,6 +14,7 @@ import logging
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 from fastapi import Request
+from core_orchestrator.infrastructure.config.config import orchestrator_settings
 
 logger = logging.getLogger("core_orchestrator.security_headers")
 
@@ -53,11 +54,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # ========================================================================
         csp_directives = [
             "default-src 'self'",
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            "script-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: https:",
             "font-src 'self' data:",
-            "connect-src 'self' http://localhost:8000 http://core:8000",
+            f"connect-src 'self' {' '.join(orchestrator_settings.get_cors_origins())}",
             "frame-ancestors 'none'",
             "object-src 'none'",
             "base-uri 'self'",

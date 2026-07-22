@@ -3,48 +3,39 @@ import asyncio
 import json
 import logging
 from typing import List, Annotated
-from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request, Header
+from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.dependencies import (
     get_telemetry_service,
     get_telemetry_processing_service,
     get_agent_runner,
+    get_source_id,
 )
-from core_orchestrator.domain.models.auth.telemetry_client import (
-    TelemetryClientAuthContext,
-)
+from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
 from core_orchestrator.domain.models.telemetry.log_event import LogEvent
 from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.infrastructure.security.dependencies import (
-    verify_api_key_header,
-)
-# Corrected import path for redact_sensitive_data
 from core_orchestrator.infrastructure.security.sanitizer import redact_sensitive_data
+from core_orchestrator.infrastructure.api.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
-
 @router.post("/", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit("10/minute")
+@limiter.limit("100/minute")
 async def ingest_single_event(
     request: Request,
     event: LogEvent,
     background_tasks: BackgroundTasks,
-    client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
-    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
-    agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]
+    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)]
 ):
-    """Ingest a single event and stamp it with tenant context."""
 
     # Stamp tenant_id on the event server-side (never trust incoming tenant_id)
-    event.client_id = client.client_id
+    event.client_id = tenant_context.client_id
 
     event_dict = event.model_dump()
     sanitized_event_json = json.dumps(redact_sensitive_data(event_dict))
@@ -55,7 +46,7 @@ async def ingest_single_event(
 
     return {
         "status": "accepted",
-        "client_id": client.client_id,
+        "client_id": tenant_context.client_id,
         "event_buffered": event.model_dump()
     }
 
@@ -66,43 +57,43 @@ async def ingest_batch_events(
     request: Request,
     events: List[LogEvent],
     background_tasks: BackgroundTasks,
-    client: Annotated[TelemetryClientAuthContext, Depends(verify_api_key_header)],
-    telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
-    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
-    x_sentinel_source_id: Annotated[str, Header(alias="X-Sentinel-SOURCE-ID")],
-    x_sentinel_client_id: Annotated[str, Header(alias="X-Sentinel-Client-ID")]
+    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
+    source_id: Annotated[str, Depends(get_source_id)],
+    telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)] ,
+    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)] = None,
 ):
-
+    """Batch ingest telemetry events with multitenant isolation and source tracking.
+    
+    Required headers:
+    - X-Sentinel-API-Key: Tenant API key for authentication
+    - X-Sentinel-Source-ID: Unique identifier of the telemetry source
+    
+    Server-side guarantees:
+    - client_id is stamped from authenticated tenant context (never trusts client input)
+    - source_id is stamped from request header (single source of truth)
+    """
     if not events:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The request body does not contain events."
         )
 
-    if x_sentinel_client_id != client.client_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"The authenticated client '{client.client_id}' is not authorized to send source_id '{x_sentinel_client_id}'."
-        )
+    # Stamp tenant_id and source_id server-side on every event (multitenant isolation)
+    for event in events:
+        event.client_id = tenant_context.client_id
+        event.source_id = source_id
 
-    # Stamp tenant_id server-side on every event
-    for ev in events:
-        ev.client_id = client.client_id
-        ev.source_id = x_sentinel_source_id
-
-    # Apply redaction to batch events before logging
     logger.info(
-        f"Batch ingestion request received with {len(events)} events from '{x_sentinel_client_id}'. "
+        f"Batch ingestion: {len(events)} events from source '{source_id}' for client '{tenant_context.client_id}'"
     )
 
     background_tasks.add_task(telemetry_service.ingest_bulk_logs, events)
     await telemetry_processing_service.add_multiple_logs_events(events)
 
-    logger.debug(f"Processed and queued {len(events)} events.")
-    
     return {
         "status": "accepted",
-        "client_id": client.client_id,
+        "client_id": tenant_context.client_id,
+        "source_id": source_id,
         "processed_records": len(events)
     }
 

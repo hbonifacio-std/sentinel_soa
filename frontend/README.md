@@ -14,14 +14,15 @@ Revisar `.env.example`:
 
 - `VITE_API_BASE_URL`
 - `VITE_MOCK_DATA`
-- `VITE_AUTH_PERSIST_SESSION`: `true` para respaldar token en `sessionStorage` (por pestaña), `false` para memoria-only.
 
 ## Autenticacion OAuth2
 
 - Login en `/login` contra `POST /api/v1/auth/token` (`application/x-www-form-urlencoded`).
 - El frontend envia `Authorization: Bearer <token>` automaticamente en endpoints protegidos.
-- Bootstrap de sesion con `GET /api/v1/auth/me` al iniciar la app.
-- Logout con `POST /api/v1/auth/logout` + limpieza local inmediata.
+- Bootstrap de sesion con `POST /api/v1/auth/refresh` usando cookie HttpOnly (`credentials: include`).
+- Reintento automatico una sola vez ante `401` mediante refresh token.
+- Logout con `POST /api/v1/auth/logout`, revocacion server-side y limpieza local inmediata.
+- Los tokens de acceso se mantienen solo en memoria (sin `localStorage/sessionStorage`).
 - 401 invalida sesion y redirige a login; 403 se muestra como falta de permisos.
 
 ## Vistas

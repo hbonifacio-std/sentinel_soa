@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import os
 
 import mcp_servers.log_analysis_server.server as srv
+from mcp_servers.log_analysis_server.security import set_user_role
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,15 @@ def _base_analyze_payload(**overrides):
     )
     defaults.update(overrides)
     return defaults
+
+
+@pytest.fixture(autouse=True)
+def _authenticated_role():
+    set_user_role("analyst")
+    try:
+        yield
+    finally:
+        set_user_role(None)
 
 
 # ---------------------------------------------------------------------------

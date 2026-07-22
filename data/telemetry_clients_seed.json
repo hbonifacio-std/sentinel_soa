@@ -4,9 +4,7 @@
     "display_name": "acme-corp",
     "description": "Cliente inicial autorizado para enviar lotes de logs desde Vector al core local.",
     "is_active": true,
-    "api_key": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n",
-    "hmac_public_key": "sentinel_sk_live_v1_DFGHTHTtasd8th4dfh8f8555dfFBNH52gg",
-    "hmac_secret": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
+    "api_key": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
   }
 ]
 

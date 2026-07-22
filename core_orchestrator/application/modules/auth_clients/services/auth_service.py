@@ -64,7 +64,16 @@ class AuthService:
         if not payload:
             logger.warning("Invalid or expired refresh token")
             return None
-            
+
+        refresh_jti = payload.get("jti")
+        if not refresh_jti:
+            logger.warning("Refresh token missing JTI")
+            return None
+
+        if await self.token_blacklist_repo.is_blacklisted(refresh_jti):
+            logger.warning("Refresh token has been revoked")
+            return None
+
         user_id = payload.get("sub")
         if not user_id:
             logger.warning("Invalid refresh token payload")
@@ -87,6 +96,26 @@ class AuthService:
         logger.info(f"Access token refreshed for user: {user.username}")
         return new_access_token, jti
 
+    async def revoke_refresh_token(self, refresh_token: str) -> None:
+        """
+        Revokes a refresh token by blacklisting its JTI until its expiration.
+        """
+        payload = self.token_service.verify_refresh_token(refresh_token)
+        if not payload:
+            return
+
+        refresh_jti = payload.get("jti")
+        exp = payload.get("exp")
+        if not refresh_jti or not exp:
+            return
+
+        expires_at = datetime.fromtimestamp(exp, tz=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            return
+
+        await self.token_blacklist_repo.add_to_blacklist(refresh_jti, expires_at)
+        logger.info(f"Refresh token revoked (jti: {refresh_jti})")
+
     async def logout(self, token: str):
         """
         Logs out a user by blacklisting the current token.
@@ -96,4 +125,3 @@ class AuthService:
             expires_at = datetime.now(timezone.utc) + self.access_token_expires_delta
             await self.token_blacklist_repo.add_to_blacklist(jti, expires_at)
             logger.info(f"User logged out (token JTI: {jti})")
-

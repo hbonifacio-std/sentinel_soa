@@ -116,6 +116,7 @@ class RuleAuditLog(BaseModel):
     action: AuditAction
     rule_id: str
     user: str
+    client_id: Optional[str] = None
     ip_address: str = "127.0.0.1"
     changes: Dict[str, Any] = Field(default_factory=dict)
     reason: str = ""

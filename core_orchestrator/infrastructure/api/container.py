@@ -125,6 +125,10 @@ class Container:
         self.tenant_repository = MongoTenantRepository(db_manager=self.db_manager)
         self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
 
+        await self.analytics_repository.ensure_indexes()
+        await self.rule_repository.ensure_indexes()
+        await self.audit_repository.ensure_indexes()
+
         # Services
         self.analytics_service = ReportTelemetryService(analytics_repository=self.analytics_repository)
         self.password_hasher = BcryptPasswordHasher()

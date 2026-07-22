@@ -49,10 +49,12 @@ class MCPClientManager:
         return f"http://{host}:{port}{sse_path}"
 
     async def _open_sse_session(self, url: str) -> ClientSession:
-        headers = {}
-        mcp_token = os.getenv("MCP_INTERNAL_TOKEN")
-        if mcp_token:
-            headers["Authorization"] = f"Bearer {mcp_token}"
+        mcp_token = (os.getenv("MCP_INTERNAL_CLIENT_TOKEN") or os.getenv("MCP_INTERNAL_TOKEN") or "").strip()
+        if not mcp_token:
+            raise RuntimeError(
+                "MCP_INTERNAL_CLIENT_TOKEN (or MCP_INTERNAL_TOKEN fallback) is required for MCP SSE authentication."
+            )
+        headers = {"Authorization": f"Bearer {mcp_token}"}
 
         self._transport_cm = _sse_client(
             url,

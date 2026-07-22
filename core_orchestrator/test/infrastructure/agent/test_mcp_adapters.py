@@ -138,7 +138,10 @@ async def test_mcp_client_manager(mock_session_cls, mock_streamable_client):
     mock_session.__aenter__.return_value = mock_session
     
     # Connect
-    with patch.dict("os.environ", {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "localhost"}):
+    with patch.dict(
+        "os.environ",
+        {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "localhost", "MCP_INTERNAL_TOKEN": "test-token"},
+    ):
         session = await manager.start_server_session()
         assert session == mock_session
         

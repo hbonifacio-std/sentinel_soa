@@ -168,6 +168,7 @@ class RulesEngineService:
                 changes=audit.changes,
                 reason=audit.reason,
                 ip_address=audit.ip_address,
+                client_id=audit.client_id,
             )
 
         active_version = next((version for version in versions if version.is_active), None)

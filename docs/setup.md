@@ -47,7 +47,7 @@ These variables control which Language Model provider the `mcp_server` uses for 
 | `LLM_PROVIDER` | Selects the primary LLM provider. | `gemini`, `ollama` | `gemini` |
 | `GEMINI_API_KEY` | Your Google Gemini API Key. Required if `LLM_PROVIDER=gemini`. | - | - |
 | `GEMINI_MODEL` | The specific Gemini model to use. | `gemini-1.5-flash`, `gemini-1.5-pro` | `gemini-1.5-flash` |
-| `OLLAMA_BASE_URL` | The base URL where the Ollama service is running. | - | `http://localhost:11434` |
+| `OLLAMA_BASE_URL` | The base URL where the Ollama service is running. In production it must be `https://...`. | - | `http://localhost:11434` |
 | `OLLAMA_MODEL` | The local Ollama model to use. You must pull this model first. | `mistral`, `llama2`, etc. | `mistral` |
 | `OLLAMA_TIMEOUT_SECONDS` | Timeout for requests to Ollama. Increase for larger models. | - | `300` |
 
@@ -57,7 +57,11 @@ These variables configure the main `core` service.
 
 | Variable | Description | Default |
 |---|---|---|
-| `JWT_SECRET_KEY` | A long, random, and secret string used for signing JWTs. | `your-super-secret-key-here` |
+| `JWT_SECRET_KEY` | A long, random, and secret string used for signing JWTs (32+ chars in production, no placeholders). | (Required) |
+| `APP_ENV` | Runtime environment. | `development` |
+| `SECRET_SOURCE` | Secret source provider. In production, `env` is rejected. | `env` |
+| `SECRET_ROTATION_DAYS` | Maximum secret age before rotation. In production must be <= 90. | `30` |
+| `REQUIRE_HTTPS_IN_PRODUCTION` | Enforces HTTPS-only origins/endpoints in production. | `true` |
 | `WINDOW_THRESHOLD_REQUESTS` | Number of requests from a source IP within the time window to trigger an alert. | (Set in `.env`) |
 | `WINDOW_DURATION_SECONDS` | Duration of the sliding time window for correlating requests. | (Set in `.env`) |
 | `MAX_ALERTS_IN_MEMORY` | Maximum number of alerts to keep in the in-memory queue. | (Set in `.env`) |
@@ -86,9 +90,9 @@ These variables configure the `victim_app` and the `log_shipper` (Vector).
 | Variable | Description | Default |
 |---|---|---|
 | `VICTIM_SOURCE_ID` | A unique identifier for the monitored application instance. | `victim-app-01` |
-| `TELEMETRY_FORWARD_URL` | The full URL where the log shipper sends telemetry batches. | `http://core:8000/api/v1/telemetry/ingest/batch` |
+| `TELEMETRY_FORWARD_URL` | The full URL where the log shipper sends telemetry batches. Use `https://...` in production. | `http://core:8000/api/v1/telemetry/ingest/batch` |
 | `TELEMETRY_HMAC_PUBLIC_KEY`| The public key (Client ID) used by the core to look up the shared secret for HMAC signature verification. | `victim-app-01` |
-| `TELEMETRY_HMAC_SECRET` | The shared secret key used by the `victim_app` to sign telemetry payloads. Must match the secret stored in the database for the corresponding client. | (A default is provided) |
+| `TELEMETRY_HMAC_SECRET` | The shared secret key used by the `victim_app` to sign telemetry payloads. Must match the secret stored in the database for the corresponding client. | (Required) |
 
 ## 4. Local Ollama Setup
 

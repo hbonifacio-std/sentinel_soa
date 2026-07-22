@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import logging
+from pymongo import ASCENDING, DESCENDING
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
 from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion
@@ -101,6 +102,9 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
     async def rule_exists(self, rule_id: str, client_id: Optional[str]) -> bool:
         return await self.exists({"rule_id": rule_id, **self._exact_client_scope_filter(client_id)})
 
+    async def rule_exists_any(self, rule_id: str) -> bool:
+        return await self.exists({"rule_id": rule_id})
+
     async def update_rule(self, rule_id: str, client_id: Optional[str], updates: Dict[str, Any]) -> bool:
         updates = dict(updates)
         updates["updated_at"] = datetime.now(timezone.utc)
@@ -163,3 +167,25 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
             return False
         finally:
             await session.end_session()
+
+    async def ensure_indexes(self) -> None:
+        await self.heuristic_rules_collection.create_index(
+            [("client_id", ASCENDING), ("rule_id", ASCENDING)],
+            name="heuristic_rules_client_rule_idx",
+        )
+        await self.heuristic_rules_collection.create_index(
+            [("tenant_id", ASCENDING), ("rule_id", ASCENDING)],
+            name="heuristic_rules_tenant_rule_idx",
+        )
+        await self.heuristic_rules_collection.create_index(
+            [("client_id", ASCENDING), ("is_active", ASCENDING), ("updated_at", DESCENDING)],
+            name="heuristic_rules_client_active_updated_idx",
+        )
+        await self.versions_collection.create_index(
+            [("client_id", ASCENDING), ("created_at", DESCENDING)],
+            name="rule_versions_client_created_idx",
+        )
+        await self.versions_collection.create_index(
+            [("client_id", ASCENDING), ("is_active", ASCENDING)],
+            name="rule_versions_client_active_idx",
+        )

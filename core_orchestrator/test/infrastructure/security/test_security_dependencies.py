@@ -19,10 +19,9 @@ async def test_verify_api_key_header_success():
     service.authorize_api_key.return_value = context
     
     result = await verify_api_key_header(
-        request=MagicMock(),
         x_sentinel_client_id="client-1",
         x_sentinel_api_key="api-key",
-        tenant_service=service
+        telemetry_client_service=service
     )
     assert result == context
 
@@ -33,10 +32,9 @@ async def test_verify_api_key_header_unauthorized():
     
     with pytest.raises(HTTPException) as exc:
         await verify_api_key_header(
-            request=MagicMock(),
             x_sentinel_client_id="client-1",
             x_sentinel_api_key="api-key",
-            tenant_service=service
+            telemetry_client_service=service
         )
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -46,10 +44,9 @@ async def test_verify_api_key_header_missing_headers():
 
     with pytest.raises(HTTPException) as exc:
         await verify_api_key_header(
-            request=MagicMock(),
             x_sentinel_client_id=None,
             x_sentinel_api_key=None,
-            tenant_service=service
+            telemetry_client_service=service
         )
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -58,6 +55,9 @@ async def test_verify_hmac_signature_header_success():
     service = AsyncMock()
     context = TelemetryClientAuthContext(client_id="client-1", source_id="src-1", display_name="Client One")
     service.authorize_hmac.return_value = context
+    db_manager = MagicMock()
+    db_manager.redis_client = AsyncMock()
+    db_manager.redis_client.set = AsyncMock(return_value=True)
     
     request = MagicMock()
     request.body = AsyncMock(return_value=b"test-body")
@@ -67,7 +67,9 @@ async def test_verify_hmac_signature_header_success():
         x_public_key="pub-key",
         x_signature="sig",
         x_timestamp=12345,
-        tenant_service=service
+        x_idempotency_key="nonce-1",
+        telemetry_client_service=service,
+        db_manager=db_manager,
     )
     assert result == context
 
@@ -75,6 +77,9 @@ async def test_verify_hmac_signature_header_success():
 async def test_verify_hmac_signature_header_unauthorized():
     service = AsyncMock()
     service.authorize_hmac.return_value = None
+    db_manager = MagicMock()
+    db_manager.redis_client = AsyncMock()
+    db_manager.redis_client.set = AsyncMock(return_value=True)
     
     request = MagicMock()
     request.body = AsyncMock(return_value=b"test-body")
@@ -85,9 +90,36 @@ async def test_verify_hmac_signature_header_unauthorized():
             x_public_key="pub-key",
             x_signature="sig",
             x_timestamp=12345,
-            tenant_service=service
+            x_idempotency_key="nonce-1",
+            telemetry_client_service=service,
+            db_manager=db_manager,
         )
     assert exc.value.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_verify_hmac_signature_header_replay_detected():
+    service = AsyncMock()
+    context = TelemetryClientAuthContext(client_id="client-1", display_name="Client One")
+    service.authorize_hmac.return_value = context
+    db_manager = MagicMock()
+    db_manager.redis_client = AsyncMock()
+    db_manager.redis_client.set = AsyncMock(return_value=False)
+
+    request = MagicMock()
+    request.body = AsyncMock(return_value=b"test-body")
+
+    with pytest.raises(HTTPException) as exc:
+        await verify_hmac_signature_header(
+            request=request,
+            x_public_key="pub-key",
+            x_signature="sig",
+            x_timestamp=12345,
+            x_idempotency_key="nonce-dup",
+            telemetry_client_service=service,
+            db_manager=db_manager,
+        )
+    assert exc.value.status_code == status.HTTP_409_CONFLICT
 
 @pytest.mark.asyncio
 @patch("core_orchestrator.infrastructure.security.dependencies.get_token_jti")

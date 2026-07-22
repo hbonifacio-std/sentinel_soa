@@ -1,12 +1,44 @@
 import logging
 import secrets
+import hashlib
 from typing import Optional, List
+import bcrypt
 
 from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
 from core_orchestrator.domain.ports.auth.signature_verifier import SignatureVerifierPort
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext, TelemetryClientCreate, TelemetryClientInDB
+from core_orchestrator.domain.models.auth.telemetry_client import (
+    TelemetryClientAuthContext,
+    TelemetryClientCreate,
+    TelemetryClientInDB,
+)
 
 logger = logging.getLogger(__name__)
+
+def _is_bcrypt_hash(hash_string: str) -> bool:
+    return hash_string.startswith(("$2a$", "$2b$", "$2y$"))
+
+
+def _is_sha256_hash(hash_string: str) -> bool:
+    return len(hash_string) == 64 and all(c in "0123456789abcdef" for c in hash_string.lower())
+
+
+def _verify_api_key(stored_api_key: str, provided_api_key: str) -> tuple[bool, bool]:
+    """
+    Return a tuple: (is_valid, should_migrate_to_bcrypt).
+    """
+    if _is_bcrypt_hash(stored_api_key):
+        try:
+            return bcrypt.checkpw(provided_api_key.encode(), stored_api_key.encode()), False
+        except Exception:
+            return False, False
+    if _is_sha256_hash(stored_api_key):
+        is_valid = secrets.compare_digest(
+            hashlib.sha256(provided_api_key.encode()).hexdigest(),
+            stored_api_key,
+        )
+        return is_valid, is_valid
+    is_valid = secrets.compare_digest(stored_api_key, provided_api_key)
+    return is_valid, is_valid
 
 
 class TelemetryClientService:
@@ -20,7 +52,7 @@ class TelemetryClientService:
     async def get_client_by_client_id(self, client_id: str, include_inactive: bool = False) -> Optional[TelemetryClientInDB]:
         return await self._repository.get_by_client_id(client_id, include_inactive)
 
-    async def get_client_by_public_key(self, public_key: str, include_inactive: bool = False) -> Optional[TelemetryClientInDB]:
+    async def get_client_by_public_key(self, public_key: str) -> Optional[TelemetryClientInDB]:
         # Note: The original implementation had `include_inactive` but the port didn't.
         # The caching repository now handles this correctly.
         return await self._repository.get_by_public_key(public_key)
@@ -29,38 +61,8 @@ class TelemetryClientService:
         TelemetryClientInDB, bool, bool]:
         return await self._repository.upsert(payload, overwrite_existing)
 
-    async def authorize_api_key(self, client_id: str, api_key: str) -> Optional[TelemetryClientAuthContext]:
+    async def authorize_api_key(self, client_id: str) -> Optional[TelemetryClientInDB]:
         client = await self.get_client_by_client_id(client_id)
         if not client or not client.is_active:
             return None
-        if not secrets.compare_digest(client.api_key, api_key):
-            return None
-        return TelemetryClientAuthContext(
-            client_id=client.client_id,
-            source_id=client.source_id,
-            display_name=client.display_name,
-            hmac_public_key=client.hmac_public_key,
-        )
-
-    async def authorize_hmac(self, public_key: str, signature: str, timestamp: int,
-                             body: bytes) -> Optional[TelemetryClientAuthContext]:
-        client = await self.get_client_by_public_key(public_key)
-        if not client or not client.is_active:
-            return None
-
-        is_valid = self._signature_verifier.verify_hmac_signature(
-            body=body,
-            signature=signature,
-            public_key=public_key,
-            timestamp=timestamp,
-            secret=client.hmac_secret,
-        )
-        if not is_valid:
-            return None
-
-        return TelemetryClientAuthContext(
-            client_id=client.client_id,
-            source_id=client.source_id,
-            display_name=client.display_name,
-            hmac_public_key=client.hmac_public_key,
-        )
+        return client

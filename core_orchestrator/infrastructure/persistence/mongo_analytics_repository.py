@@ -4,6 +4,7 @@ import uuid
 from typing import Optional, List, Dict, Any
 
 from bson import ObjectId
+from pymongo import ASCENDING, DESCENDING
 from pydantic import BaseModel
 
 from core_orchestrator.infrastructure.config.database import DatabaseManager
@@ -86,6 +87,12 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
             doc["id"] = str(doc.pop("_id"))
         return dict(doc)
 
+    async def report_exists(self, report_id: str) -> bool:
+        report_id_query = self._build_report_id_query(report_id)
+        if report_id_query is None:
+            return False
+        return await self.collection.count_documents(report_id_query, limit=1) > 0
+
     async def update_report(self, report_id: str, client_id: str, updates: dict) -> bool:
         query = self._build_report_query_with_client(report_id, client_id)
         if query is None:
@@ -162,6 +169,24 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
         except Exception as e:
             logger.error(f"Failed to insert analysis report: {e}", exc_info=True)
             raise
+
+    async def ensure_indexes(self) -> None:
+        await self.analysis_reports_collection.create_index(
+            [("client_id", ASCENDING), ("source_id", ASCENDING), ("created_at_utc", DESCENDING)],
+            name="analysis_reports_client_source_created_at_idx",
+        )
+        await self.analysis_reports_collection.create_index(
+            [("client_id", ASCENDING), ("reviewed", ASCENDING), ("resolved", ASCENDING)],
+            name="analysis_reports_client_review_status_idx",
+        )
+        await self.logs_collection.create_index(
+            [("client_id", ASCENDING), ("source_id", ASCENDING), ("timestamp", DESCENDING)],
+            name="raw_telemetry_client_source_timestamp_idx",
+        )
+        await self.logs_collection.create_index(
+            [("client_id", ASCENDING), ("source_ip", ASCENDING), ("timestamp", DESCENDING)],
+            name="raw_telemetry_client_ip_timestamp_idx",
+        )
 
     @staticmethod
     def _normalize_document_id(document: Dict[str, Any]) -> Dict[str, Any]:

@@ -16,21 +16,38 @@ export class ApiError extends Error {
 
 interface ApiClientConfig {
   getAccessToken?: () => string | null;
-  getTenantApiKey?: () => string | null;
+  refreshAccessToken?: () => Promise<string | null>;
   onUnauthorized?: () => void;
 }
 
 export interface ApiFetchOptions extends RequestInit {
   skipAuth?: boolean;
-  skipTenantAuth?: boolean;
   skipJsonContentType?: boolean;
   skipUnauthorizedHandler?: boolean;
+  skipAuthRefresh?: boolean;
 }
 
 let apiClientConfig: ApiClientConfig = {};
+let refreshInFlight: Promise<string | null> | null = null;
 
 export function configureApiClient(config: ApiClientConfig) {
   apiClientConfig = config;
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!apiClientConfig.refreshAccessToken) {
+    return null;
+  }
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        return await apiClientConfig.refreshAccessToken?.() ?? null;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
 }
 
 function getErrorMessage(status: number, detail: unknown, fallback: string): string {
@@ -74,19 +91,29 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     }
   }
 
-  if (!options.skipTenantAuth && !headers.has('X-Api-Key')) {
-    const tenantApiKey = apiClientConfig.getTenantApiKey?.();
-    if (tenantApiKey) {
-      headers.set('X-Api-Key', tenantApiKey);
-    }
-  }
 
   const response = await fetch(url, {
     ...options,
     headers,
+    credentials: options.credentials ?? 'include',
   });
 
   if (!response.ok) {
+    if (
+      response.status === 401 &&
+      !options.skipAuth &&
+      !options.skipAuthRefresh
+    ) {
+      const refreshedToken = await refreshAccessToken();
+      if (refreshedToken) {
+        return apiFetch<T>(path, {
+          ...options,
+          skipAuthRefresh: true,
+          skipUnauthorizedHandler: true,
+        });
+      }
+    }
+
     let detail: unknown = null;
     let bodyText = '';
 

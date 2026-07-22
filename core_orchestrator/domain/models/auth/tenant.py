@@ -7,32 +7,28 @@ Tenants can optionally have telemetry client capabilities (API key + HMAC keys).
 
 from datetime import datetime, timezone
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class TenantBase(BaseModel):
     """Base tenant model with common fields."""
     client_id: str = Field(..., min_length=1, max_length=100, description="Unique tenant identifier")
     display_name: str = Field(..., min_length=1, max_length=200, description="Human-readable tenant name")
+    description: Optional[str] = Field(default=None, description="Optional: description of tenant/source")
     rate_limit_per_minute: int = Field(default=60, ge=1, le=10000, description="API rate limit per minute")
     is_active: bool = Field(default=True, description="Whether the tenant is active")
-    
-    # Telemetry client fields (optional - tenant can be a telemetry source)
+
+
+class TenantCreate(BaseModel):
+    """Tenant creation model - only accepts basic info, keys are auto-generated."""
+    client_id: str = Field(..., min_length=1, max_length=100, description="Unique tenant identifier")
+    display_name: str = Field(..., min_length=1, max_length=200, description="Human-readable tenant name")
     description: Optional[str] = Field(default=None, description="Optional: description of tenant/source")
-    api_key: Optional[str] = Field(default=None, description="Optional: API key for telemetry ingestion")
-    hmac_public_key: Optional[str] = Field(default=None, description="Optional: public key for HMAC verification")
-    hmac_secret: Optional[str] = Field(default=None, description="Optional: secret key for HMAC verification")
-
-
-class TenantCreate(TenantBase):
-    """Tenant creation model."""
-    pass
 
 
 class TenantInDB(TenantBase):
     """Tenant model as stored in database."""
-    api_key_hash: Optional[str] = Field(default=None, description="SHA256 hash of tenant API key (different from telemetry api_key)")
-    api_key_plaintext: Optional[str] = Field(default=None, description="Plaintext API key (only shown at creation)")
+    api_key_hash: Optional[str] = Field(default=None, description="Bcrypt hash of tenant API key")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

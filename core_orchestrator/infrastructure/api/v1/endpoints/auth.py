@@ -20,6 +20,7 @@ logger = logging.getLogger("core_orchestrator.api.auth")
 router = APIRouter()
 
 
+
 @router.post(
     "/token",
     response_model=TokenResponse,
@@ -31,18 +32,19 @@ async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     auth_service: AuthService = Depends(get_auth_service),
-    db_manager = Depends(get_db_manager)
 ):
     """
     OAuth2 compatible token endpoint.
     
     Authenticates user with username and password, returns JWT access token.
+    The refresh token is set as an HttpOnly cookie; the client_api_key is
+    NOT included in this response (used only for telemetry, not the dashboard).
     
     Args:
         form_data: OAuth2 password request form (username and password)
     
     Returns:
-        Token response with access token and user info, plus tenant API key if user is assigned to a tenant
+        Token response with access token and user info
     
     Raises:
         HTTPException: If credentials are invalid
@@ -59,37 +61,6 @@ async def login_for_access_token(
     
     user, access_token, refresh_token = login_result
 
-    if not user.client_id:
-        logger.warning("Authentication denied due to invalid user tenant assignment.")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication error",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if db_manager.mongo_client is None:
-        logger.warning("Authentication denied due to unavailable tenant store.")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication error",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    auth_db = db_manager.get_auth_db()
-    tenant_doc = await auth_db.authorized_telemetry_clients.find_one({
-        "client_id": user.client_id,
-        "is_active": True
-    })
-    if not tenant_doc:
-        logger.warning("Authentication denied due to invalid tenant assignment.")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication error",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    tenant_api_key = tenant_doc.get("api_key")
-    
     # Return token and user info
     user_response = UserResponse(
         user_id=user.user_id,
@@ -108,7 +79,6 @@ async def login_for_access_token(
         token_type="bearer",
         expires_in=3600,  # 1 hour
         user=user_response,
-        client_api_key=tenant_api_key,
     )
     
     # Set refresh token in HttpOnly cookie (separate from response body)
@@ -151,6 +121,7 @@ async def get_current_user_info(
         email=current_user.email,
         role=current_user.role,
         is_active=current_user.is_active,
+        client_id=current_user.client_id,
         created_at=current_user.created_at,
         updated_at=current_user.updated_at,
     )
@@ -169,7 +140,6 @@ async def get_current_user_info(
 async def logout(
     request: Request,
     auth_service: AuthService = Depends(get_auth_service),
-    current_user = Depends(get_current_user)
 ):
     """
     Logout endpoint - adds current token to blacklist for immediate revocation.
@@ -185,18 +155,24 @@ async def logout(
         Success message
     """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing Authorization header"
-        )
-    
-    token = auth_header.split(" ")[1]
-    
-    await auth_service.logout(token)
-    logger.info(f"User {current_user.username} logged out successfully.")
-    
-    return {"message": "Logged out successfully"}
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ")[1]
+        await auth_service.logout(token)
+
+    refresh_token = request.cookies.get("refresh_token")
+    if refresh_token:
+        await auth_service.revoke_refresh_token(refresh_token)
+
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"message": "Logged out successfully"})
+    response.delete_cookie(
+        key="refresh_token",
+        httponly=True,
+        secure=True,
+        samesite="Strict",
+    )
+    logger.info("Logout completed. Access and refresh tokens revoked where applicable.")
+    return response
 
 
 @router.post(
@@ -209,6 +185,7 @@ async def logout(
 async def refresh_access_token(
     request: Request,
     auth_service: AuthService = Depends(get_auth_service),
+    db_manager = Depends(get_db_manager),
 ):
     """
     Refresh endpoint - obtain new access token using refresh token from cookie.
@@ -257,8 +234,6 @@ async def refresh_access_token(
     user_id = payload.get("sub")
     
     # Get user info
-    from core_orchestrator.infrastructure.api.dependencies import get_db_manager
-    db_manager = await get_db_manager()
     auth_db = db_manager.get_auth_db()
     user_doc = await auth_db.users.find_one({"user_id": user_id})
     
@@ -278,14 +253,14 @@ async def refresh_access_token(
     
     response_data = TokenResponse(
         access_token=new_access_token,
-        refresh_token=refresh_token,  # Return same refresh token
+        refresh_token=None,  # Keep refresh token only in HttpOnly cookie
         token_type="bearer",
         expires_in=3600,
         user=user_response,
     )
     
     from fastapi.responses import JSONResponse
-    json_response = JSONResponse(content=response_data.model_dump())
+    json_response = JSONResponse(content=response_data.model_dump(mode="json", exclude_none=True))
     
     # Optionally update refresh token cookie
     json_response.set_cookie(

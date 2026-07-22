@@ -4,16 +4,20 @@ FastAPI dependency providers for security.
 Provides reusable dependencies for API key verification, HMAC verification, JWT authentication, and RBAC.
 Unified authentication supports both tenant OAuth and telemetry client authentication.
 """
+import hashlib
+import hmac
 import logging
 from fastapi import Depends, Request, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
+from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
 from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
 from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
 from core_orchestrator.domain.models.auth.user import UserInDB
+
 from core_orchestrator.infrastructure.api.dependencies import (
-    get_tenant_service, get_user_service
+     get_tenant_service, get_telemetry_client_service, get_user_service
 )
 from core_orchestrator.infrastructure.security.jwt_utils import (
     get_token_jti, is_token_blacklisted, decode_token
@@ -30,10 +34,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 # ============================================================================
 
 async def verify_api_key_header(
-        request: Request,
-        x_sentinel_client_id: str = Header(default=None, description="Telemetry Client ID"),
-        x_sentinel_api_key: str = Header(default=None, description="Telemetry API Key"),
-        tenant_service: TenantService = Depends(get_tenant_service)
+        x_sentinel_client_id: str = Header(alias="x-sentinel-client-id", default=None, description="Telemetry Client ID"),
+        x_sentinel_api_key: str = Header(alias="x-sentinel-api-key", default=None, description="Telemetry API Key"),
+        telemetry_client_service: TelemetryClientService = Depends(get_telemetry_client_service),
 ) -> TelemetryClientAuthContext:
     """
     API key verification for telemetry client ingestion.
@@ -44,20 +47,19 @@ async def verify_api_key_header(
     Returns:
         TelemetryClientAuthContext: The verified client context metadata.
     """
-    # Telemetry ingestion must always provide telemetry credentials.
     if not x_sentinel_client_id or not x_sentinel_api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing telemetry authentication headers"
         )
 
-    # Verify via unified tenant service (now handles telemetry clients too)
-    client_context = await tenant_service.authorize_api_key(
+    client_context = await telemetry_client_service.authorize_api_key(
         client_id=x_sentinel_client_id,
-        api_key=x_sentinel_api_key,
     )
-
-    if not client_context:
+    computed_hash = hashlib.sha256(
+        x_sentinel_api_key.encode("utf-8")
+    ).hexdigest()
+    if not client_context or hmac.compare_digest(computed_hash, client_context.api_key_hash) is False:
         logger.warning(f"Unauthorized API Key attempt for client_id: {x_sentinel_client_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,45 +67,10 @@ async def verify_api_key_header(
         )
 
     logger.debug(f"API Key successfully verified for client: {x_sentinel_client_id}")
-    return client_context
-
-
-# ============================================================================
-# UNIFIED HMAC VERIFICATION (Tenant or Telemetry Client)
-# ============================================================================
-
-async def verify_hmac_signature_header(
-        request: Request,
-        x_public_key: str = Header(..., description="Public key for HMAC verification"),
-        x_signature: str = Header(..., description="HMAC-SHA256 signature"),
-        x_timestamp: int = Header(..., description="Timestamp in seconds since epoch"),
-        tenant_service: TenantService = Depends(get_tenant_service)
-) -> TelemetryClientAuthContext:
-    """
-    Unified HMAC signature verification for both telemetry clients and tenants.
-
-    This dependency should be applied to telemetry ingestion endpoints.
-    """
-    # Get raw body from request
-    body = await request.body()
-
-    # Verify via unified tenant service (now handles telemetry clients too)
-    client_context = await tenant_service.authorize_hmac(
-        public_key=x_public_key,
-        signature=x_signature,
-        timestamp=x_timestamp,
-        body=body,
+    return TelemetryClientAuthContext(
+        client_id=client_context.client_id,
+        display_name=client_context.display_name
     )
-
-    if not client_context:
-        logger.warning(f"HMAC verification failed for public_key: {x_public_key}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid HMAC signature"
-        )
-
-    logger.debug(f"HMAC signature verified for public_key: {x_public_key}")
-    return client_context
 
 
 # ============================================================================

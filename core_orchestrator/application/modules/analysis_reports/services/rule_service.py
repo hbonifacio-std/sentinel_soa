@@ -48,6 +48,9 @@ class RuleService:
     async def rule_exists(self, rule_id: str, client_id: Optional[str]) -> bool:
         return await self.repo.rule_exists(rule_id, client_id)
 
+    async def rule_exists_any(self, rule_id: str) -> bool:
+        return await self.repo.rule_exists_any(rule_id)
+
     async def update_rule(self, rule_id: str, client_id: Optional[str], updates: Dict[str, Any]) -> bool:
         success = await self.repo.update_rule(rule_id, client_id, updates)
         if success:
@@ -64,9 +67,18 @@ class RuleService:
     # Audit log
     # ------------------------------------------------------------------ #
     async def get_audit_logs(
-        self, rule_id: Optional[str] = None, limit: int = 50, offset: int = 0
+        self,
+        client_id: Optional[str],
+        rule_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> List[Dict[str, Any]]:
-        return await self.audit_repo.get_logs(rule_id=rule_id, limit=limit, offset=offset)
+        return await self.audit_repo.get_logs(
+            client_id=client_id,
+            rule_id=rule_id,
+            limit=limit,
+            offset=offset,
+        )
 
     async def log_rule_action(
         self,
@@ -76,6 +88,7 @@ class RuleService:
         changes: Dict[str, Any],
         reason: str,
         ip_address: str,
+        client_id: Optional[str] = None,
     ):
         await self.audit_repo.log_action(
             action=action,
@@ -84,6 +97,7 @@ class RuleService:
             changes=changes,
             reason=reason,
             ip_address=ip_address,
+            client_id=client_id,
         )
 
     # ------------------------------------------------------------------ #

@@ -6,7 +6,7 @@ can use to provide instances of services, repositories, etc., to the
 API endpoints. All instances are sourced from the centralized container.
 """
 
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException, status
 from core_orchestrator.infrastructure.api.container import Container, get_container
 
 # Import types for type hinting
@@ -67,3 +67,23 @@ def get_agent_runner(container: Container = Depends(get_container)) -> AgentRunn
 
 def get_limiter(container: Container = Depends(get_container)):
     return container.limiter
+
+
+# ============================================================================
+# TELEMETRY INGESTION DEPENDENCIES
+# ============================================================================
+
+async def get_source_id(
+    x_sentinel_source_id: str = Header(..., alias="x-sentinel-source-id", description="Unique identifier of the telemetry source")
+) -> str:
+    """Extract and validate source_id from request headers.
+    
+    Required for multitenant batch ingestion to segregate telemetry by data source.
+    Ensures the header is not empty (whitespace-trimmed).
+    """
+    if not x_sentinel_source_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="X-Sentinel-Source-ID header cannot be empty"
+        )
+    return x_sentinel_source_id

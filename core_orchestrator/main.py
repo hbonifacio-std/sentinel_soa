@@ -10,11 +10,13 @@ from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, status, Request, Depends
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import RequestValidationError, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+
 
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.container import get_container
@@ -30,7 +32,8 @@ from core_orchestrator.infrastructure.handlers.exceptions import (
     unhandled_exception_handler,
 )
 from core_orchestrator.infrastructure.api import dependencies as deps
-from core_orchestrator.infrastructure.api.auth import require_api_key, get_tenant_context
+from core_orchestrator.infrastructure.api.rate_limiter import limiter
+
 
 
 logging.basicConfig(
@@ -39,6 +42,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("core_orchestrator.main")
+
 
 
 @asynccontextmanager
@@ -71,18 +75,9 @@ app = FastAPI(
     lifespan=app_lifespan
 )
 
-@app.middleware("http")
-async def add_limiter_to_state(request: Request, call_next: Callable[[Request], Awaitable[Any]]) -> Any:
-    """
-    Middleware to add the rate limiter to the request state,
-    making it available to the exception handler.
-    """
-    # This is a bit of a workaround for the slowapi library not having a more direct
-    # DI integration. We fetch the limiter instance from our container via the deps module.
-    limiter = deps.get_limiter(container=get_container())
-    request.app.state.limiter = limiter
-    response = await call_next(request)
-    return response
+# Initialize rate limiter in app state
+app.state.limiter = limiter
+
 
 
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -96,7 +91,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 # 1. Trusted Host Middleware - Prevent Host Header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=orchestrator_settings.get_cors_origins() + ["localhost", "127.0.0.1"]
+    allowed_hosts=orchestrator_settings.get_trusted_hosts()
 )
 
 # 2. Security Headers Middleware - Add comprehensive security headers
@@ -112,7 +107,14 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "x-sentinel-client-id",
+        "x-sentinel-api-key",
+        "x-sentinel-source-id",
+        "X-Api-Key"
+    ],
 )
 
 # Injection and inclusion of version 1 endpoint routers
@@ -182,11 +184,9 @@ async def health_check(agent_runner: AgentRunner = Depends(deps.get_agent_runner
                 mcp_connected = False
         else:
             mcp_connected = bool(getattr(agent_runner, "is_mcp_connected", False))
-
+    logger.info(f"component core_orchestrator ::  MCP status: {mcp_connected}")
     return {
         "status": "healthy",
-        "component": "core_orchestrator",
-        "mcp_status": "connected" if mcp_connected else "disconnected"
     }
 
 if __name__ == "__main__":

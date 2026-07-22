@@ -25,6 +25,10 @@ class RuleRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def rule_exists_any(self, rule_id: str) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     async def update_rule(self, rule_id: str, client_id: Optional[str], updates: Dict[str, Any]) -> bool:
         raise NotImplementedError
 

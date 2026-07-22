@@ -5,7 +5,7 @@ describe('authStore', () => {
   beforeEach(() => {
     useAuthStore.setState({
       accessToken: null,
-      tenantApiKey: null,
+      clientApiKey: null,
       user: null,
       isAuthenticated: false,
       isBootstrapping: true,
@@ -37,7 +37,7 @@ describe('authStore', () => {
 
     const state = useAuthStore.getState();
     expect(state.accessToken).toBe('token-xyz');
-    expect(state.tenantApiKey).toBeNull();
+    expect(state.clientApiKey).toBeNull();
     expect(state.user).toEqual(fakeUser);
     expect(state.isAuthenticated).toBe(true);
     expect(window.sessionStorage.getItem('sentinel.auth.session.v1')).toBeNull();
@@ -62,7 +62,7 @@ describe('authStore', () => {
 
     const state = useAuthStore.getState();
     expect(state.accessToken).toBeNull();
-    expect(state.tenantApiKey).toBeNull();
+    expect(state.clientApiKey).toBeNull();
     expect(state.user).toBeNull();
     expect(state.isAuthenticated).toBe(false);
   });

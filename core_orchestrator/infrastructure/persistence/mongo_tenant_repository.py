@@ -58,36 +58,22 @@ class MongoTenantRepository(TenantRepository):
             return TenantInDB(**tenant_doc)
         return None
 
-    async def get_by_hmac_public_key(self, public_key: str) -> Optional[TenantInDB]:
-        """Get tenant by HMAC public key (for HMAC signature verification)."""
-        tenant_doc = await self.collection.find_one({
-            "hmac_public_key": public_key,
-            "is_active": True
-        })
-        if tenant_doc:
-            return TenantInDB(**tenant_doc)
-        return None
-
     async def create(
         self, 
         tenant_create: TenantCreate, 
         api_key_hash: str, 
         api_key_plaintext: str
     ) -> TenantInDB:
-        """Create a new tenant with API key hash and plaintext."""
+        """Create a new tenant with API key hash (plaintext not stored)."""
         now = datetime.now(timezone.utc)
 
         tenant_doc = {
             "client_id": tenant_create.client_id,
             "display_name": tenant_create.display_name,
             "api_key_hash": api_key_hash,
-            "api_key_plaintext": api_key_plaintext,
-            "rate_limit_per_minute": tenant_create.rate_limit_per_minute,
-            "is_active": tenant_create.is_active,
+            "rate_limit_per_minute": getattr(tenant_create, 'rate_limit_per_minute', 60),
+            "is_active": getattr(tenant_create, 'is_active', True),
             "description": tenant_create.description,
-            "api_key": tenant_create.api_key,
-            "hmac_public_key": tenant_create.hmac_public_key,
-            "hmac_secret": tenant_create.hmac_secret,
             "created_at": now,
             "updated_at": now,
         }
@@ -131,7 +117,3 @@ class MongoTenantRepository(TenantRepository):
     async def ensure_indexes(self) -> None:
         """Ensure unique indexes required by the tenants collection."""
         await self.collection.create_index("client_id", unique=True)
-        await self.collection.create_index("api_key_hash", unique=True, sparse=True)
-        await self.collection.create_index("client_id", unique=True, sparse=True)
-        await self.collection.create_index("api_key", unique=True, sparse=True)
-        await self.collection.create_index("hmac_public_key", unique=True, sparse=True)

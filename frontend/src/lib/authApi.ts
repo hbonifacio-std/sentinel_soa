@@ -25,9 +25,20 @@ export async function me(): Promise<AuthUser> {
   return apiFetch<AuthUser>(`${authBasePath}/me`);
 }
 
-export async function logout(): Promise<void> {
-  await apiFetch<void>(`${authBasePath}/logout`, {
+export async function refresh(): Promise<TokenResponse> {
+  return apiFetch<TokenResponse>(`${authBasePath}/refresh`, {
     method: 'POST',
+    skipAuth: true,
+    skipTenantAuth: true,
+    skipUnauthorizedHandler: true,
+    skipAuthRefresh: true,
   });
 }
 
+export async function logout(): Promise<void> {
+  await apiFetch<void>(`${authBasePath}/logout`, {
+    method: 'POST',
+    skipUnauthorizedHandler: true,
+    skipAuthRefresh: true,
+  });
+}

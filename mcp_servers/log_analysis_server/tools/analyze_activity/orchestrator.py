@@ -23,7 +23,7 @@ from .indicators import build_deterministic_indicators, normalize_indicator_labe
 from .recommendations import generate_recommendation
 
 logger = logging.getLogger(__name__)
-_LLM_ANALYSIS_TIMEOUT_S = 300.0
+_LLM_ANALYSIS_TIMEOUT_S = 900.0
 
 
 # ============================================================================

@@ -12,6 +12,11 @@ from core_orchestrator.domain.ports.telemetry.report_telemetry_service_port impo
 logger = logging.getLogger(__name__)
 GROUP_STAGE = "$group"
 
+
+class CrossTenantAccessError(PermissionError):
+    """Raised when a report exists but belongs to a different client scope."""
+
+
 class ReportResolutionPayload:
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -40,8 +45,16 @@ class ReportTelemetryService(ReportTelemetryServicePort):
     async def get_report_by_id(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
         return await self.analytics_repository.get_report_by_id(report_id, client_id)
 
-    async def mark_report_as_reviewed(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_mutable_report_in_scope(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
         report = await self.get_report_by_id(report_id, client_id)
+        if report:
+            return report
+        if await self.analytics_repository.report_exists(report_id):
+            raise CrossTenantAccessError("Cross-tenant report mutation is not allowed")
+        return None
+
+    async def mark_report_as_reviewed(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
+        report = await self._get_mutable_report_in_scope(report_id, client_id)
         if not report:
             return None
 
@@ -56,7 +69,7 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         client_id: str,
         action_request: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        report = await self.get_report_by_id(report_id, client_id)
+        report = await self._get_mutable_report_in_scope(report_id, client_id)
         if not report:
             return None # Report not found
 
@@ -77,7 +90,7 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         return updated_report
 
     async def mark_report_as_resolved(self, report_id: str, client_id: str) -> Optional[Dict[str, Any]]:
-        report = await self.get_report_by_id(report_id, client_id)
+        report = await self._get_mutable_report_in_scope(report_id, client_id)
         if not report:
             return None
 

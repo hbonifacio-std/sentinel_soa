@@ -1,4 +1,7 @@
 from unittest.mock import AsyncMock, Mock
+import hashlib
+
+import bcrypt
 
 import pytest
 
@@ -9,9 +12,8 @@ from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClien
 def _build_client() -> TelemetryClientInDB:
     return TelemetryClientInDB(
         client_id="collector-1",
-        source_id="victim-api",
         display_name="Victim Collector",
-        api_key="1234567890abcdef",
+        api_key_hash="1234567890abcdef",
         hmac_public_key="pub-key-1",
         hmac_secret="abcdef1234567890",
         is_active=True,
@@ -65,3 +67,48 @@ async def test_authorize_hmac_returns_none_when_signature_is_invalid() -> None:
 
     assert auth_context is None
 
+
+@pytest.mark.asyncio
+async def test_authorize_api_key_uses_bcrypt_without_migration() -> None:
+    repository = AsyncMock()
+    signature_verifier = Mock()
+    service = TelemetryClientService(repository, signature_verifier)
+    client = _build_client().model_copy(
+        update={
+            "api_key": bcrypt.hashpw(
+                b"1234567890abcdef",
+                bcrypt.gensalt(rounds=4),
+            ).decode(),
+        }
+    )
+    repository.get_by_client_id.return_value = client
+
+    auth_context = await service.authorize_api_key(
+        client_id="collector-1",
+        api_key="1234567890abcdef",
+    )
+
+    assert auth_context is not None
+    repository.upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_authorize_api_key_migrates_legacy_sha256_on_success() -> None:
+    repository = AsyncMock()
+    signature_verifier = Mock()
+    service = TelemetryClientService(repository, signature_verifier)
+    client = _build_client().model_copy(
+        update={
+            "api_key": hashlib.sha256(b"1234567890abcdef").hexdigest(),
+        }
+    )
+    repository.get_by_client_id.return_value = client
+    repository.upsert.return_value = (client, False, True)
+
+    auth_context = await service.authorize_api_key(
+        client_id="collector-1",
+        api_key="1234567890abcdef",
+    )
+
+    assert auth_context is not None
+    repository.upsert.assert_called_once()

@@ -7,12 +7,15 @@ import asyncio
 from typing import Dict, Any, List, Optional
 
 from fastmcp.server import FastMCP
+from starlette.middleware import Middleware
 
 # Import the real analysis functions with heuristics
+from mcp_servers.log_analysis_server.auth_middleware import InternalBearerAuthMiddleware
 from mcp_servers.log_analysis_server.config import server_settings
 from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
 from mcp_servers.log_analysis_server.tools.forensic_nlq import build_forensic_mongo_query, generate_forensic_report
 from mcp_servers.log_analysis_server.tools.threat_context import ThreatContextRequest, execute_get_threat_context
+from mcp_servers.log_analysis_server.tool_access_control import require_tool_permission
 from mcp_servers.log_analysis_server.tools.error_responses import (
     build_analyze_web_activity_error,
     build_threat_context_error,
@@ -43,6 +46,7 @@ server = FastMCP("log-analysis-server")
 # --- System Tools ---
 
 @server.tool()
+@require_tool_permission("get_available_models")
 async def get_available_models() -> Dict[str, Any]:
     """Returns a dictionary of available models from the server configuration."""
     models = {
@@ -60,6 +64,7 @@ async def get_available_models() -> Dict[str, Any]:
 # --- Register real tools with heuristics ---
 # pylint: disable=too-many-arguments
 @server.tool()
+@require_tool_permission("analyze_web_activity")
 async def analyze_web_activity(  # noqa: PLR0913
         source_ip: str,
         window_start_utc: str,
@@ -157,6 +162,7 @@ async def analyze_web_activity(  # noqa: PLR0913
         )
 
 @server.tool()
+@require_tool_permission("generate_mongo_query_from_nl")
 async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = None) -> Dict[str, Any]:
     """Translate a natural-language forensic question into a safe Mongo filter plan.
 
@@ -176,6 +182,7 @@ async def generate_mongo_query_from_nl(query: str, source_id: Optional[str] = No
 
 
 @server.tool()
+@require_tool_permission("generate_forensic_report_from_logs")
 async def generate_forensic_report_from_logs(
     query: str,
     total_matches: int,
@@ -218,6 +225,7 @@ async def generate_forensic_report_from_logs(
 
 
 @server.tool()
+@require_tool_permission("get_threat_context")
 async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str, Any]:
     """
     Retrieves the threat history for a specific IP.
@@ -238,23 +246,32 @@ async def main():
     """
     transport_mode = os.getenv('MCP_TRANSPORT', 'sse').lower()
     
-    # Warn if MCP_INTERNAL_TOKEN is not configured
-    if not get_internal_token():
-        logger.warning("⚠️  MCP_INTERNAL_TOKEN not configured - HMAC signing/verification will be disabled!")
-    
     logger.info("Tools 'analyze_web_activity' and 'get_threat_context' registered.")
 
     try:
         if transport_mode == 'stdio':
+            if not get_internal_token():
+                logger.error("MCP_INTERNAL_SIGNING_TOKEN/MCP_INTERNAL_TOKEN is required. Refusing to start.")
+                sys.exit(1)
             logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
             await server.run_async(transport='stdio')
 
         elif transport_mode == 'sse':
             host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
             port = int(os.getenv('MCP_SERVER_PORT', '8080'))
+            internal_token = get_internal_token()
+            if not internal_token:
+                logger.error("MCP_INTERNAL_TOKEN is required for SSE transport. Refusing to start.")
+                sys.exit(1)
+            http_middleware = [Middleware(InternalBearerAuthMiddleware)]
             logger.info(f"Starting FastMCP Log Analysis Server on SSE at {host}:{port}...")
             logger.info("SSE endpoints exposed at /sse and /messages/")
-            await server.run_http_async(transport='sse', host=host, port=port)
+            await server.run_http_async(
+                transport='sse',
+                host=host,
+                port=port,
+                middleware=http_middleware,
+            )
             
         else:
             logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'sse'.")

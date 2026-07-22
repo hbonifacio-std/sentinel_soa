@@ -21,7 +21,7 @@ describe('apiClient', () => {
     expect(result).toEqual(fakeResponse);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/test-endpoint'),
-      expect.any(Object),
+      expect.objectContaining({ credentials: 'include' }),
     );
   });
 
@@ -110,5 +110,34 @@ describe('apiClient', () => {
       // Ignored
     }
     expect(onUnauthorizedMock).toHaveBeenCalled();
+  });
+
+  it('retries once after successful refresh on 401', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ detail: 'Unauthorized' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({ data: 'ok' }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const refreshAccessTokenMock = vi.fn().mockResolvedValue('new-token');
+    configureApiClient({
+      refreshAccessToken: refreshAccessTokenMock,
+      getAccessToken: () => 'new-token',
+    });
+
+    const result = await apiFetch<{ data: string }>('/retry-endpoint');
+    expect(result).toEqual({ data: 'ok' });
+    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

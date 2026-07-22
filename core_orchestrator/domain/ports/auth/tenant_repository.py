@@ -35,12 +35,12 @@ class TenantRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_by_hmac_public_key(self, public_key: str) -> Optional[TenantInDB]:
-        """Get tenant by HMAC public key (for HMAC signature verification)."""
-        pass
-
-    @abstractmethod
-    async def create(self, tenant_create: TenantCreate, api_key_hash: str, api_key_plaintext: str) -> TenantInDB:
+    async def create(
+        self, 
+        tenant_create: TenantCreate, 
+        api_key_hash: str, 
+        api_key_plaintext: str
+    ) -> TenantInDB:
         """Create a new tenant."""
         pass
 

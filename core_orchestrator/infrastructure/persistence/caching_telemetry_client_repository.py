@@ -50,7 +50,7 @@ class CachingTelemetryClientRepository(TelemetryClientRepository):
                 expire_seconds=CACHE_TTL_SECONDS
             )
             await self._cache.set(
-                self._public_key_key(client.hmac_public_key),
+                self._public_key_key(client.api_key_hash),
                 client.model_dump_json(),
                 expire_seconds=CACHE_TTL_SECONDS
             )
@@ -92,6 +92,5 @@ class CachingTelemetryClientRepository(TelemetryClientRepository):
         
         logger.debug(f"Invalidating cache for client ID: {client.client_id}")
         await self._cache.delete(self._client_id_key(client.client_id))
-        await self._cache.delete(self._public_key_key(client.hmac_public_key))
         
         return client, created, updated

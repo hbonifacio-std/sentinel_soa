@@ -598,7 +598,7 @@ async def test_mongo_telemetry_client_repository_indexes(mock_db_manager):
 
     collection.create_index = AsyncMock()
     await repo.ensure_indexes()
-    assert collection.create_index.call_count == 4
+    assert collection.create_index.call_count == 3
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import { RequireAuth } from '@/components/RequireAuth';
 import { RequireRole } from '@/components/RequireRole';
 import App from '@/App';
 import { configureApiClient } from '@/lib/apiClient';
+import { refresh } from '@/lib/authApi';
 import { queryClient } from '@/lib/queryClient';
 import { useAuthStore } from '@/store/authStore';
 import '@/index.css';
@@ -22,7 +23,17 @@ const LoginPage = lazy(() => import('@/features/auth/LoginPage'));
 
 configureApiClient({
   getAccessToken: () => useAuthStore.getState().accessToken,
-  getTenantApiKey: () => useAuthStore.getState().tenantApiKey,
+  refreshAccessToken: async () => {
+    try {
+      const tokenResponse = await refresh();
+      useAuthStore
+        .getState()
+        .setSession(tokenResponse.access_token, tokenResponse.user);
+      return tokenResponse.access_token;
+    } catch {
+      return null;
+    }
+  },
   onUnauthorized: () => {
     useAuthStore.getState().setAuthError('Tu sesion expiro. Inicia sesion nuevamente.');
     useAuthStore.getState().clearSession();

@@ -81,3 +81,45 @@ async def test_logout_does_not_blacklist_when_jti_missing() -> None:
 
     token_blacklist_repository.add_to_blacklist.assert_not_called()
 
+
+@pytest.mark.asyncio
+async def test_refresh_fails_when_refresh_token_blacklisted() -> None:
+    user_provider = AsyncMock()
+    token_blacklist_repository = AsyncMock()
+    token_service = Mock()
+    token_blacklist_repository.is_blacklisted.return_value = True
+    token_service.verify_refresh_token.return_value = {"sub": "u-1", "jti": "refresh-jti-1"}
+
+    service = AuthService(
+        user_provider,
+        token_blacklist_repository,
+        token_service,
+        timedelta(minutes=15),
+    )
+
+    result = await service.refresh_access_token("refresh-jwt-token")
+
+    assert result is None
+    user_provider.get_user_by_id.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_revoke_refresh_token_blacklists_refresh_jti() -> None:
+    user_provider = AsyncMock()
+    token_blacklist_repository = AsyncMock()
+    token_service = Mock()
+    exp = int((datetime.now(timezone.utc) + timedelta(days=1)).timestamp())
+    token_service.verify_refresh_token.return_value = {"sub": "u-1", "jti": "refresh-jti-1", "exp": exp}
+
+    service = AuthService(
+        user_provider,
+        token_blacklist_repository,
+        token_service,
+        timedelta(minutes=15),
+    )
+
+    await service.revoke_refresh_token("refresh-jwt-token")
+
+    token_blacklist_repository.add_to_blacklist.assert_called_once()
+    jti, _ = token_blacklist_repository.add_to_blacklist.call_args.args
+    assert jti == "refresh-jti-1"

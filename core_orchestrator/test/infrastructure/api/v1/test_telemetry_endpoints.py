@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
-import json
 from datetime import datetime, timezone
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.testclient import TestClient
@@ -9,15 +8,24 @@ from core_orchestrator.infrastructure.api.dependencies import (
     get_telemetry_service,
     get_telemetry_processing_service,
     get_agent_runner,
+    get_source_id,
 )
-from core_orchestrator.infrastructure.security.dependencies import verify_api_key_header
+from core_orchestrator.infrastructure.security.dependencies import (
+    verify_api_key_header,
+    verify_hmac_signature_header,
+)
+from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
 from core_orchestrator.domain.models.telemetry.log_event import LogEvent
 
 dummy_auth_context = TelemetryClientAuthContext(
     client_id="client-1",
-    source_id="src-1",
     display_name="Client One"
+)
+dummy_tenant_context = TenantContext(
+    client_id="client-1",
+    display_name="Client One",
+    rate_limit_per_minute=60,
 )
 
 dummy_event = LogEvent(
@@ -50,13 +58,14 @@ def client(mock_telemetry_service, mock_processing_service, mock_agent_runner):
     app.dependency_overrides[get_telemetry_processing_service] = lambda: mock_processing_service
     app.dependency_overrides[get_agent_runner] = lambda: mock_agent_runner
     app.dependency_overrides[verify_api_key_header] = lambda: dummy_auth_context
+    app.dependency_overrides[verify_hmac_signature_header] = lambda: dummy_auth_context
+    app.dependency_overrides[get_tenant_context] = lambda: dummy_tenant_context
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
 
 
 batch_headers = {
-    "X-Sentinel-SOURCE-ID": "src-1",
-    "X-Sentinel-Client-ID": "client-1",
+    "X-Sentinel-Source-ID": "src-1",
 }
 
 def test_ingest_single_event(client, mock_telemetry_service, mock_processing_service):
@@ -90,14 +99,12 @@ def test_ingest_batch_events_different_source_ids(client):
     assert response.status_code == 202
     assert response.json()["processed_records"] == 2
 
-def test_ingest_batch_events_unauthorized_source_id(client):
-    payload = [
-        {**dummy_event.model_dump(mode="json"), "source_id": "src-other"}
-    ]
-    headers = dict(batch_headers)
-    headers["X-Sentinel-Client-ID"] = "client-other"
-    response = client.post("/ingest/batch", json=payload, headers=headers)
-    assert response.status_code == 403
+def test_ingest_batch_events_missing_source_id(client):
+    """Test that missing X-Sentinel-Source-ID header returns 422 (validation error)."""
+    payload = [dummy_event.model_dump(mode="json")]
+    # Remove the Source-ID header
+    response = client.post("/ingest/batch", json=payload, headers={})
+    assert response.status_code == 422
 
 def test_flush_windows_success(client, mock_processing_service, mock_agent_runner):
     mock_processing_service.get_active_windows.return_value = [b"win-key"]

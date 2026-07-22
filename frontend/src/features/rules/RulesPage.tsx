@@ -147,7 +147,7 @@ function ruleToUpdatePayload(draft: RuleDraft): HeuristicRuleUpdate {
 
 export default function RulesPage() {
   const currentUser = useAuthStore((state) => state.user);
-  const currentTenantId = currentUser?.tenant_id ?? null;
+  const currentTenantId = currentUser?.client_id ?? null;
   const isAdmin = currentUser?.role === 'admin';
   const [rules, setRules] = useState<HeuristicRule[]>([]);
   const [versions, setVersions] = useState<RuleVersion[]>([]);

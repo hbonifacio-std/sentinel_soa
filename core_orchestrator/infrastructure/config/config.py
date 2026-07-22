@@ -5,7 +5,8 @@ that regulate perimeter REST ports, log time window thresholds,
 and MCP subprocess initialization paths.
 """
 
-from pydantic import Field, SecretStr, field_validator
+from urllib.parse import urlparse
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,32 @@ class OrchestratorSettings(BaseSettings):
         default=8000,
         validation_alias="API_PORT",
         description="TCP port on which the perimeter HTTP/REST endpoints will be exposed."
+    )
+
+    app_env: str = Field(
+        default="development",
+        validation_alias="APP_ENV",
+        description="Execution environment (development, staging, production, test)."
+    )
+
+    secret_source: str = Field(
+        default="env",
+        validation_alias="SECRET_SOURCE",
+        description="Secret origin provider (env, vault, aws_secrets_manager, gcp_secret_manager, azure_key_vault)."
+    )
+
+    secret_rotation_days: int = Field(
+        default=30,
+        validation_alias="SECRET_ROTATION_DAYS",
+        gt=0,
+        le=365,
+        description="Maximum secret age in days before mandatory rotation."
+    )
+
+    require_https_in_production: bool = Field(
+        default=True,
+        validation_alias="REQUIRE_HTTPS_IN_PRODUCTION",
+        description="If true, production rejects plain HTTP origins."
     )
 
     # --- Internal MCP Subprocess Configuration ---
@@ -101,9 +128,114 @@ class OrchestratorSettings(BaseSettings):
                 "The MCP tool execution command cannot be empty.")
         return cleaned
 
+    @field_validator("app_env")
+    @classmethod
+    def validate_app_env(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"development", "staging", "production", "test"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"APP_ENV must be one of {sorted(allowed)}, got '{value}'.")
+        return normalized
+
+    @field_validator("secret_source")
+    @classmethod
+    def validate_secret_source(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {
+            "env",
+            "vault",
+            "aws_secrets_manager",
+            "gcp_secret_manager",
+            "azure_key_vault",
+        }
+        if normalized not in allowed:
+            raise ValueError(
+                f"SECRET_SOURCE must be one of {sorted(allowed)}, got '{value}'.")
+        return normalized
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def validate_jwt_secret_key_strength(
+        cls,
+        value: SecretStr,
+        info: ValidationInfo,
+    ) -> SecretStr:
+        secret = value.get_secret_value().strip()
+        if not secret:
+            raise ValueError("JWT_SECRET_KEY cannot be empty.")
+
+        app_env = (info.data.get("app_env") or "development").lower()
+        lowered = secret.lower()
+        placeholder_markers = (
+            "<generar_",
+            "<set_",
+            "your-super-secret-key-here",
+            "replace-me",
+            "changeme",
+        )
+        if app_env == "production":
+            if len(secret) < 32:
+                raise ValueError(
+                    "JWT_SECRET_KEY must be at least 32 characters in production.")
+            if secret.startswith("<") or any(marker in lowered for marker in placeholder_markers):
+                raise ValueError(
+                    "JWT_SECRET_KEY cannot be a placeholder in production.")
+        return value
+
+    @field_validator("allowed_cors_origins")
+    @classmethod
+    def validate_allowed_cors_origins(cls, value: str, info: ValidationInfo) -> str:
+        origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+        if not origins:
+            raise ValueError("ALLOWED_CORS_ORIGINS must define at least one origin.")
+        app_env = (info.data.get("app_env") or "development").lower()
+        require_https = bool(info.data.get("require_https_in_production", True))
+        for origin in origins:
+            if "*" in origin:
+                raise ValueError("Wildcard origins are not allowed in ALLOWED_CORS_ORIGINS.")
+            parsed = urlparse(origin)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError(f"Invalid origin in ALLOWED_CORS_ORIGINS: {origin}")
+            if (
+                app_env == "production"
+                and require_https
+                and parsed.scheme != "https"
+                and parsed.hostname not in {"localhost", "127.0.0.1"}
+            ):
+                raise ValueError(
+                    f"ALLOWED_CORS_ORIGINS must use https in production. Invalid origin: {origin}")
+        return ",".join(origins)
+
+    @model_validator(mode="after")
+    def validate_production_secret_policy(self) -> "OrchestratorSettings":
+        if self.app_env != "production":
+            return self
+        if self.secret_source == "env":
+            raise ValueError(
+                "SECRET_SOURCE cannot be 'env' in production. Use a managed secret provider.")
+        if self.secret_rotation_days > 90:
+            raise ValueError(
+                "SECRET_ROTATION_DAYS must be 90 days or less in production.")
+        if not self.require_https_in_production:
+            raise ValueError(
+                "REQUIRE_HTTPS_IN_PRODUCTION must remain enabled in production.")
+        return self
+
     def get_cors_origins(self) -> list[str]:
         """Parse comma-separated CORS origins from config."""
         return [origin.strip() for origin in self.allowed_cors_origins.split(",") if origin.strip()]
+
+    def get_trusted_hosts(self) -> list[str]:
+        hosts: set[str] = {"localhost", "127.0.0.1"}
+        # Agregar Docker network hosts
+        hosts.add("core")
+        hosts.add("172.18.0.0/16")  # Docker default bridge network
+        for origin in self.get_cors_origins():
+            parsed = urlparse(origin)
+            if parsed.hostname:
+                hosts.add(parsed.hostname)
+        return sorted(hosts)
 
     model_config = SettingsConfigDict(
         env_file=".env",

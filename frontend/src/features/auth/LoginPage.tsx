@@ -56,7 +56,7 @@ export default function LoginPage() {
 
     try {
       const tokenResponse = await login(username.trim(), password);
-      setSession(tokenResponse.access_token, tokenResponse.user, tokenResponse.tenant_api_key);
+      setSession(tokenResponse.access_token, tokenResponse.user);
       navigate(nextPath, { replace: true });
     } catch (error) {
       setLocalError(getLoginErrorMessage(error));
@@ -110,4 +110,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

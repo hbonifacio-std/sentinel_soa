@@ -55,6 +55,10 @@ def mock_repositories_and_services():
     # Ensure RulesEngineService.initialize is an async mock (awaitable)
     from core_orchestrator.infrastructure.api import container as container_mod
     container_mod.RulesEngineService.return_value.initialize = AsyncMock()
+    container_mod.MongoAnalyticsRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoRuleRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoAuditRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoForensicAnalysisRepository.return_value.ensure_indexes = AsyncMock()
     yield
     for p in patches:
         p.stop()
@@ -110,4 +114,3 @@ async def test_create_mcp_agent():
     agent = container._create_mcp_agent(mock_mcp_mgr)
     from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
     assert isinstance(agent, OrchestratorAgent)
-

@@ -2,6 +2,7 @@
 MongoDB implementation of the telemetry client repository.
 """
 import logging
+import bcrypt
 from datetime import datetime, timezone
 from typing import List, Optional
 
@@ -10,6 +11,20 @@ from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import
 from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientCreate, TelemetryClientInDB
 
 logger = logging.getLogger(__name__)
+
+
+def _is_bcrypt_hash(hash_string: str) -> bool:
+    return hash_string.startswith(("$2a$", "$2b$", "$2y$"))
+
+
+def _is_sha256_hash(hash_string: str) -> bool:
+    return len(hash_string) == 64 and all(c in "0123456789abcdef" for c in hash_string.lower())
+
+
+def _normalize_api_key_for_storage(api_key: str) -> str:
+    if _is_bcrypt_hash(api_key) or _is_sha256_hash(api_key):
+        return api_key
+    return bcrypt.hashpw(api_key.encode(), bcrypt.gensalt(rounds=12)).decode()
 
 
 class MongoTelemetryClientRepository(TelemetryClientRepository):
@@ -39,12 +54,13 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
     async def create(self, client_create: TelemetryClientCreate) -> TelemetryClientInDB:
         now = datetime.now(timezone.utc)
         client = TelemetryClientInDB(
-            **client_create.model_dump(),
+            **client_create.model_dump(exclude={"api_key"}),
+            api_key_hash=_normalize_api_key_for_storage(client_create.api_key),
             created_at=now,
             updated_at=now,
         )
         await self.collection.insert_one(client.model_dump(mode="python"))
-        logger.info("Telemetry client created: %s -> source=%s", client.client_id, client.source_id)
+        logger.info("Telemetry client created: %s", client.client_id)
         return client
 
     async def list_all(self, include_inactive: bool = False) -> List[TelemetryClientInDB]:
@@ -68,7 +84,7 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
                     "display_name": payload.display_name,
                     "description": payload.description,
                     "is_active": payload.is_active,
-                    "api_key": payload.api_key,
+                    "api_key": _normalize_api_key_for_storage(payload.api_key),
                     "hmac_public_key": payload.hmac_public_key,
                     "hmac_secret": payload.hmac_secret,
                     "updated_at": now,
@@ -79,7 +95,8 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
             return updated, False, True
 
         client = TelemetryClientInDB(
-            **payload.model_dump(),
+            **payload.model_dump(exclude={"api_key"}),
+            api_key_hash=_normalize_api_key_for_storage(payload.api_key),
             created_at=now,
             updated_at=now,
         )
@@ -90,6 +107,5 @@ class MongoTelemetryClientRepository(TelemetryClientRepository):
     async def ensure_indexes(self) -> None:
         """Ensure unique indexes required by the clients collection."""
         await self.collection.create_index("client_id", unique=True)
-        await self.collection.create_index("source_id", unique=True)
         await self.collection.create_index("hmac_public_key", unique=True)
         await self.collection.create_index("is_active")

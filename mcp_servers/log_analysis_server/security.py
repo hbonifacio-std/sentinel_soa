@@ -35,6 +35,10 @@ class UserRole(str, Enum):
 
 TOOL_PERMISSIONS: Dict[str, Set[UserRole]] = {
     # Tool name: Set of allowed roles
+    "get_available_models": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "generate_mongo_query_from_nl": {UserRole.ADMIN, UserRole.ANALYST},
+    "generate_forensic_report_from_logs": {UserRole.ADMIN, UserRole.ANALYST},
+    "get_threat_context": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
     
     # Read-only analysis tools (open to analyst and above)
     "analyze_web_activity": {UserRole.ADMIN, UserRole.ANALYST},
@@ -135,8 +139,46 @@ def list_available_tools(user_role: Optional[str] = None) -> List[str]:
 
 
 def get_internal_token() -> Optional[str]:
-    """Retrieve MCP_INTERNAL_TOKEN from environment."""
-    return os.getenv("MCP_INTERNAL_TOKEN")
+    """Retrieve the signing token used for rules-bundle integrity."""
+    signing_token = (os.getenv("MCP_INTERNAL_SIGNING_TOKEN") or "").strip()
+    if signing_token:
+        return signing_token
+
+    fallback_token = (os.getenv("MCP_INTERNAL_TOKEN") or "").strip()
+    return fallback_token or None
+
+
+def _parse_token_list(raw_value: Optional[str]) -> Set[str]:
+    """Parse a comma-separated token list into a deduplicated non-empty set."""
+    if not raw_value:
+        return set()
+    return {token.strip() for token in raw_value.split(",") if token.strip()}
+
+
+def _role_tokens_from_env(role: UserRole) -> Set[str]:
+    """Load role-bound internal bearer tokens from environment variables."""
+    role_name = role.value.upper()
+    explicit = _parse_token_list(os.getenv(f"MCP_INTERNAL_TOKEN_{role_name}"))
+    list_based = _parse_token_list(os.getenv(f"MCP_INTERNAL_TOKENS_{role_name}"))
+    return explicit | list_based
+
+
+def get_bearer_tokens_by_role() -> Dict[UserRole, Set[str]]:
+    """Resolve all configured bearer tokens grouped by role.
+
+    Backward compatibility:
+    - ``MCP_INTERNAL_TOKEN`` is treated as an ``analyst`` token.
+    - ``MCP_INTERNAL_TOKENS`` (CSV) are treated as ``analyst`` tokens to allow zero-downtime rotation.
+    """
+    role_tokens: Dict[UserRole, Set[str]] = {
+        UserRole.ADMIN: _role_tokens_from_env(UserRole.ADMIN),
+        UserRole.ANALYST: _role_tokens_from_env(UserRole.ANALYST),
+        UserRole.VIEWER: _role_tokens_from_env(UserRole.VIEWER),
+    }
+
+    role_tokens[UserRole.ANALYST] |= _parse_token_list(os.getenv("MCP_INTERNAL_TOKENS"))
+    role_tokens[UserRole.ANALYST] |= _parse_token_list(os.getenv("MCP_INTERNAL_TOKEN"))
+    return role_tokens
 
 
 def set_auth_header(header: Optional[str]) -> None:
@@ -190,20 +232,22 @@ def validate_bearer_token_with_role(
         return False
     
     token = parts[1]
-    expected_token = get_internal_token()
-    
-    if not expected_token:
-        logger.error("MCP_INTERNAL_TOKEN not configured")
+    role_tokens = get_bearer_tokens_by_role()
+
+    if not any(role_tokens.values()):
+        logger.error("No MCP internal bearer tokens configured")
         return False
-    
-    # Constant-time comparison to prevent timing attacks
-    is_valid = hmac.compare_digest(token, expected_token)
-    
-    # Extract and set user role if token claims provided
-    if is_valid and token_claims:
-        extract_role_from_token(token_claims)
-    
-    return is_valid
+
+    for role, tokens in role_tokens.items():
+        for expected_token in tokens:
+            if hmac.compare_digest(token, expected_token):
+                set_user_role(role.value)
+                if token_claims:
+                    extract_role_from_token(token_claims)
+                return True
+
+    logger.warning("Invalid MCP bearer token received")
+    return False
 
 
 def sign_rules_bundle(rules_bundle: Dict[str, Any]) -> Dict[str, Any]:
@@ -268,4 +312,3 @@ def verify_rules_bundle_signature(rules_bundle: Dict[str, Any]) -> bool:
         logger.warning("rules_bundle signature verification failed")
     
     return is_valid
-

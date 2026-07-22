@@ -2,7 +2,10 @@ import logging
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
+from core_orchestrator.application.modules.analysis_reports.services.analytics_service import (
+    CrossTenantAccessError,
+    ReportTelemetryService,
+)
 from core_orchestrator.domain.models.auth.user import UserInDB
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
 from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
@@ -63,11 +66,13 @@ async def mark_report_reviewed(
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
-    report = await analytics_service.mark_report_as_reviewed(report_id, current_user.client_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-
-    return report
+    try:
+        report = await analytics_service.mark_report_as_reviewed(report_id, current_user.client_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return report
+    except CrossTenantAccessError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.post("/analytics/reports/{report_id}/actions")
@@ -86,6 +91,8 @@ async def add_report_action(
         if not report:
             raise HTTPException(status_code=404, detail="Report not found")
         return report
+    except CrossTenantAccessError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
@@ -96,11 +103,13 @@ async def mark_report_resolved(
         analytics_service: ReportTelemetryService = Depends(get_analytics_service),
         current_user: UserInDB = Depends(get_analyst_user_with_client),
 ):
-    report = await analytics_service.mark_report_as_resolved(report_id, current_user.client_id)
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-
-    return report
+    try:
+        report = await analytics_service.mark_report_as_resolved(report_id, current_user.client_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Report not found")
+        return report
+    except CrossTenantAccessError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/analytics/source_ids")

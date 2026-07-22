@@ -8,8 +8,9 @@ is centralized in the orchestrator.
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Optional, Dict, Any
-from pydantic import Field, SecretStr, field_validator, BaseModel
+from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator, BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,24 @@ class LogAnalysisServerSettings(BaseSettings):
     Reads environment variables that the Core Orchestrator provides when
     starting it as a subprocess.
     """
+
+    app_env: str = Field(
+        default="development",
+        validation_alias="APP_ENV",
+        description="Execution environment (development, staging, production, test)."
+    )
+
+    secret_source: str = Field(
+        default="env",
+        validation_alias="SECRET_SOURCE",
+        description="Secret origin provider inherited from core orchestrator."
+    )
+
+    require_https_in_production: bool = Field(
+        default=True,
+        validation_alias="REQUIRE_HTTPS_IN_PRODUCTION",
+        description="If true, production rejects non-HTTPS provider endpoints."
+    )
 
     # ========== MODEL CATALOG CONFIGURATION ==========
     
@@ -173,9 +192,51 @@ class LogAnalysisServerSettings(BaseSettings):
 
     @field_validator('ollama_base_url')
     @classmethod
-    def validate_ollama_base_url(cls, v: str) -> str:
+    def validate_ollama_base_url(cls, v: str, info: ValidationInfo) -> str:
         """Ensures the Docker-friendly Ollama endpoint is used when the env var is empty."""
-        return (v or '').strip() or 'http://ollama:11434'
+        value = (v or '').strip() or 'http://ollama:11434'
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("OLLAMA_BASE_URL must be a valid http(s) URL.")
+
+        app_env = (info.data.get("app_env") or "development").lower()
+        require_https = bool(info.data.get("require_https_in_production", True))
+        if app_env == "production" and require_https and parsed.scheme != "https":
+            raise ValueError("OLLAMA_BASE_URL must use https in production.")
+        return value
+
+    @field_validator("app_env")
+    @classmethod
+    def validate_app_env(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {"development", "staging", "production", "test"}
+        if normalized not in allowed:
+            raise ValueError(
+                f"APP_ENV must be one of {sorted(allowed)}, got '{value}'.")
+        return normalized
+
+    @field_validator("secret_source")
+    @classmethod
+    def validate_secret_source(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {
+            "env",
+            "vault",
+            "aws_secrets_manager",
+            "gcp_secret_manager",
+            "azure_key_vault",
+        }
+        if normalized not in allowed:
+            raise ValueError(
+                f"SECRET_SOURCE must be one of {sorted(allowed)}, got '{value}'.")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_production_secret_policy(self) -> "LogAnalysisServerSettings":
+        if self.app_env == "production" and self.secret_source == "env":
+            raise ValueError(
+                "SECRET_SOURCE cannot be 'env' in production. Use a managed secret provider.")
+        return self
     
     def _load_models_from_json(self, json_path: str) -> Dict[str, ModelDefinition]:
         """Load model catalog from external JSON file."""
