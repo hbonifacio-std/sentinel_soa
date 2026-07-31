@@ -38,7 +38,7 @@ class Tenant:
     rate_limit_per_minute: int = 60
     is_active: bool = True
     api_key_hash: Optional[str] = None
-
+    api_key_plaintext: Optional[str] = None
 
     ai_providers: List[ProviderAIConfig] = field(default_factory=list)
     available_models: Dict[str, TenantModelAIDefinition] = field(default_factory=dict)

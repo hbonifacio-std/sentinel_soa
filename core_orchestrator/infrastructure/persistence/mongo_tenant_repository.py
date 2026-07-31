@@ -126,23 +126,13 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         Returns:
             Tenant: The newly created tenant object based on the stored document.
         """
-        now = datetime.now(timezone.utc)
+        tenant_create.api_key_hash = api_key_hash
+        tenant_create.api_key_plaintext = api_key_plaintext
 
-        tenant_doc = {
-            "client_id": tenant_create.client_id,
-            "display_name": tenant_create.display_name,
-            "api_key_hash": api_key_hash,
-            "rate_limit_per_minute": getattr(tenant_create, 'rate_limit_per_minute', 60),
-            "is_active": getattr(tenant_create, 'is_active', True),
-            "description": tenant_create.description,
-            "created_at": now,
-            "updated_at": now,
-        }
-
-        await self.collection.insert_one(tenant_doc)
+        await self.collection.insert_one(tenant_create.__dict__)
         logger.info(f"Tenant created: {tenant_create.client_id} ({tenant_create.display_name})")
 
-        return Tenant(**tenant_doc)
+        return tenant_create
 
     async def list_all(self, include_inactive: bool = False) -> List[Tenant]:
         """

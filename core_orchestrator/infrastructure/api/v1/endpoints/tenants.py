@@ -72,8 +72,8 @@ async def create_tenant(
     except Exception as e:
         logger.exception(f"Error creating tenant: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating tenant"
         )
 
 
