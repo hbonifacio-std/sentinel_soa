@@ -31,6 +31,6 @@ export async function getForensicReport(analysisId: string): Promise<ForensicAna
 }
 
 export async function getAvailableModelsForChat(): Promise<AvailableModelsResponse> {
-  return apiFetch<AvailableModelsResponse>('/api/v1/forensic/models');
+  return apiFetch<AvailableModelsResponse>('/api/v1/forensic/entities');
 }
 

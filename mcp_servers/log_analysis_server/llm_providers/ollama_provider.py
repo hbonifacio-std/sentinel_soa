@@ -1,7 +1,7 @@
 """
 Ollama adapter module for the generic LLM interface.
 
-Implements LLMProviderInterface for Ollama (local LLM models), allowing
+Implements LLMProviderInterface for Ollama (local LLM entities), allowing
 analysis execution without external API dependencies and without costs.
 """
 
@@ -29,7 +29,7 @@ class OllamaProvider(LLMProviderInterface):
     """
     Ollama adapter for the generic LLM framework.
     
-    Allows running local LLM models (Mistral, Llama2, etc.) without
+    Allows running local LLM entities (Mistral, Llama2, etc.) without
     external API dependencies, ideal for development and testing.
     
     Requires Ollama to be running (typically in Docker):
@@ -196,7 +196,7 @@ class OllamaProvider(LLMProviderInterface):
             response.raise_for_status()
             
             data = response.json()
-            models = [m.get("name", "") for m in data.get("models", [])]
+            models = [m.get("name", "") for m in data.get("entities", [])]
             
             # Verify that the model exists
             model_found = any(self._model_name in m for m in models)
@@ -205,7 +205,7 @@ class OllamaProvider(LLMProviderInterface):
                 logger.info(f"Health check OK: model {self._model_name} available in Ollama")
                 return True
             else:
-                logger.warning(f"Health check: model {self._model_name} not found. Available models: {models}")
+                logger.warning(f"Health check: model {self._model_name} not found. Available entities: {models}")
                 return False
                 
         except Exception as exc:

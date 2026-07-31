@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.telemetry import router
 from core_orchestrator.infrastructure.api.dependencies import get_telemetry_service, get_telemetry_processing_service, get_agent_runner
-from core_orchestrator.infrastructure.security.dependencies import verify_api_key_header
+from core_orchestrator.infrastructure.api.dependencies.user_auth import verify_api_key_header
 from core_orchestrator.test.infrastructure.api.v1.test_telemetry_endpoints import dummy_auth_context, dummy_event
 import unittest.mock as mock
 

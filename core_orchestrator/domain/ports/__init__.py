@@ -1,8 +1,8 @@
 """Domain ports package grouped by bounded context."""
 
 from core_orchestrator.domain.ports.analysis import (
-    AnalysisServicePort,
-    AnalyticsRepository,
+    AiAnalysisPort,
+    AnalyticsPorts,
     ReportTelemetryServicePort,
     LlmAnalysisPort,
     ThreatContextPort,
@@ -10,11 +10,9 @@ from core_orchestrator.domain.ports.analysis import (
 )
 from core_orchestrator.domain.ports.auth import (
     PasswordHasherPort,
-    SignatureVerifierPort,
-    TokenBlacklistRepository,
-    TokenServicePort,
-    UserProvider,
-    UserRepository,
+    TokenBlacklistRepositoryPort,
+    TokenProviderPort,
+    UserRepositoryPort,
 )
 from core_orchestrator.domain.ports.forensic import (
     ForensicAnalysisRepositoryPort,
@@ -35,8 +33,8 @@ from core_orchestrator.domain.ports.telemetry import (
 )
 
 __all__ = [
-    "AnalysisServicePort",
-    "AnalyticsRepository",
+    "AiAnalysisPort",
+    "AnalyticsPorts",
     "ReportTelemetryServicePort",
     "AuditRepository",
     "CachePort",
@@ -48,15 +46,13 @@ __all__ = [
     "RuleRepository",
     "RuleValidatorPort",
     "RulesBundleCachePort",
-    "SignatureVerifierPort",
     "TelemetryClientRepository",
     "TelemetryRepository",
     "TelemetryWindowCachePort",
     "ThreatContextPort",
     "ThreatContextServicePort",
-    "TokenBlacklistRepository",
-    "TokenServicePort",
-    "UserProvider",
-    "UserRepository",
+    "TokenBlacklistRepositoryPort",
+    "TokenProviderPort",
+    "UserRepositoryPort",
     "VersionRepository",
 ]

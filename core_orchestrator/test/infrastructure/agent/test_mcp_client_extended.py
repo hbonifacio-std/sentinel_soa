@@ -11,15 +11,15 @@ Extended tests for MCPClientManager covering lines NOT yet hit:
 """
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _make_manager():
-    from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
-    return MCPClientManager()
+    from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
+    return MCPClientManagerAdapter()
 
 
 # ---------------------------------------------------------------------------

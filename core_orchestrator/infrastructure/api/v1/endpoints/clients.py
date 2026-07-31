@@ -5,14 +5,14 @@ import logging
 from typing import List, Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core_orchestrator.infrastructure.api.dependencies import get_telemetry_client_service
-from core_orchestrator.domain.models.auth.telemetry_client import (
+from core_orchestrator.domain.entities.auth.telemetry_client import (
     TelemetryClientCreate,
     TelemetryClientResponse,
 )
-from core_orchestrator.domain.models.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_telemetry_client_service
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
-from core_orchestrator.domain.models.forensic.forensic_analysis import (
+from core_orchestrator.domain.entities.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
     ForensicAnalysisRecord,
     ForensicHistoryQuery,

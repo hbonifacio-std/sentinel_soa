@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from core_orchestrator.domain.models.rule_engine.rules import (
+from core_orchestrator.domain.entities.rule_engine.rules import (
     HeuristicRule,
     RuleTestResult,
     RuleValidationResult,

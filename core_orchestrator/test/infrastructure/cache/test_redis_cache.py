@@ -4,11 +4,11 @@ from datetime import datetime, timezone, timedelta
 import json
 from types import SimpleNamespace
 from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
-from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepository
+from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepositoryPort
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
 from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 @pytest.fixture
 def mock_redis():
@@ -47,7 +47,7 @@ async def test_redis_cache_disconnected():
 
 @pytest.mark.asyncio
 async def test_redis_token_blacklist(mock_redis):
-    repo = RedisTokenBlacklistRepository(mock_redis)
+    repo = RedisTokenBlacklistRepositoryPort(mock_redis)
     
     # Add to blacklist
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=100)

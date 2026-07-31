@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from pymongo import ASCENDING, DESCENDING
 
-from core_orchestrator.infrastructure.config.database import DatabaseManager
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.rules.audit_repository import AuditRepository
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 

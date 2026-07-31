@@ -52,12 +52,15 @@ services:
       ENFORCE_TENANT_AUTH: ${ENFORCE_TENANT_AUTH:-false}
       DEFAULT_TENANT_RATE: ${DEFAULT_TENANT_RATE:-60}
       # Configuración del MCP Server
-      MCP_SERVER_HOST: mcp_server
-      MCP_SERVER_PORT: 8080
+      MCP_SERVER_URL: ${MCP_SERVER_URL}
       MCP_INTERNAL_TOKEN: ${MCP_INTERNAL_TOKEN}
-      MCP_INTERNAL_CLIENT_TOKEN: ${MCP_INTERNAL_CLIENT_TOKEN}
-      MCP_INTERNAL_SIGNING_TOKEN: ${MCP_INTERNAL_SIGNING_TOKEN}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
 
     networks:
       - sentinel_net
@@ -75,6 +78,8 @@ services:
       context: .
       dockerfile: Dockerfile.mcp
     container_name: sentinel_mcp_server
+    #ports:
+     # - "8080:8080"
     environment:
       # Variables de entorno para el Log Analysis Server (MCP)
       LLM_PROVIDER: ${LLM_PROVIDER}
@@ -104,11 +109,18 @@ services:
       MCP_INTERNAL_TOKENS_ADMIN: ${MCP_INTERNAL_TOKENS_ADMIN}
       MCP_INTERNAL_TOKENS_ANALYST: ${MCP_INTERNAL_TOKENS_ANALYST}
       MCP_INTERNAL_TOKENS_VIEWER: ${MCP_INTERNAL_TOKENS_VIEWER}
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
 
     networks:
       - sentinel_net
     depends_on:
       - ollama # Depende de ollama si LLM_PROVIDER es ollama
+
 
   ollama:
     build:
@@ -208,6 +220,28 @@ services:
       timeout: 5s
       retries: 5
 
+  neo4j:
+    image: neo4j:5.26.0-community
+    container_name: sentinel_neo4j
+    ports:
+      - "7474:7474"   # Neo4j Browser UI (solo dev)
+      - "7687:7687"   # Bolt protocol
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_dbms_security_procedures_unrestricted: "apoc.*"
+
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - sentinel_net
+    healthcheck:
+      test: [ "CMD-SHELL", "cypher-shell -u neo4j -p ${NEO4J_PASSWORD} 'RETURN 1'" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
 networks:
   sentinel_net:
     driver: bridge
@@ -222,3 +256,4 @@ volumes:
   ollama_data:
   mongo_data:
   redis_data:
+  neo4j_data:

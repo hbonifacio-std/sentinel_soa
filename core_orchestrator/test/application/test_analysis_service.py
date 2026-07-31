@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AnalysisService
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AiAnalysis
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 
 @pytest.mark.asyncio
@@ -23,7 +23,7 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
         "source_id": "N/A",
     }
 
-    service = AnalysisService(llm_analysis_port=llm_analysis_port, rules_engine_service=rules_engine_service)
+    service = AiAnalysis(llm_analysis_port=llm_analysis_port, rules_engine_service=rules_engine_service)
 
     telemetry_payload = {
         "window_id": 123,

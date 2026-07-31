@@ -4,17 +4,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from core_orchestrator.domain.models.forensic.forensic_analysis import (
+from core_orchestrator.domain.entities.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
     ForensicAnalysisRecord,
     ForensicHistoryQuery,
     ForensicHistoryResponse,
 )
-from core_orchestrator.domain.models.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.domain.ports.forensic import ForensicServicePort
 from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
-from core_orchestrator.infrastructure.api.dependencies import get_forensic_service, get_tenant_provider_service
-from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_provider_service, \
+    get_forensic_service
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
 
 router = APIRouter()
 

@@ -1,18 +1,14 @@
 """Auth-related domain ports."""
 
-from core_orchestrator.domain.ports.auth.password_hasher import PasswordHasherPort
-from core_orchestrator.domain.ports.auth.signature_verifier import SignatureVerifierPort
-from core_orchestrator.domain.ports.auth.token_blacklist_repository import TokenBlacklistRepository
-from core_orchestrator.domain.ports.auth.token_service import TokenServicePort
-from core_orchestrator.domain.ports.auth.user_provider import UserProvider
-from core_orchestrator.domain.ports.auth.user_repository import UserRepository
+from core_orchestrator.domain.ports.auth.password_hasher_port import PasswordHasherPort
+from core_orchestrator.domain.ports.auth.token_blacklist_repository_port import TokenBlacklistRepositoryPort
+from core_orchestrator.domain.ports.auth.token_manager_port import TokenProviderPort
+from core_orchestrator.domain.ports.auth.user_repository_port import UserRepositoryPort
 
 __all__ = [
     "PasswordHasherPort",
-    "SignatureVerifierPort",
-    "TokenBlacklistRepository",
-    "TokenServicePort",
-    "UserProvider",
-    "UserRepository",
+    "TokenBlacklistRepositoryPort",
+    "TokenProviderPort",
+    "UserRepositoryPort",
 ]
 

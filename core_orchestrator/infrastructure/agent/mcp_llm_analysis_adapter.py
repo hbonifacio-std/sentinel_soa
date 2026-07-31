@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict
 
 from core_orchestrator.domain.ports.shared.llm_analysis_port import LlmAnalysisPort
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 
 logger = logging.getLogger(__name__)
 _MCP_TOOL_TIMEOUT_S = 1800.0
@@ -13,7 +13,7 @@ _MCP_TOOL_TIMEOUT_S = 1800.0
 class MCPLlmAnalysisAdapter(LlmAnalysisPort):
     """MCP-backed adapter for telemetry threat analysis."""
 
-    def __init__(self, mcp_manager: MCPClientManager):
+    def __init__(self, mcp_manager: MCPClientManagerAdapter):
         self.mcp_manager = mcp_manager
 
     async def analyze_web_activity(self, telemetry_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -42,7 +42,7 @@ class MCPLlmAnalysisAdapter(LlmAnalysisPort):
                 "error": "MCP analysis timed out",
             }
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "MCP tool 'analyze_web_activity' failed for IP %s: %s",
                 source_ip,
                 exc,
@@ -55,7 +55,8 @@ class MCPLlmAnalysisAdapter(LlmAnalysisPort):
                 "error": str(exc),
             }
 
-    def _parse_result(self, raw_result: Any) -> Dict[str, Any]:
+    @staticmethod
+    def _parse_result(raw_result: Any) -> Dict[str, Any]:
         if hasattr(raw_result, "content") and raw_result.content:
             try:
                 return json.loads(raw_result.content[0].text)

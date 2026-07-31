@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 
 from redis.asyncio.lock import Lock
 
-from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ DEFAULT_RULES_TTL = int(os.getenv("RULES_CACHE_TTL_SECONDS", "86400"))
 
 class CacheService:
     def __init__(self, db_manager: DatabaseManager):
-        self.redis = db_manager.redis_client
+        self.redis = db_manager.redis_client_window_telemetry
 
     async def get(self, key: str) -> Optional[str]:
         """Gets a value from the cache by key."""

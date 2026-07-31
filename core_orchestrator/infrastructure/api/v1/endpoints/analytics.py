@@ -6,9 +6,9 @@ from core_orchestrator.application.modules.analysis_reports.services.analytics_s
     CrossTenantAccessError,
     ReportTelemetryService,
 )
-from core_orchestrator.domain.models.auth.user import UserInDB
-from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
-from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_analytics_service
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
 
 logger = logging.getLogger(__name__)
 

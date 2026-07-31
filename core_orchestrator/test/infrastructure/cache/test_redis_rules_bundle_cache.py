@@ -10,7 +10,7 @@ from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import (
     RULES_VERSION_KEY,
     RULES_UPDATED_KEY,
 )
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 
 def _make_bundle(version_hash: str = "vhash-1") -> RulesBundle:

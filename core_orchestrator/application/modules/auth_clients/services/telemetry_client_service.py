@@ -5,9 +5,7 @@ from typing import Optional, List
 import bcrypt
 
 from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
-from core_orchestrator.domain.ports.auth.signature_verifier import SignatureVerifierPort
-from core_orchestrator.domain.models.auth.telemetry_client import (
-    TelemetryClientAuthContext,
+from core_orchestrator.domain.entities.auth.telemetry_client import (
     TelemetryClientCreate,
     TelemetryClientInDB,
 )
@@ -42,9 +40,8 @@ def _verify_api_key(stored_api_key: str, provided_api_key: str) -> tuple[bool, b
 
 
 class TelemetryClientService:
-    def __init__(self, telemetry_client_repository: TelemetryClientRepository, signature_verifier: SignatureVerifierPort):
+    def __init__(self, telemetry_client_repository: TelemetryClientRepository):
         self._repository = telemetry_client_repository
-        self._signature_verifier = signature_verifier
 
     async def list_clients(self, include_inactive: bool = False) -> List[TelemetryClientInDB]:
         return await self._repository.list_all(include_inactive)

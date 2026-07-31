@@ -48,7 +48,7 @@ server = FastMCP("log-analysis-server")
 @server.tool()
 @require_tool_permission("get_available_models")
 async def get_available_models() -> Dict[str, Any]:
-    """Returns a dictionary of available models from the server configuration."""
+    """Returns a dictionary of available entities from the server configuration."""
     models = {
         model_id: {
             "provider": model_def.provider,

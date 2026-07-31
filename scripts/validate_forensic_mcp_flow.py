@@ -26,7 +26,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 
 
 PAYLOAD_RECEIVED_LABEL = "Payload recibido:"
@@ -151,7 +151,7 @@ def _normalize_tool_result(raw_result: Any) -> dict[str, Any]:
 
 
 async def run_validation(config: ValidationConfig) -> int:
-    mcp_manager = MCPClientManager()
+    mcp_manager = MCPClientManagerAdapter()
 
     print("[1/5] Generando filtro Mongo via MCP tool 'generate_mongo_query_from_nl'...")
     raw_plan = await mcp_manager.call_tool(

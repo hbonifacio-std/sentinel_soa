@@ -11,7 +11,7 @@ def mock_db_manager():
         instance = MockDBManager.return_value
         instance.connect.return_value = None
         # Provide dummy redis and mongo clients
-        instance.redis_client = MagicMock()
+        instance.redis_client_window_telemetry = MagicMock()
         instance.mongo_client = MagicMock()
         yield instance
 
@@ -55,7 +55,7 @@ def mock_repositories_and_services():
     # Ensure RulesEngineService.initialize is an async mock (awaitable)
     from core_orchestrator.infrastructure.api import container as container_mod
     container_mod.RulesEngineService.return_value.initialize = AsyncMock()
-    container_mod.MongoAnalyticsRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoAnalyticsPorts.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoRuleRepository.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoAuditRepository.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoForensicAnalysisRepository.return_value.ensure_indexes = AsyncMock()
@@ -86,7 +86,7 @@ def test_get_container_is_singleton():
 @pytest.mark.asyncio
 async def test_container_startup_no_redis_raises(mock_db_manager):
     """If redis_client is None, startup should raise RuntimeError."""
-    mock_db_manager.redis_client = None
+    mock_db_manager.redis_client_window_telemetry = None
     container = Container()
     with pytest.raises(RuntimeError, match="Redis client is not connected"):
         await container.startup()
@@ -96,12 +96,12 @@ async def test_container_shutdown(mock_db_manager):
     container = Container()
     container.agent_runner = AsyncMock()
     container.db_manager.mongo_client = AsyncMock()
-    container.db_manager.redis_client = AsyncMock()
+    container.db_manager.redis_client_window_telemetry = AsyncMock()
 
     await container.shutdown()
     container.agent_runner.shutdown_subsystem.assert_awaited_once()
     container.db_manager.mongo_client.close.assert_awaited_once()
-    container.db_manager.redis_client.close.assert_awaited_once()
+    container.db_manager.redis_client_window_telemetry.close.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_create_mcp_agent():

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion
+from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion
 
 class RuleRepository(ABC):
     @abstractmethod

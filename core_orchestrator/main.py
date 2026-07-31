@@ -7,34 +7,31 @@ and mounts the HTTP routes exposed to the corporate network.
 import logging
 import inspect
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable
 
-from fastapi import FastAPI, status, Request, Depends
-from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi import FastAPI, status, Depends
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.api.container import get_container
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_agent_runner
 from core_orchestrator.infrastructure.api.security_headers import SecurityHeadersMiddleware
 # Updated imports for new architecture
 from core_orchestrator.infrastructure.api.v1.endpoints import (
     analytics, auth, clients, forensic, rules as refactored_rules_router,
     telemetry as agent_telemetry, users, tenants, tenant_providers
 )
-from core_orchestrator.infrastructure.config.config import orchestrator_settings
+from core_orchestrator.infrastructure.config.config import orchestrator_settings_deprecated
 from core_orchestrator.infrastructure.handlers.exceptions import (
     validation_exception_handler,
     unhandled_exception_handler,
 )
 from core_orchestrator.infrastructure.api import dependencies as deps
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
-
-
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,7 +88,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 # 1. Trusted Host Middleware - Prevent Host Header attacks
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=orchestrator_settings.get_trusted_hosts()
+    allowed_hosts=orchestrator_settings_deprecated.get_trusted_hosts()
 )
 
 # 2. Security Headers Middleware - Add comprehensive security headers
@@ -99,7 +96,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # 3. CORS Middleware (already configured above)
 # Configurable CORS security middleware
-cors_origins = orchestrator_settings.get_cors_origins()
+cors_origins = orchestrator_settings_deprecated.get_cors_origins()
 logger.info(f"CORS allowed origins: {cors_origins}")
 
 app.add_middleware(
@@ -166,7 +163,7 @@ app.include_router(
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
-async def health_check(agent_runner: AgentRunner = Depends(deps.get_agent_runner)):
+async def health_check(agent_runner: AgentRunner = Depends(get_agent_runner)):
     """
     Basic monitoring endpoint to check the operational availability of the API.
     """

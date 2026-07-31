@@ -7,11 +7,11 @@ import uuid
 from bson import ObjectId
 from pydantic import BaseModel
 
-from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsRepository
+from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsPorts
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
 from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
-from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion, RuleContent, RuleMetadata
-from core_orchestrator.domain.models.forensic.forensic_analysis import (
+from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RuleContent, RuleMetadata
+from core_orchestrator.domain.entities.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
     ForensicAnalysisRecord,
     ForensicHistoryQuery,
@@ -73,7 +73,7 @@ async def test_mongo_analytics_repository_stats(mock_db_manager):
 
     collection.aggregate.side_effect = [cursor1, cursor2, cursor3, cursor4]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     stats = await repo.get_summary_stats()
 
     assert stats["threat_levels"] == [{"level": "high", "count": 5}]
@@ -92,7 +92,7 @@ async def test_mongo_analytics_repository_get_paginated_reports(mock_db_manager)
     collection.find.return_value.to_list.return_value = [{"_id": doc_id, "data": "val"}]
     collection.count_documents.return_value = 1
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     res = await repo.get_paginated_reports({}, 1, 10)
     assert res["results"][0]["id"] == str(doc_id)
 
@@ -102,7 +102,7 @@ async def test_mongo_analytics_repository_get_report_by_id(mock_db_manager):
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     client_id = "client-1"
 
     # Invalid ID
@@ -125,7 +125,7 @@ async def test_mongo_analytics_repository_update_report(mock_db_manager):
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     client_id = "client-1"
 
     # Invalid ID
@@ -143,7 +143,7 @@ async def test_mongo_analytics_repository_add_action_to_report(mock_db_manager):
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     client_id = "client-1"
 
     # Invalid ID
@@ -161,7 +161,7 @@ async def test_mongo_analytics_repository_distinct_and_aggregated_stats(mock_db_
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
 
     collection.distinct.return_value = ["src-1", "src-2"]
     distinct = await repo.get_distinct_source_ids("client-1")
@@ -183,7 +183,7 @@ async def test_mongo_analytics_repository_get_paginated_logs(mock_db_manager):
     logs_collection.find.return_value.to_list.return_value = [{"_id": doc_id, "data": "log"}]
     logs_collection.count_documents.return_value = 1
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     res = await repo.get_paginated_logs({}, 1, 10)
     assert res["info"]["total_records"] == 1
     assert res["results"][0]["_id"] == str(doc_id)
@@ -197,7 +197,7 @@ async def test_mongo_analytics_repository_get_debug_reports(mock_db_manager):
     doc_id = ObjectId()
     collection.find.return_value.to_list.return_value = [{"_id": doc_id}]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     reports = await repo.get_debug_reports("client-1", 5)
     assert reports[0]["_id"] == str(doc_id)
 
@@ -207,7 +207,7 @@ async def test_mongo_analytics_repository_create_report(mock_db_manager):
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     collection.insert_one.return_value = MagicMock(inserted_id="inserted-1")
 
     class DummyModel(BaseModel):
@@ -222,7 +222,7 @@ async def test_mongo_analytics_repository_accepts_string_report_ids(mock_db_mana
     manager, db, collections = mock_db_manager
     collection = collections["analysis_reports"]
 
-    repo = MongoAnalyticsRepository(manager)
+    repo = MongoAnalyticsPorts(manager)
     client_id = "client-1"
     report_id = str(uuid.uuid4())
     collection.find_one.return_value = {"_id": report_id, "source_ip": "10.0.0.1"}
@@ -491,7 +491,7 @@ async def test_mongo_forensic_repository_history(mock_db_manager):
 # MongoTelemetryClientRepository Tests
 # ──────────────────────────────────────────────────────────────────────────────
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import MongoTelemetryClientRepository
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientCreate, TelemetryClientInDB
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientCreate, TelemetryClientInDB
 
 def _make_telemetry_client_payload() -> TelemetryClientCreate:
     return TelemetryClientCreate(
@@ -605,8 +605,8 @@ async def test_mongo_telemetry_client_repository_indexes(mock_db_manager):
 # MongoTelemetryRepository Tests
 # ──────────────────────────────────────────────────────────────────────────────
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
-from core_orchestrator.domain.models.analysis import AnalysisReportResponse
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
+from core_orchestrator.domain.entities.analysis import AnalysisReportResponse
 
 def _make_log_event() -> LogEvent:
     return LogEvent(

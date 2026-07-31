@@ -4,9 +4,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.forensic import router
 from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
-from core_orchestrator.infrastructure.security.dependencies import get_analyst_user_with_client
-from core_orchestrator.domain.models.auth.user import UserInDB
-from core_orchestrator.domain.models.forensic.forensic_analysis import ForensicAnalysisRecord, ForensicAnalyzeRequest, ForensicHistoryResponse
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.domain.entities.forensic.forensic_analysis import ForensicAnalysisRecord, ForensicHistoryResponse
 
 dummy_analyst = UserInDB(
     user_id="u-analyst",

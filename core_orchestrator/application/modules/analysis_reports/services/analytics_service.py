@@ -4,8 +4,8 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
-from core_orchestrator.domain.models.analysis import AnalysisActionEntry
-from core_orchestrator.domain.ports.analysis.analytics_repository import AnalyticsRepository
+from core_orchestrator.domain.entities.analysis import AnalysisActionEntry
+from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsPorts
 
 from core_orchestrator.domain.ports.telemetry.report_telemetry_service_port import ReportTelemetryServicePort
 
@@ -26,7 +26,7 @@ class ReportResolutionPayload:
         }
 
 class ReportTelemetryService(ReportTelemetryServicePort):
-    def __init__(self, analytics_repository: AnalyticsRepository):
+    def __init__(self, analytics_repository: AnalyticsPorts):
         self.analytics_repository = analytics_repository
 
     async def get_paginated_reports(

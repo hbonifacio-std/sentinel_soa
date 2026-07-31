@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from core_orchestrator.domain.models.rule_engine.rules import (
+from core_orchestrator.domain.entities.rule_engine.rules import (
     HeuristicRule,
     RulesBundle,
     RuleVersion,

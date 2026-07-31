@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from core_orchestrator.domain.models.forensic.forensic_analysis import (
+from core_orchestrator.domain.entities.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
     ForensicAnalysisRecord,
     ForensicHistoryQuery,

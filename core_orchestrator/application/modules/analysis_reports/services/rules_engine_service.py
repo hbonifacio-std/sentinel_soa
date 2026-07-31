@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 from typing import Optional
 
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle, rules_to_bundle, hash_version, HeuristicRule, build_default_rules_bundle, RuleVersion, RuleAuditLog
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle, rules_to_bundle, hash_version, HeuristicRule, build_default_rules_bundle, RuleVersion, RuleAuditLog
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from shared.rules_seed import load_rules_seed_payload
 

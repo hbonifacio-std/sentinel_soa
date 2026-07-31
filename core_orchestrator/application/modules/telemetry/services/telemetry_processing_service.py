@@ -7,9 +7,9 @@ based on the source IP address, consolidating traffic distribution metrics.
 import logging
 from typing import List, Optional, cast
 
-from core_orchestrator.domain.models.telemetry import telemetry_window
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent as LogLine
-from core_orchestrator.domain.models.telemetry.telemetry_window import TelemetryWindow
+from core_orchestrator.domain.entities.telemetry import telemetry_window
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent as LogLine
+from core_orchestrator.domain.entities.telemetry.telemetry_window import TelemetryWindow
 from core_orchestrator.domain.ports.telemetry.telemetry_window_cache import TelemetryWindowCachePort
 
 logger = logging.getLogger(__name__)

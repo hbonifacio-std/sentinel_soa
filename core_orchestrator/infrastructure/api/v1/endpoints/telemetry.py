@@ -5,19 +5,19 @@ import logging
 from typing import List, Annotated
 from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 
+from core_orchestrator.infrastructure.adapters.security.tenant_auth_adapter import TenantContext
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
-from core_orchestrator.infrastructure.api.dependencies import (
-    get_telemetry_service,
-    get_telemetry_processing_service,
-    get_agent_runner,
-    get_source_id,
-)
-from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
+
+
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
 from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.infrastructure.security.sanitizer import redact_sensitive_data
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
+from core_orchestrator.infrastructure.adapters.temeletry.sanitizer_utility import redact_sensitive_data
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_telemetry_service, \
+    get_telemetry_processing_service, get_agent_runner
+
+from core_orchestrator.infrastructure.api.dependencies.tenant_auth import get_tenant_context, get_source_id
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 

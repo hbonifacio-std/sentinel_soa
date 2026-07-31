@@ -2,7 +2,7 @@
 import logging
 from typing import List, Optional
 
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
 from core_orchestrator.domain.ports.shared.cache_port import CachePort
 from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
 

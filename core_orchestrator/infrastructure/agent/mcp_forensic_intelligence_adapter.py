@@ -3,7 +3,7 @@ import logging
 from typing import Any, Optional
 
 from core_orchestrator.domain.ports.forensic import ForensicIntelligencePort
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class MCPForensicIntelligenceAdapter(ForensicIntelligencePort):
     """MCP-backed adapter for forensic NLQ planning and report generation."""
 
-    def __init__(self, mcp_manager: MCPClientManager):
+    def __init__(self, mcp_manager: MCPClientManagerAdapter):
         self.mcp_manager = mcp_manager
 
     async def generate_mongo_query_from_nl(
@@ -52,7 +52,8 @@ class MCPForensicIntelligenceAdapter(ForensicIntelligencePort):
         )
         return self._parse_result(raw_result)
 
-    def _parse_result(self, raw_result: Any) -> dict[str, Any]:
+    @staticmethod
+    def _parse_result(raw_result: Any) -> dict[str, Any]:
         if hasattr(raw_result, "content") and raw_result.content:
             try:
                 return json.loads(raw_result.content[0].text)

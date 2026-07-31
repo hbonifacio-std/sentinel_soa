@@ -1,5 +1,5 @@
 """
-Tests for DatabaseManager (config/database.py).
+Tests for DatabaseManager (config/database_manager.py).
 Mocks pymongo and redis to avoid real connections.
 """
 import pytest
@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 @pytest.fixture
 def db_manager():
     """Return a DatabaseManager with no real external connections."""
-    from core_orchestrator.infrastructure.config.database import DatabaseManager
+    from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
     return DatabaseManager()
 
 
@@ -24,21 +24,21 @@ class TestDatabaseManagerInit:
         monkeypatch.delenv("MONGO_DB_NAME", raising=False)
         monkeypatch.delenv("AUTH_MONGO_DB_NAME", raising=False)
         monkeypatch.delenv("RULES_MONGO_DB_NAME", raising=False)
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
-        assert dm.app_mongo_db_name == "sentinel_soa"
+        assert dm.telemetry_mongo_db_name == "sentinel_soa"
         assert dm.auth_mongo_db_name == "auth"
         assert dm.rules_mongo_db_name == "heuristic"
         assert dm.mongo_client is None
-        assert dm.redis_client is None
+        assert dm.redis_client_window_telemetry is None
 
     def test_env_vars_override_defaults(self, monkeypatch):
         monkeypatch.setenv("MONGO_DB_NAME", "custom_db")
         monkeypatch.setenv("AUTH_MONGO_DB_NAME", "custom_auth")
         monkeypatch.setenv("RULES_MONGO_DB_NAME", "custom_rules")
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
-        assert dm.app_mongo_db_name == "custom_db"
+        assert dm.telemetry_mongo_db_name == "custom_db"
         assert dm.auth_mongo_db_name == "custom_auth"
         assert dm.rules_mongo_db_name == "custom_rules"
 
@@ -50,13 +50,13 @@ class TestDatabaseManagerConnect:
     @patch("core_orchestrator.infrastructure.config.database.AsyncMongoClient")
     @patch("core_orchestrator.infrastructure.config.database.Redis")
     def test_connect_initialises_both_clients(self, mock_redis_cls, mock_mongo_cls):
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
         dm.connect()
         mock_mongo_cls.assert_called_once()
         assert mock_redis_cls.call_count >= 1
         assert dm.mongo_client is not None
-        assert dm.redis_client is not None
+        assert dm.redis_client_window_telemetry is not None
 
     @patch("core_orchestrator.infrastructure.config.database.AsyncMongoClient")
     @patch("core_orchestrator.infrastructure.config.database.Redis")
@@ -67,7 +67,7 @@ class TestDatabaseManagerConnect:
         monkeypatch.setenv("MONGO_PASSWORD", "pass1")
         monkeypatch.setenv("MONGO_HOST", "myhost")
         monkeypatch.setenv("MONGO_PORT", "27017")
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
         dm.connect()
         call_uri = mock_mongo_cls.call_args[0][0]
@@ -82,25 +82,25 @@ class TestDatabaseManagerConnect:
     ):
         monkeypatch.setenv("MONGO_USER", "")
         monkeypatch.setenv("MONGO_PASSWORD", "")
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
         dm.connect()
         call_uri = mock_mongo_cls.call_args[0][0]
         assert "@" not in call_uri
 
     def test_disconnect_closes_clients(self):
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
         mock_mongo = MagicMock()
         mock_redis = MagicMock()
         dm.mongo_client = mock_mongo
-        dm.redis_client = mock_redis
+        dm.redis_client_window_telemetry = mock_redis
         dm.disconnect()
         mock_mongo.close.assert_called_once()
         mock_redis.close.assert_called()
 
     def test_disconnect_when_no_clients_is_safe(self):
-        from core_orchestrator.infrastructure.config.database import DatabaseManager
+        from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
         dm = DatabaseManager()
         # Should not raise
         dm.disconnect()
@@ -136,7 +136,7 @@ class TestDatabaseManagerGetters:
     def test_get_telemetry_db_returns_app_db(self, db_manager):
         mock_client = MagicMock()
         db_manager.mongo_client = mock_client
-        db_manager.app_mongo_db_name = "sentinel_soa"
+        db_manager.telemetry_mongo_db_name = "sentinel_soa"
         db_manager.get_telemetry_db()
         mock_client.__getitem__.assert_called_once_with("sentinel_soa")
 

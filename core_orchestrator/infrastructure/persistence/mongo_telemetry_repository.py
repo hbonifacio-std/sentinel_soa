@@ -1,10 +1,10 @@
 from typing import Optional, List, Dict, Any
 
-from core_orchestrator.domain.models.analysis import AnalysisReportResponse
-from core_orchestrator.infrastructure.config.database import DatabaseManager
+from core_orchestrator.domain.entities.analysis import AnalysisReportResponse
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.telemetry.telemetry_repository import TelemetryRepository as TelemetryRepositoryPort
 
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
 

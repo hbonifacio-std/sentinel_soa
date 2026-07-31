@@ -9,7 +9,7 @@ from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repos
     CACHE_KEY_PREFIX_PK,
     CACHE_TTL_SECONDS,
 )
-from core_orchestrator.domain.models.auth.telemetry_client import (
+from core_orchestrator.domain.entities.auth.telemetry_client import (
     TelemetryClientInDB,
     TelemetryClientCreate,
 )

@@ -1,9 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
-import json
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
@@ -126,7 +124,7 @@ async def test_orchestrator_agent():
 @patch("core_orchestrator.infrastructure.agent.mcp_client._sse_client")
 @patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession")
 async def test_mcp_client_manager(mock_session_cls, mock_streamable_client):
-    manager = MCPClientManager()
+    manager = MCPClientManagerAdapter()
     
     # Setup mock transport & session
     mock_transport = AsyncMock()

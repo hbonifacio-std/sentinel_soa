@@ -1,18 +1,17 @@
 """
 Tests for:
   - sanitizer.redact_sensitive_data
-  - JwtTokenService (token_service.py)
+  - JwtTokenService (token_manager_port.py)
   - HmacSignatureVerifier (signature_verifier.py)
-  - API dependency provider functions (dependencies.py)
+  - API dependency provider functions (general_dependencies.py)
 """
 import pytest
-from unittest.mock import MagicMock, patch
-
+from unittest.mock import MagicMock
 
 # ===========================================================================
-# sanitizer.py
+# sanitizer_utility.py
 # ===========================================================================
-from core_orchestrator.infrastructure.security.sanitizer import redact_sensitive_data, REDACTION_MASK
+from core_orchestrator.infrastructure.adapters.temeletry.sanitizer_utility import redact_sensitive_data, REDACTION_MASK
 
 
 class TestRedactSensitiveData:
@@ -71,13 +70,13 @@ class TestRedactSensitiveData:
 
 
 # ===========================================================================
-# token_service.py — JwtTokenService
+# token_manager_port.py — JwtTokenService
 # ===========================================================================
 class TestJwtTokenService:
     @pytest.fixture
     def token_service(self):
-        from core_orchestrator.infrastructure.security.token_service import JwtTokenService
-        return JwtTokenService()
+        from core_orchestrator.infrastructure.adapters.security.jwt_token_provider_adapter import JwtTokenProviderAdapter
+        return JwtTokenProviderAdapter()
 
     def test_create_access_token_returns_token_and_jti(self, token_service):
         token, jti = token_service.create_access_token(
@@ -131,7 +130,7 @@ class TestHmacSignatureVerifier:
 
 
 # ===========================================================================
-# dependencies.py — Provider functions
+# general_dependencies.py — Provider functions
 # ===========================================================================
 class TestApiDependencies:
     @pytest.fixture

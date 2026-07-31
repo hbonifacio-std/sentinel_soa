@@ -2,11 +2,11 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from core_orchestrator.infrastructure.security.jwt_utils import create_refresh_token
+from core_orchestrator.infrastructure.adapters.security.jwt_utils import create_refresh_token
 from core_orchestrator.infrastructure.api.v1.endpoints.auth import router
 from core_orchestrator.infrastructure.api.dependencies import get_auth_service, get_db_manager
-from core_orchestrator.infrastructure.security.dependencies import get_current_user
-from core_orchestrator.domain.models.auth.user import UserInDB, TokenResponse, UserResponse
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_current_user
+from core_orchestrator.domain.entities.auth.user import UserInDB, TokenResponse, UserResponse
 
 dummy_user = UserInDB(
     user_id="u-1",

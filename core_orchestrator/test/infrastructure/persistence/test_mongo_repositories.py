@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
-from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleContent, RuleMetadata
-from core_orchestrator.domain.models.auth.user import UserCreate
+from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
+from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleContent, RuleMetadata
+from core_orchestrator.domain.entities.auth.user import UserCreate
 
 @pytest.fixture
 def mock_db_manager():
@@ -71,7 +71,7 @@ async def test_mongo_user_repository(mock_db_manager):
     collection.find_one = AsyncMock()
     collection.find = MagicMock()
     mock_db_manager.get_auth_db.return_value = {"users": collection}
-    repo = MongoUserRepository(mock_db_manager)
+    repo = MongoUserRepositoryAdapter(mock_db_manager)
     
     # Get user
     collection.find_one.return_value = {"user_id": "u-1", "username": "alice", "email": "alice@ex.com", "role": "admin", "is_active": True, "hashed_password": "p"}

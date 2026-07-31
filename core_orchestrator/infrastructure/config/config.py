@@ -6,9 +6,9 @@ and MCP subprocess initialization paths.
 """
 
 from urllib.parse import urlparse
+
 from pydantic import Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 class OrchestratorSettings(BaseSettings):
     """Typed data structure for managing the Host's operational environment.
@@ -252,7 +252,7 @@ class OrchestratorSettings(BaseSettings):
 
 # Module-level configuration initialization (Fail-Fast active)
 try:
-    orchestrator_settings = OrchestratorSettings()
+    orchestrator_settings_deprecated = OrchestratorSettings()
 except Exception as e:
     import sys
     import logging

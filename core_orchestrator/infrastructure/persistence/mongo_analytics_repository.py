@@ -7,14 +7,14 @@ from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 from pydantic import BaseModel
 
-from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.domain.ports.analysis.analytics_repository import AnalyticsRepository
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
+from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsPorts
 from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 GROUP_STAGE = "$group"
 
-class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsRepository):
+class MongoAnalyticsPorts(BaseRepository[Dict[str, Any]], AnalyticsPorts):
 
 
     def __init__(self, db_manager: DatabaseManager):
@@ -157,7 +157,7 @@ class MongoAnalyticsRepository(BaseRepository[Dict[str, Any]], AnalyticsReposito
 
     async def create_report(self, report: BaseModel) -> str:
         """Saves an analysis report to MongoDB with proper serialization and logging."""
-        # mode="json" serializes nested Pydantic models to dicts
+        # mode="json" serializes nested Pydantic entities to dicts
         # by_alias=True converts field names to their MongoDB aliases (e.g., id -> _id)
         doc = report.model_dump(mode="json", by_alias=True)
         

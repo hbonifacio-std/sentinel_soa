@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
-from core_orchestrator.domain.models.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.user import UserInDB
 
 
 def _build_user() -> UserInDB:

@@ -15,22 +15,20 @@ from pydantic import BaseModel, Field
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
-from core_orchestrator.infrastructure.api.dependencies import (
-    get_rule_service,
-    get_rule_validator,
-    get_rules_engine_service,
-)
 
-from core_orchestrator.domain.models.rule_engine.rules import (
+
+from core_orchestrator.domain.entities.rule_engine.rules import (
     HeuristicRule,
     HeuristicRuleUpdate,
     RuleVersion,
     hash_version,
 )
-from core_orchestrator.domain.models.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_rules_engine_service, \
+    get_rule_service, get_rule_validator
 
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user_with_client
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user, get_analyst_user_with_client
 
 logger = logging.getLogger("core_orchestrator.api.rules")
 

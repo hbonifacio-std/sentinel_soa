@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
 
-from core_orchestrator.domain.models.auth.tenant import TenantInDB, ProviderConfig, TenantModelDefinition
+from core_orchestrator.domain.entities.auth.tenant import TenantInDB, ProviderAIConfig, TenantModelAIDefinition
 from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
 
 
@@ -10,14 +10,14 @@ def _build_test_tenant(client_id: str = "acme"):
         client_id=client_id,
         display_name="Acme Corp",
         ai_providers=[
-            ProviderConfig(
+            ProviderAIConfig(
                 provider="groq",
                 api_key_encrypted="enc_secret_key",
                 enabled=True,
             )
         ],
         available_models={
-            "groq-llama": TenantModelDefinition(
+            "groq-llama": TenantModelAIDefinition(
                 provider="groq",
                 model_name="llama-3.3-70b-versatile",
                 max_output_tokens=12000,

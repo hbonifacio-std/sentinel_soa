@@ -6,7 +6,7 @@ import bcrypt
 import pytest
 
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientInDB
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB
 
 
 def _build_client() -> TelemetryClientInDB:

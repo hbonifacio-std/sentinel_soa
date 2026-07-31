@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
 
 
 @pytest.mark.asyncio

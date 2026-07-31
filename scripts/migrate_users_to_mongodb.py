@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from core_orchestrator.services.database_mongo_service import db
-from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
-from core_orchestrator.domain.models.auth.user import UserCreate
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserServicePort
+from core_orchestrator.domain.entities.auth.user import UserCreate
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,7 +57,7 @@ async def migrate_users():
             username = user_data.get("username")
             
             # Check if user already exists
-            existing_user = await UserService.get_user_by_username(username)
+            existing_user = await UserServicePort.get_user_by_username(username)
             if existing_user:
                 logger.info(f"User '{username}' already exists, skipping")
                 skipped_count += 1
@@ -73,7 +73,7 @@ async def migrate_users():
                     is_active=user_data.get("is_active", True),
                 )
                 
-                created_user = await UserService.create_user(user_create)
+                created_user = await UserServicePort.create_user(user_create)
                 logger.info(f"Created user: {created_user.username} (role: {created_user.role})")
                 created_count += 1
             
@@ -81,7 +81,7 @@ async def migrate_users():
                 logger.error(f"Error creating user '{username}': {e}")
         
         # Create unique index on username
-        collection = await UserService.get_user_collection()
+        collection = await UserServicePort.get_user_collection()
         try:
             await collection.create_index("username", unique=True)
             logger.info("Created unique index on username field")

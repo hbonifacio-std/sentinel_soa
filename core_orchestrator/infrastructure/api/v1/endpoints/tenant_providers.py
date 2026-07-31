@@ -2,13 +2,13 @@
 
 import logging
 from typing import Annotated, Optional, List, Literal
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from core_orchestrator.domain.models.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
-from core_orchestrator.infrastructure.api.dependencies import get_tenant_provider_service
-from core_orchestrator.infrastructure.security.dependencies import get_current_user
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_provider_service
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ async def list_tenant_models(
     provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
-    """List available AI models configured for tenant."""
+    """List available AI entities configured for tenant."""
     _require_admin(current_user)
     tenant = await provider_service._get_tenant(client_id)
     if not tenant:
@@ -200,7 +200,7 @@ async def set_tenant_default_model(
     provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
-    """Set tenant default models for background log analysis and/or MongoDB query translation."""
+    """Set tenant default entities for background log analysis and/or MongoDB query translation."""
     _require_admin(current_user)
     try:
         log_model_id = req.default_log_analysis_model_id or req.model_id

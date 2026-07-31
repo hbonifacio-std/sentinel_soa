@@ -3,7 +3,7 @@ Usage: python scripts\count_missing_tenant.py <TENANT_ID>
 """
 import sys
 import asyncio
-from core_orchestrator.infrastructure.config.database import DatabaseManager
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 
 async def main(tenant_id: str | None):
     dbm = DatabaseManager()

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
-from datetime import datetime, timedelta, timezone
-from core_orchestrator.infrastructure.security.jwt_utils import (
+from datetime import datetime, timezone
+from core_orchestrator.infrastructure.adapters.security.jwt_utils import (
     verify_hmac_signature,
     create_access_token,
     decode_token,
@@ -9,7 +9,7 @@ from core_orchestrator.infrastructure.security.jwt_utils import (
     blacklist_token,
     is_token_blacklisted
 )
-from core_orchestrator.infrastructure.config.config import orchestrator_settings as settings
+from core_orchestrator.infrastructure.config.config import orchestrator_settings_deprecated as settings
 
 def test_verify_hmac_signature():
     # Valid HMAC signature

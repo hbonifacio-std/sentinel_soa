@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import HTTPException, status
-from core_orchestrator.infrastructure.security.dependencies import (
+from core_orchestrator.infrastructure.api.dependencies.user_auth import (
     verify_api_key_header,
     verify_hmac_signature_header,
     get_current_user,
@@ -9,8 +9,8 @@ from core_orchestrator.infrastructure.security.dependencies import (
     get_analyst_user,
     get_analyst_user_with_client,
 )
-from core_orchestrator.domain.models.auth.user import UserInDB
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientAuthContext
 
 @pytest.mark.asyncio
 async def test_verify_api_key_header_success():

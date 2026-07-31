@@ -1,5 +1,4 @@
-import pytest
-from core_orchestrator.infrastructure.security.api_key_cipher import ApiKeyCipher
+from core_orchestrator.infrastructure.adapters.security.api_key_cipher_adapter import ApiKeyCipher
 
 
 def test_api_key_cipher_encrypt_decrypt():

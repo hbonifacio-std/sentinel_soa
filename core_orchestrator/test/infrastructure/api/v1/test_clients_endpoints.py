@@ -4,9 +4,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.clients import router
 from core_orchestrator.infrastructure.api.dependencies import get_telemetry_client_service
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user
-from core_orchestrator.domain.models.auth.user import UserInDB
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientInDB
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB
 
 dummy_admin = UserInDB(
     user_id="u-admin",

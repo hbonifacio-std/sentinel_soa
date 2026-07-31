@@ -1,7 +1,7 @@
 """
 In-memory rules bundle for heuristic analysis (MCP server side).
 
-Mirrors core_orchestrator.models.rule_schema.RulesBundle so the MCP
+Mirrors core_orchestrator.entities.rule_schema.RulesBundle so the MCP
 process can consume injected rules without importing core_orchestrator.
 """
 

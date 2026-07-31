@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime, timezone
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.telemetry import router
 from core_orchestrator.infrastructure.api.dependencies import (
@@ -10,13 +10,13 @@ from core_orchestrator.infrastructure.api.dependencies import (
     get_agent_runner,
     get_source_id,
 )
-from core_orchestrator.infrastructure.security.dependencies import (
+from core_orchestrator.infrastructure.api.dependencies.user_auth import (
     verify_api_key_header,
     verify_hmac_signature_header,
 )
 from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientAuthContext
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
 
 dummy_auth_context = TelemetryClientAuthContext(
     client_id="client-1",

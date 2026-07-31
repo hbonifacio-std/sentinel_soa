@@ -6,7 +6,7 @@ from typing import Optional
 
 from redis.asyncio import Redis
 
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 from core_orchestrator.domain.ports.rules.rules_bundle_cache import RulesBundleCachePort
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class RedisRulesBundleCache(RulesBundleCachePort):
     A Redis implementation of the RulesBundleCachePort with optional tenant isolation.
     """
 
-    def __init__(self, redis_client: Redis):
+    def __init__(self, redis_client: Redis|None = None):
         self._redis = redis_client
 
     @staticmethod

@@ -8,19 +8,12 @@ Also handles telemetry client authentication (API keys, HMAC verification).
 import logging
 import secrets
 import hashlib
-import hmac
-import time
-from typing import Optional, List, Tuple
+from typing import Optional, List
 
-from core_orchestrator.domain.ports.auth.tenant_repository import TenantRepository
-from core_orchestrator.domain.models.auth.tenant import TenantInDB, TenantCreate, TenantResponseWithKey
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientAuthContext
-from core_orchestrator.infrastructure.security.api_key_utils import (
-    hash_api_key,
-    verify_api_key,
-    is_bcrypt_hash,
-    is_sha256_hash,
-)
+from core_orchestrator.domain.entities.auth.tenant import Tenant
+from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRepositoryPort
+from core_orchestrator.infrastructure.dto.tenant.tenant_dto import TenantCreateDTO, TenantResponseDTO, \
+    TenantCreatedResponseDTO
 
 logger = logging.getLogger(__name__)
 
@@ -36,219 +29,139 @@ class TenantService:
     - HMAC signature verification for incoming telemetry
     """
 
-    def __init__(self, tenant_repository: TenantRepository):
+    def __init__(self, tenant_repository: TenantRepositoryPort):
         self.tenant_repository = tenant_repository
 
-    # ========== TENANT MANAGEMENT ==========
+    async def create_tenant(self, tenant_create: TenantCreateDTO) -> TenantCreatedResponseDTO:
+        """
+        Creates a new tenant in the system and returns the tenant details along with an
+        API key.
 
-    async def create_tenant(self, tenant_create: TenantCreate) -> TenantResponseWithKey:
-        """
-        Create a new tenant with auto-generated API key.
-        
-        Args:
-            tenant_create: Tenant creation request (only client_id, display_name, description)
-            
+        The method generates a plaintext API key and its hashed version, storing the
+        hashed key in the tenant's record in the database. The plaintext API key is
+        included in the response for use as a credential by the tenant.
+
+        Parameters:
+            tenant_create (TenantCreate): The data required to create the tenant,
+            including details such as client ID, display name, and additional metadata.
+
         Returns:
-            Tenant response with plaintext API key (shown only once)
+            TenantResponseWithKey: Contains the details for the newly created tenant,
+            including the plaintext API key.
+
         """
-        # Generate secure API key
+
         api_key_plaintext = f"sk_{secrets.token_urlsafe(32)}"
-        # 2. Hash SHA-256 ultra rápido
+
         api_key_hash = hashlib.sha256(api_key_plaintext.encode("utf-8")).hexdigest()
         
-        # Create tenant with generated API key
+
         tenant_in_db = await self.tenant_repository.create(
-            tenant_create=tenant_create,
+            tenant_create=Tenant(**tenant_create.model_dump()),
             api_key_hash=api_key_hash,
             api_key_plaintext=api_key_plaintext
         )
-        
-        # Return with plaintext key (only shown once)
-        return TenantResponseWithKey(
-            client_id=tenant_in_db.client_id,
-            display_name=tenant_in_db.display_name,
-            description=tenant_in_db.description,
-            rate_limit_per_minute=tenant_in_db.rate_limit_per_minute,
-            is_active=tenant_in_db.is_active,
-            created_at=tenant_in_db.created_at,
-            updated_at=tenant_in_db.updated_at,
-            api_key_plaintext=api_key_plaintext
-        )
 
-    async def get_tenant(self, tenant_id: str) -> Optional[TenantInDB]:
-        """Get tenant by ID."""
-        return await self.tenant_repository.get(tenant_id)
+        return TenantCreatedResponseDTO.model_validate(tenant_in_db)
 
-    async def get_tenant_by_api_key(self, api_key: str) -> Optional[TenantInDB]:
+    async def get_tenant(self, tenant_id: str) -> Optional[TenantResponseDTO]:
         """
-        Get tenant by tenant API key (authenticate the key).
-        
+        Retrieves a tenant from the repository based on the provided tenant ID.
+
         Args:
-            api_key: Plaintext API key
-            
+        tenant_id: The unique identifier of the tenant to retrieve.
+
         Returns:
-            Tenant if key is valid and active, None otherwise
+        Optional[TenantInDB]: The tenant retrieved from the repository if found,
+        else None.
         """
-        # Retrieve tenant by client_id first (if available)
-        # Then verify the API key using constant-time comparison
-        tenants = await self.tenant_repository.list_all(include_inactive=False)
-        
-        for tenant in tenants:
-            # Support both SHA256 (legacy) and bcrypt (new) formats
-            if is_bcrypt_hash(tenant.api_key_hash):
-                # New bcrypt format - use constant-time comparison
-                if verify_api_key(api_key, tenant.api_key_hash):
-                    logger.info(f"API key verified for tenant: {tenant.client_id}")
-                    return tenant
-            elif is_sha256_hash(tenant.api_key_hash):
-                # Legacy SHA256 format - still supported but should migrate
-                api_key_sha256 = hashlib.sha256(api_key.encode()).hexdigest()
-                if api_key_sha256 == tenant.api_key_hash:
-                    logger.warning(
-                        f"Legacy SHA256 hash detected for tenant: {tenant.client_id}. "
-                        "Please migrate to bcrypt on next authentication."
-                    )
-                    return tenant
-        
-        logger.warning(f"No tenant found for API key")
-        return None
+        tenant = await self.tenant_repository.get(tenant_id)
+        return TenantResponseDTO.model_validate(tenant)
 
-    async def list_tenants(self, include_inactive: bool = False) -> List[TenantInDB]:
-        """List all tenants."""
-        return await self.tenant_repository.list_all(include_inactive=include_inactive)
 
-    async def update_tenant(self, tenant_id: str, **kwargs) -> Optional[TenantInDB]:
-        """Update tenant fields."""
-        return await self.tenant_repository.update(tenant_id, **kwargs)
+    async def list_tenants(self, include_inactive: bool = False) -> List[TenantResponseDTO]:
+        """
+        Lists all tenants available in the repository, optionally including inactive tenants.
 
-    async def deactivate_tenant(self, tenant_id: str) -> Optional[TenantInDB]:
-        """Deactivate a tenant."""
-        return await self.tenant_repository.update(tenant_id, is_active=False)
+        Parameters:
+        include_inactive (bool): If True, includes inactive tenants in the list.
+            Defaults to False.
 
-    async def activate_tenant(self, tenant_id: str) -> Optional[TenantInDB]:
-        """Activate a tenant."""
-        return await self.tenant_repository.update(tenant_id, is_active=True)
+        Returns:
+        List[TenantInDB]: A list of TenantInDB objects representing the tenants.
+        """
+        tenants = await self.tenant_repository.list_all(include_inactive=include_inactive)
+        return [ TenantResponseDTO.model_validate(t) for t in tenants]
+
+    async def update_tenant(self, tenant_id: str, **kwargs) -> Optional[TenantResponseDTO]:
+        """
+        Updates an existing tenant with the provided data.
+
+        This method updates a tenant identified by the tenant_id with the
+        additional data provided through keyword arguments. The updated tenant
+        information is returned if the operation is successful. If the tenant
+        does not exist, None is returned.
+
+        Arguments:
+            tenant_id: The unique identifier of the tenant to update.
+            kwargs: Additional tenant attributes to update. These must match
+                the fields of the tenant data model.
+
+        Returns:
+            The updated tenant object as an instance of TenantInDB if the
+            update is successful, or None if no tenant was found with the
+            given tenant_id.
+
+        Raises:
+            This function does not explicitly raise errors, but errors may
+            propagate from internal repository methods.
+        """
+        tenant_update = await self.tenant_repository.update(tenant_id, **kwargs)
+        return TenantResponseDTO.model_validate(tenant_update)
+
+    async def deactivate_tenant(self, tenant_id: str) -> Optional[TenantResponseDTO]:
+        """
+        Deactivate a tenant by setting its active status to False.
+
+        Summary:
+        This asynchronous method is used to deactivate a specific tenant within the
+        system by updating their active status to False.
+
+        Args:
+            tenant_id (str): The unique identifier of the tenant to be deactivated.
+
+        Returns:
+            Optional[TenantInDB]: The updated tenant object if successful, or None if
+            the tenant does not exist.
+        """
+        tenant_deactivated = await self.tenant_repository.update(tenant_id, is_active=False)
+        return TenantResponseDTO.model_validate(tenant_deactivated)
+
+    async def activate_tenant(self, tenant_id: str) -> Optional[TenantResponseDTO]:
+        """
+        Activates a tenant in the system by updating its active status to True.
+
+        Parameters:
+        tenant_id (str): The unique identifier of the tenant to be activated.
+
+        Returns:
+        Optional[TenantInDB]: The updated tenant object if the activation is successful,
+        or None if the update fails.
+        """
+        tenant_activated = await self.tenant_repository.update(tenant_id, is_active=True)
+        return TenantResponseDTO.model_validate(tenant_activated)
 
     async def delete_tenant(self, tenant_id: str) -> bool:
-        """Delete a tenant (use with caution)."""
+        """
+        Deletes a tenant by its unique identifier.
+
+        This asynchronous method interacts with the tenant repository to
+        remove a tenant record corresponding to the provided tenant ID.
+
+        Parameters:
+        tenant_id (str): The unique identifier of the tenant to be deleted.
+
+        Returns:
+        bool: True if the tenant was successfully deleted, otherwise False.
+        """
         return await self.tenant_repository.delete(tenant_id)
-
-    # ========== TELEMETRY CLIENT AUTHENTICATION ==========
-
-    async def authorize_api_key(self, client_id: str, api_key: str) -> Optional[TelemetryClientAuthContext]:
-        """
-        Authorize a telemetry client via API key.
-        
-        Args:
-            client_id: The client identifier
-            api_key: The API key
-            
-        Returns:
-            TelemetryClientAuthContext if valid, None otherwise
-        """
-        # Get tenant by client_id
-        tenant = await self.tenant_repository.get_by_client_id(client_id, include_inactive=False)
-        if not tenant:
-            logger.warning(f"Client not found: {client_id}")
-            return None
-        
-        # Verify API key matches
-        if tenant.api_key != api_key:
-            logger.warning(f"Invalid API key for client: {client_id}")
-            return None
-        
-        return TelemetryClientAuthContext(
-            client_id=tenant.client_id,
-            display_name=tenant.display_name,
-            hmac_public_key=tenant.hmac_public_key,
-        )
-
-    async def authorize_hmac(
-        self,
-        public_key: str,
-        signature: str,
-        timestamp: int,
-        body: bytes
-    ) -> Optional[TelemetryClientAuthContext]:
-        """
-        Authorize a telemetry client via HMAC signature.
-        
-        Args:
-            public_key: The HMAC public key (identifier)
-            signature: The HMAC-SHA256 signature
-            timestamp: Request timestamp (seconds since epoch)
-            body: Request body
-            
-        Returns:
-            TelemetryClientAuthContext if signature valid, None otherwise
-        """
-        # Get tenant by HMAC public key
-        tenant = await self.tenant_repository.get_by_hmac_public_key(public_key)
-        if not tenant:
-            logger.warning(f"Tenant not found for public key: {public_key}")
-            return None
-        
-        # Verify timestamp is recent (within 5 minutes)
-        current_time = int(time.time())
-        if abs(current_time - timestamp) > 300:
-            logger.warning(f"Timestamp too old for public key: {public_key}")
-            return None
-        
-        # Reconstruct signature
-        message = f"{timestamp}:{body.decode('utf-8')}"
-        expected_signature = hmac.new(
-            tenant.hmac_secret.encode(),
-            message.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        
-        # Constant-time comparison
-        if not hmac.compare_digest(signature, expected_signature):
-            logger.warning(f"HMAC verification failed for public key: {public_key}")
-            return None
-        
-        return TelemetryClientAuthContext(
-            client_id=tenant.client_id,
-            display_name=tenant.display_name,
-            hmac_public_key=tenant.hmac_public_key,
-        )
-
-    async def get_client_by_client_id(self, client_id: str, include_inactive: bool = False) -> Optional[TenantInDB]:
-        """Get tenant acting as telemetry client by client_id."""
-        return await self.tenant_repository.get_by_client_id(client_id, include_inactive=include_inactive)
-
-    async def list_clients(self, include_inactive: bool = False) -> List[TenantInDB]:
-        """List all tenants that are telemetry clients."""
-        tenants = await self.tenant_repository.list_all(include_inactive=include_inactive)
-        return [t for t in tenants if t.client_id]
-
-    async def upsert_client(self, client_create: TenantCreate, overwrite_existing: bool = False) -> Tuple[TenantInDB, bool, bool]:
-        """
-        Upsert a telemetry client (from migration or bootstrap).
-        
-        Returns:
-            Tuple of (tenant, is_new, is_updated)
-        """
-        existing = await self.get_client_by_client_id(client_create.client_id, include_inactive=True)
-        
-        if existing:
-            if overwrite_existing:
-                # Update existing
-                updated = await self.update_tenant(
-                    existing.client_id,
-                    api_key=client_create.api_key,
-                    hmac_public_key=client_create.hmac_public_key,
-                    hmac_secret=client_create.hmac_secret,
-                    display_name=client_create.display_name,
-                    description=client_create.description,
-                    is_active=client_create.is_active,
-                )
-                return updated, False, True
-            else:
-                return existing, False, False
-        else:
-            # Create new
-            api_key_plaintext = f"sk_{secrets.token_urlsafe(32)}"
-            api_key_hash = hashlib.sha256(api_key_plaintext.encode()).hexdigest()
-            created = await self.tenant_repository.create(client_create, api_key_hash, api_key_plaintext)
-            return created, True, False

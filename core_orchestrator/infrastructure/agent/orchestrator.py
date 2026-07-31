@@ -8,8 +8,8 @@ import logging
 import json
 from typing import Dict, Any
 
-from core_orchestrator.domain.models.analysis import AnalysisReportResponse
-from core_orchestrator.domain.ports.analysis.analysis_service_port import AnalysisServicePort
+from core_orchestrator.domain.entities.analysis import AnalysisReportResponse
+from core_orchestrator.domain.ports.analysis.ia_analysis_port import AiAnalysisPort
 from core_orchestrator.domain.ports.telemetry.threat_context_service_port import ThreatContextServicePort
 from core_orchestrator.domain.ports.telemetry.report_telemetry_service_port import ReportTelemetryServicePort
 from core_orchestrator.domain.ports.shared.cache_port import CachePort
@@ -26,7 +26,7 @@ class OrchestratorAgent:
     def __init__(
         self,
         cache_port: CachePort,
-        analysis_service: AnalysisServicePort,
+        analysis_service: AiAnalysisPort,
         analytics_service: ReportTelemetryServicePort,
         threat_context_service: ThreatContextServicePort,
     ):

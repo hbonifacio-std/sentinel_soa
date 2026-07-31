@@ -1,8 +1,12 @@
+import json
 import logging
 from typing import Optional, Dict, Any
-from core_orchestrator.domain.models.auth.tenant import TenantInDB, ProviderConfig, TenantModelDefinition
-from core_orchestrator.domain.ports.auth.tenant_repository import TenantRepository
-from core_orchestrator.domain.ports.auth.api_key_cipher import ApiKeyCipherPort
+
+from redis.asyncio import Redis
+
+from core_orchestrator.domain.entities.auth.tenant import Tenant, ProviderAIConfig
+from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRepositoryPort
+from core_orchestrator.domain.ports.auth.api_key_cipher_port import ApiKeyCipherPort
 
 logger = logging.getLogger(__name__)
 
@@ -12,31 +16,48 @@ class TenantProviderService:
 
     def __init__(
         self,
-        tenant_repository: TenantRepository,
+        tenant_repository: TenantRepositoryPort,
         cipher: ApiKeyCipherPort,
-        cache: Optional[Any] = None,
+        cache: Optional[Redis],
     ):
         self._tenant_repo = tenant_repository
         self._cipher = cipher
         self._cache = cache
 
-    async def _get_tenant(self, client_id: str) -> Optional[TenantInDB]:
+    async def _get_tenant(self, client_id: str) -> Optional[Tenant]:
         """Fetch tenant either from cache or Mongo DB repository."""
         if self._cache:
             cached = await self._cache.get(client_id)
             if cached:
-                return TenantInDB(**cached)
+                return Tenant(**cached)
 
         tenant = await self._tenant_repo.get_by_client_id(client_id)
         if tenant and self._cache:
-            await self._cache.set(client_id, tenant.model_dump(mode="json"))
+            await self._cache.set(client_id, json.dumps(tenant))
         return tenant
 
-    async def get_default_provider_config(self, client_id: str) -> Optional[Dict[str, Any]]:
+    async def get_default_provider_config(self, client_id: str) -> Optional[ProviderAIConfig]:
         """
-        Flow 1: Automated Background Log Analysis.
-        Resolves decrypted provider config for the tenant's default log analysis model.
-        Returns None if no default model is set (triggering backward-compatible global fallback).
+        Fetches the default provider configuration for the specified client.
+
+        This method retrieves the default configuration for log analysis models associated
+        with a tenant identified by the given client ID. If the client ID is invalid, the
+        corresponding tenant does not exist, or if no default model is configured or
+        available, the method returns None.
+
+        Parameters:
+        client_id: str
+            The unique identifier of the client for whom the provider configuration
+            needs to be retrieved.
+
+        Returns:
+        Optional[ProviderAIConfig]
+            The provider configuration for the default log analysis model, or None if
+            no valid configuration can be resolved.
+
+        Raises:
+            This method does not explicitly raise any exceptions but can propagate
+            exceptions from internal calls to `_get_tenant` and `_resolve_provider_config`.
         """
         if not client_id:
             return None
@@ -54,8 +75,21 @@ class TenantProviderService:
 
     async def get_mongo_translator_provider_config(self, client_id: str) -> Optional[Dict[str, Any]]:
         """
-        Resolves decrypted provider config for the tenant's designated MongoDB NLQ translator model.
-        Returns None if not configured (triggering MCP global fallback for translator model).
+        Retrieves the MongoDB translator provider configuration for a given client ID.
+
+        This asynchronous method fetches the tenant configuration associated with the given
+        `client_id` and resolves the appropriate MongoDB translator provider configuration,
+        if available. It ensures that the requested translation model exists within the
+        tenant's available models and resolves the configuration accordingly.
+
+        Parameters:
+            client_id (str): The identifier of the client for which the MongoDB translator
+            configuration is to be retrieved.
+
+        Returns:
+            Optional[Dict[str, Any]]: The resolved MongoDB translator provider configuration
+            as a dictionary if a valid configuration exists, or None if no valid configuration
+            is found.
         """
         if not client_id:
             return None
@@ -94,7 +128,7 @@ class TenantProviderService:
 
     async def get_available_models_for_tenant(self, client_id: str) -> Dict[str, Any]:
         """
-        Lists enabled models for tenant frontend model pickers.
+        Lists enabled entities for tenant frontend model pickers.
         Excludes sensitive API keys.
         """
         tenant = await self._get_tenant(client_id)
@@ -119,11 +153,10 @@ class TenantProviderService:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         enabled: bool = True,
-    ) -> TenantInDB:
+    ) -> Tenant:
         """Add or update an AI provider entry for a tenant."""
         encrypted_key = self._cipher.encrypt(api_key) if api_key else None
 
-        # Fetch existing if keeping previous key when api_key is None
         if not api_key:
             existing_tenant = await self._tenant_repo.get_by_client_id(client_id)
             if existing_tenant:
@@ -147,7 +180,7 @@ class TenantProviderService:
             await self._cache.invalidate(client_id)
         return updated
 
-    async def remove_provider(self, client_id: str, provider: str) -> TenantInDB:
+    async def remove_provider(self, client_id: str, provider: str) -> Tenant:
         """Remove a provider from tenant configuration."""
         updated = await self._tenant_repo.remove_provider(client_id, provider)
         if not updated:
@@ -165,8 +198,8 @@ class TenantProviderService:
         max_output_tokens: Optional[int] = None,
         max_input_tokens: Optional[int] = None,
         enabled: bool = True,
-    ) -> TenantInDB:
-        """Add or update a model in tenant available models dictionary."""
+    ) -> Tenant:
+        """Add or update a model in tenant available entities dictionary."""
         model_def = {
             "provider": provider,
             "model_name": model_name,
@@ -181,8 +214,8 @@ class TenantProviderService:
             await self._cache.invalidate(client_id)
         return updated
 
-    async def remove_model(self, client_id: str, model_id: str) -> TenantInDB:
-        """Remove a model from tenant available models."""
+    async def remove_model(self, client_id: str, model_id: str) -> Tenant:
+        """Remove a model from tenant available entities."""
         updated = await self._tenant_repo.remove_model(client_id, model_id)
         if not updated:
             raise ValueError(f"Failed to remove model for tenant '{client_id}'.")
@@ -190,7 +223,7 @@ class TenantProviderService:
             await self._cache.invalidate(client_id)
         return updated
 
-    async def set_default_log_analysis_model(self, client_id: str, model_id: Optional[str]) -> TenantInDB:
+    async def set_default_log_analysis_model(self, client_id: str, model_id: Optional[str]) -> Tenant:
         """Set tenant default model for automated log analysis."""
         if model_id:
             tenant = await self._get_tenant(client_id)
@@ -204,7 +237,7 @@ class TenantProviderService:
             await self._cache.invalidate(client_id)
         return updated
 
-    async def set_default_mongo_translator_model(self, client_id: str, model_id: Optional[str]) -> TenantInDB:
+    async def set_default_mongo_translator_model(self, client_id: str, model_id: Optional[str]) -> Tenant:
         """Set tenant default model for NLQ to MongoDB query translation."""
         if model_id:
             tenant = await self._get_tenant(client_id)
@@ -218,7 +251,7 @@ class TenantProviderService:
             await self._cache.invalidate(client_id)
         return updated
 
-    async def _resolve_provider_config(self, tenant: TenantInDB, model_id: str) -> Dict[str, Any]:
+    async def _resolve_provider_config(self, tenant: Tenant, model_id: str) -> Dict[str, Any]:
         """Resolves raw decrypted provider configuration for MCP tool execution."""
         model_def = tenant.available_models[model_id]
         provider_conf = next(

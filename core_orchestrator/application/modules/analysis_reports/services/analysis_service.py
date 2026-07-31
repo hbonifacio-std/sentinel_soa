@@ -4,7 +4,8 @@ import logging
 from typing import Any, Dict, List
 
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
-from core_orchestrator.domain.ports import AnalysisServicePort, LlmAnalysisPort
+from core_orchestrator.domain.entities.agent.agents import LLMResponseAnalyzer
+from core_orchestrator.domain.ports import AiAnalysisPort, LlmAnalysisPort
 from core_orchestrator.infrastructure.security.rules_bundle_signer import sign_rules_bundle
 
 logger = logging.getLogger(__name__)
@@ -106,7 +107,11 @@ def _build_safe_analysis_result(
     return safe
 
 
-class AnalysisService(AnalysisServicePort):
+class AiAnalysis(AiAnalysisPort):
+
+    async def format_response(self, response: str) -> LLMResponseAnalyzer:
+        pass
+
     def __init__(
         self,
         llm_analysis_port: LlmAnalysisPort,

@@ -9,9 +9,9 @@ from core_orchestrator.infrastructure.api.dependencies import (
     get_rule_validator,
     get_rules_engine_service,
 )
-from core_orchestrator.infrastructure.security.dependencies import get_admin_user, get_analyst_user_with_client
-from core_orchestrator.domain.models.auth.user import UserInDB
-from core_orchestrator.domain.models.rule_engine.rules import HeuristicRule, RuleVersion, RulesBundle
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user, get_analyst_user_with_client
+from core_orchestrator.domain.entities.auth.user import UserInDB
+from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RulesBundle
 
 dummy_analyst = UserInDB(
     user_id="u-analyst",

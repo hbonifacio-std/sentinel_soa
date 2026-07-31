@@ -12,7 +12,7 @@ Por eso el side_effect también fija request.state.view_rate_limit = None.
 """
 import pytest
 from unittest.mock import patch
-from core_orchestrator.infrastructure.api.rate_limiter import limiter as _the_limiter
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter as _the_limiter
 
 
 def _noop_check_limit(request, endpoint, *args, **kwargs):

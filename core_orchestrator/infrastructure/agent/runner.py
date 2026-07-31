@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Any, Optional
 
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
 from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
@@ -56,14 +56,14 @@ class AgentRunner:
         cache_service: CacheService,
         telemetry_service: TelemetryService,
         analytics_service: ReportTelemetryService,
-        agent_factory: Callable[[MCPClientManager], OrchestratorAgent],
+        agent_factory: Callable[[MCPClientManagerAdapter], OrchestratorAgent],
     ):
         self.telemetry_processing_service = telemetry_processing_service
         self.cache_service = cache_service
         self.telemetry_service = telemetry_service
         self.analytics_service = analytics_service
         self._agent_factory = agent_factory
-        self.mcp_manager: Optional[MCPClientManager] = None
+        self.mcp_manager: Optional[MCPClientManagerAdapter] = None
         self.agent: Optional[OrchestratorAgent] = None
 
         # Cola de análisis pendientes — NUNCA descartamos una ventana por falta de MCP
@@ -301,7 +301,7 @@ class AgentRunner:
 
             logger.info("MCP Reconnect Loop: attempting connection...")
             try:
-                new_manager = MCPClientManager()
+                new_manager = MCPClientManagerAdapter()
                 await asyncio.wait_for(
                     new_manager.start_server_session(),
                     timeout=_MCP_CONNECT_TIMEOUT_S

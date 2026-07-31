@@ -65,7 +65,7 @@ class LogAnalysisServerSettings(BaseSettings):
             "openai-gpt3_5-turbo": ModelDefinition(provider="openai", model_name="gpt-3.5-turbo-instruct-0914", max_output_tokens=8192),
             "groq-llama-3_3-70b-versatile": ModelDefinition(provider="groq", model_name="llama-3.3-70b-versatile",max_output_tokens=12000, max_input_tokens=8192)
         },
-        description="Catalog of available LLM models for analysis."
+        description="Catalog of available LLM entities for analysis."
     )
     
     available_models_json_path: Optional[str] = Field(
@@ -262,7 +262,7 @@ class LogAnalysisServerSettings(BaseSettings):
             import logging
             logging.basicConfig(level=logging.ERROR, stream=sys.stderr)
             logger = logging.getLogger("MCP_CONFIG")
-            logger.error(f"Failed to load models from {json_path}: {e}. Using default catalog.")
+            logger.error(f"Failed to load entities from {json_path}: {e}. Using default catalog.")
             return self.available_models
     
     def _load_mitre_matrix_from_json(self, json_path: str) -> Dict[str, Any]:
@@ -288,7 +288,7 @@ class LogAnalysisServerSettings(BaseSettings):
             return None
 
     def __init__(self, **data):
-        """Override init to load models from external JSON if configured."""
+        """Override init to load entities from external JSON if configured."""
         super().__init__(**data)
         if self.available_models_json_path:
             self.available_models = self._load_models_from_json(self.available_models_json_path)

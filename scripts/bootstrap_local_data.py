@@ -19,12 +19,12 @@ from typing import Optional, cast, Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core_orchestrator.domain.models.auth.user import UserCreate
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientCreate, TelemetryBootstrapSummary
+from core_orchestrator.domain.entities.auth.user import UserCreate
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientCreate, TelemetryBootstrapSummary
 
-from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
-from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
+from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
+from core_orchestrator.application.modules.auth_clients.services.user_service import UserServicePort
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import \
     MongoTelemetryClientRepository
 from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
@@ -80,7 +80,7 @@ async def create_forensic_reader_user(db_manager: DatabaseManager) -> None:
             raise
 
 
-async def seed_users(user_service: UserService, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
+async def seed_users(user_service: UserServicePort, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
     summary = TelemetryBootstrapSummary()
     users_data = _load_seed(seed_path)
 
@@ -138,14 +138,14 @@ async def bootstrap(
     result: Optional[TelemetryBootstrapSummary] = None
 
     try:
-        if db_manager.redis_client is None:
+        if db_manager.redis_client_window_telemetry is None:
             raise RuntimeError("Redis client is not connected")
 
-        user_repo = MongoUserRepository(db_manager)
+        user_repo = MongoUserRepositoryAdapter(db_manager)
         password_hasher = BcryptPasswordHasher()
-        user_service = UserService(user_repository=user_repo, password_hasher=password_hasher)
+        user_service = UserServicePort(user_repository=user_repo, password_hasher=password_hasher)
 
-        redis_cache = RedisCache(redis_client=db_manager.redis_client)
+        redis_cache = RedisCache(redis_client=db_manager.redis_client_window_telemetry)
 
         mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
         telemetry_client_repo = CachingTelemetryClientRepository(
@@ -163,7 +163,7 @@ async def bootstrap(
         rule_service = RuleService(
             rule_repository=rule_repo,
             audit_repository=audit_repo,
-            rules_bundle_cache=RedisRulesBundleCache(redis_client=db_manager.redis_client),
+            rules_bundle_cache=RedisRulesBundleCache(redis_client=db_manager.redis_client_window_telemetry),
             rule_validator=DefaultRuleValidatorService(),
         )
 
@@ -182,7 +182,7 @@ async def bootstrap(
             await rules_db["heuristic_rules"].delete_many({})
             await rules_db["rule_versions"].delete_many({})
             await rules_db["rule_audit_log"].delete_many({})
-            if db_manager.redis_client:
+            if db_manager.redis_client_window_telemetry:
                 await rule_service.invalidate_rules_cache()
             existing_rules = 0
             logger.info("Existing heuristic rules cleared before reseed.")

@@ -4,7 +4,7 @@ Defines the repository interface for telemetry client persistence.
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from core_orchestrator.domain.models.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
 
 
 class TelemetryClientRepository(ABC):

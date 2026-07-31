@@ -1,134 +1,126 @@
 """
 Authentication endpoints for user login and profile retrieval.
 
-Provides OAuth2 password flow for obtaining JWT access tokens
+Provides OAuth2 password flow for getting JWT access tokens
 and endpoints to retrieve current user information, with logout support.
 """
 
 import logging
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Response, Cookie
 from fastapi.security import OAuth2PasswordRequestForm
 
-from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
-from core_orchestrator.infrastructure.api.dependencies import get_auth_service, get_db_manager
-from core_orchestrator.domain.models.auth.user import TokenResponse, UserResponse
-from core_orchestrator.infrastructure.security.dependencies import get_current_user
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
+from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
+from core_orchestrator.domain.exceptions.auth_exceptions import InvalidCredentialsError, UserInactiveError, \
+    InvalidTokenError, TokenRevokedError
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_auth_service
+from core_orchestrator.infrastructure.dto.auth.auth_dto import TokenResponseDTO, UserResponseDTO
+from core_orchestrator.infrastructure.api.dependencies.user_auth import get_current_user
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
 
 logger = logging.getLogger("core_orchestrator.api.auth")
 
 router = APIRouter()
+REFRESH_TOKEN_COOKIE_NAME = "refresh_token"
+COOKIE_MAX_AGE = 7 * 24 * 60 * 60  # 7 días
 
 
+def _set_refresh_token_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        value=refresh_token,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
+
+def _clear_refresh_token_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE_NAME,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+    )
 
 @router.post(
     "/token",
-    response_model=TokenResponse,
+    response_model=TokenResponseDTO,
     status_code=status.HTTP_200_OK,
     tags=["Authentication"]
 )
 @limiter.limit("5/minute")
 async def login_for_access_token(
     request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    auth_service: AuthService = Depends(get_auth_service),
+    response: Response,
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
     """
-    OAuth2 compatible token endpoint.
-    
-    Authenticates user with username and password, returns JWT access token.
-    The refresh token is set as an HttpOnly cookie; the client_api_key is
-    NOT included in this response (used only for telemetry, not the dashboard).
-    
+    Handles user authentication by providing access and refresh tokens.
+
+    This endpoint authenticates a user using the provided username and password.
+    If authentication is successful, an access token and a refresh token are returned.
+    The refresh token is stored as a secure cookie in the response. The endpoint is
+    rate-limited to prevent abuse.
+
     Args:
-        form_data: OAuth2 password request form (username and password)
-    
-    Returns:
-        Token response with access token and user info
-    
+        request: The HTTP request object, containing metadata about the incoming HTTP request.
+        response: The HTTP response object, used to send HTTP responses to the client.
+        form_data: Contains the username and password entered by the client. Must conform
+            to the OAuth2PasswordRequestForm specification.
+        auth_service: The authentication service instance is responsible for validating credentials
+            and generating tokens.
+
     Raises:
-        HTTPException: If credentials are invalid
+        HTTPException: Returns a 401 UNAUTHORIZED status code if the provided credentials
+            are invalid or if the user account is inactive.
+
+    Returns:
+        TokenResponseDTO: A data transfer object containing the access token and the
+            refresh token for the authenticated user.
     """
-    login_result = await auth_service.login(form_data.username, form_data.password)
-    
-    if not login_result:
-        logger.warning(f"Failed authentication attempt for username: {form_data.username}")
+    try:
+        token_response = await auth_service.login(
+            form_data.username,
+            form_data.password
+        )
+        _set_refresh_token_cookie(response, token_response.refresh_token)
+
+        return token_response
+    except (InvalidCredentialsError, UserInactiveError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail=str(exc),
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    user, access_token, refresh_token = login_result
-
-    # Return token and user info
-    user_response = UserResponse(
-        user_id=user.user_id,
-        username=user.username,
-        email=user.email,
-        role=user.role,
-        is_active=user.is_active,
-        client_id=user.client_id,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-    )
-    
-    response = TokenResponse(
-        access_token=access_token,
-        refresh_token=None,  # Don't include in response body, only in cookie
-        token_type="bearer",
-        expires_in=3600,  # 1 hour
-        user=user_response,
-    )
-    
-    # Set refresh token in HttpOnly cookie (separate from response body)
-    response_obj = response.model_dump(mode='json', exclude_none=True)
-    from fastapi.responses import JSONResponse
-    json_response = JSONResponse(content=response_obj)
-    json_response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        max_age=7 * 24 * 60 * 60,  # 7 days
-        httponly=True,
-        secure=True,
-        samesite="Strict"
-    )
-    
-    return json_response
 
 
 @router.get(
     "/me",
-    response_model=UserResponse,
+    response_model=UserResponseDTO,
     status_code=status.HTTP_200_OK,
     tags=["Authentication"]
 )
 async def get_current_user_info(
-    current_user = Depends(get_current_user)
+    current_user: Annotated[UserResponseDTO, Depends(get_current_user)]
 ):
     """
-    Get current authenticated user's profile.
-    
+    Retrieve information about the currently authenticated user.
+
+    This endpoint returns profile information of the currently logged-in user
+    based on their authentication token. It requires the user to be authenticated.
+
     Args:
-        current_user: Current authenticated user (injected via JWT)
-    
+        current_user (UserResponseDTO): The currently authenticated user, automatically
+        retrieved and injected by the dependency.
+
     Returns:
-        User profile information
+        UserResponseDTO: The profile information of the currently authenticated user.
     """
-    user_response = UserResponse(
-        user_id=current_user.user_id,
-        username=current_user.username,
-        email=current_user.email,
-        role=current_user.role,
-        is_active=current_user.is_active,
-        client_id=current_user.client_id,
-        created_at=current_user.created_at,
-        updated_at=current_user.updated_at,
-    )
-    
     logger.debug(f"User profile retrieved for: {current_user.username}")
-    
-    return user_response
+    return current_user
 
 
 @router.post(
@@ -139,138 +131,101 @@ async def get_current_user_info(
 @limiter.limit("10/minute")
 async def logout(
     request: Request,
-    auth_service: AuthService = Depends(get_auth_service),
+    response: Response,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    refresh_token: Annotated[str | None, Cookie(alias=REFRESH_TOKEN_COOKIE_NAME)] = None
 ):
     """
-    Logout endpoint - adds current token to blacklist for immediate revocation.
-    
-    This ensures the token cannot be used again, even if not yet expired.
-    
+    Handles user logout by invalidating access and refresh tokens and clearing the refresh
+    token cookie from the client's browser.
+
+    This endpoint requires a valid authentication context and supports a maximum of 10
+    requests per minute.
+
     Args:
-        request: FastAPI request object to extract Authorization header.
-        auth_service: Injected authentication service.
-        current_user: Current authenticated user (verifies valid token).
-    
+        request (Request): The incoming HTTP request object, used to access the
+            Authorization header for the access token
+
+        response (Response): The outgoing HTTP response object, used to manage the
+            refresh token cookie
+
+        auth_service (AuthService): A service that handles authentication-related logic,
+            provided as a dependency
+
+        refresh_token (str | None): Optional. The refresh token provided as a cookie,
+            retrieved using the REFRESH_TOKEN_COOKIE_NAME constant alias
+
     Returns:
-        Success message
+        dict: A dictionary containing a confirmation message upon successful logout.
     """
+    access_token = None
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        await auth_service.logout(token)
+        access_token = auth_header.split(" ")[1]
 
-    refresh_token = request.cookies.get("refresh_token")
-    if refresh_token:
-        await auth_service.revoke_refresh_token(refresh_token)
+    await auth_service.logout(access_token=access_token, refresh_token=refresh_token)
+    _clear_refresh_token_cookie(response)
 
-    from fastapi.responses import JSONResponse
-    response = JSONResponse(content={"message": "Logged out successfully"})
-    response.delete_cookie(
-        key="refresh_token",
-        httponly=True,
-        secure=True,
-        samesite="Strict",
-    )
-    logger.info("Logout completed. Access and refresh tokens revoked where applicable.")
-    return response
+    return {"message": "Logged out successfully"}
 
 
 @router.post(
     "/refresh",
-    response_model=TokenResponse,
+    response_model=TokenResponseDTO,
     status_code=status.HTTP_200_OK,
     tags=["Authentication"]
 )
 @limiter.limit("10/minute")
 async def refresh_access_token(
     request: Request,
-    auth_service: AuthService = Depends(get_auth_service),
-    db_manager = Depends(get_db_manager),
+    response: Response,
+    auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    cookie_refresh_token: Annotated[str | None, Cookie(alias=REFRESH_TOKEN_COOKIE_NAME)] = None,
 ):
     """
-    Refresh endpoint - obtain new access token using refresh token from cookie.
-    
-    The refresh token can be provided either:
-    1. Via HttpOnly cookie (preferred - secure) - automatically extracted
-    2. Via Authorization header as Bearer token (fallback for SPAs)
-    
+    Handles the generation of a new access token using a valid refresh token.
+
+    This endpoint allows clients to get a new access token by providing a valid
+    refresh token. The token can be provided either through a cookie or an
+    Authorization header with the Bearer scheme.
+
+    Parameters:
+        request (Request): The HTTP request object containing headers and other
+            request metadata
+
+        response (Response): The HTTP response object for setting the refresh token
+            cookie if applicable
+        auth_service (AuthService): The authentication service instance is responsible
+            for managing token operations. It is injected via dependency injection
+        cookie_refresh_token (str | None): An optional refresh token passed through
+            a cookie. Defaults to None
+
+    Raises:
+        HTTPException: status 401 if no refresh token is provided or if
+            the token is invalid, revoked, or belongs to an inactive user.
+
     Returns:
-        New access token with updated expiration
+        TokenResponseDTO: A DTO containing the new access token and associated data.
     """
-    refresh_token = None
-    
-    # Try to get from HttpOnly cookie first (secure)
-    refresh_token = request.cookies.get("refresh_token")
-    
-    # Fallback: check Authorization header
-    if not refresh_token:
+    token_to_use = cookie_refresh_token or None
+    if not token_to_use:
         auth_header = request.headers.get("Authorization")
         if auth_header and auth_header.startswith("Bearer "):
-            refresh_token = auth_header.split(" ")[1]
-    
-    if not refresh_token:
+            token_to_use = auth_header.split(" ")[1]
+
+    if not token_to_use:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="No refresh token provided"
+            detail="No refresh token provided",
         )
-    
-    # Use refresh token to get new access token
-    result = await auth_service.refresh_access_token(refresh_token)
-    if not result:
-        logger.warning("Failed to refresh token")
+
+    try:
+        token_response = await auth_service.refresh_access_token(token_to_use)
+        _set_refresh_token_cookie(response, token_to_use)
+
+        return token_response
+    except (InvalidTokenError, TokenRevokedError, UserInactiveError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired refresh token"
+            detail=str(exc),
         )
-    
-    new_access_token, jti = result
-    
-    # Decode refresh token to get user_id
-    from core_orchestrator.infrastructure.security.jwt_utils import verify_refresh_token
-    payload = verify_refresh_token(refresh_token)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Invalid refresh token")
-    
-    user_id = payload.get("sub")
-    
-    # Get user info
-    auth_db = db_manager.get_auth_db()
-    user_doc = await auth_db.users.find_one({"user_id": user_id})
-    
-    if not user_doc:
-        raise HTTPException(status_code=401, detail="User not found")
-    
-    user_response = UserResponse(
-        user_id=user_id,
-        username=user_doc.get("username"),
-        email=user_doc.get("email"),
-        role=user_doc.get("role"),
-        is_active=user_doc.get("is_active"),
-        client_id=user_doc.get("client_id"),
-        created_at=user_doc.get("created_at"),
-        updated_at=user_doc.get("updated_at"),
-    )
-    
-    response_data = TokenResponse(
-        access_token=new_access_token,
-        refresh_token=None,  # Keep refresh token only in HttpOnly cookie
-        token_type="bearer",
-        expires_in=3600,
-        user=user_response,
-    )
-    
-    from fastapi.responses import JSONResponse
-    json_response = JSONResponse(content=response_data.model_dump(mode="json", exclude_none=True))
-    
-    # Optionally update refresh token cookie
-    json_response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        max_age=7 * 24 * 60 * 60,
-        httponly=True,
-        secure=True,
-        samesite="Strict"
-    )
-    
-    logger.info(f"Access token refreshed for user: {user_id}")
-    return json_response

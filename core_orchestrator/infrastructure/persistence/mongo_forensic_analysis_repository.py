@@ -5,13 +5,13 @@ from typing import Any, Optional, cast
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING
 
-from core_orchestrator.domain.models.forensic.forensic_analysis import (
+from core_orchestrator.domain.entities.forensic.forensic_analysis import (
     ForensicAnalyzeRequest,
     ForensicAnalysisRecord,
     ForensicHistoryQuery,
 )
 from core_orchestrator.domain.ports.forensic import ForensicAnalysisRepositoryPort
-from core_orchestrator.infrastructure.config.database import DatabaseManager
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 
 
 class MongoForensicAnalysisRepository(ForensicAnalysisRepositoryPort):

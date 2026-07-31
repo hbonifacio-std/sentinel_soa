@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
-from core_orchestrator.domain.models.rule_engine.rules import RulesBundle
+from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 
 @pytest.mark.asyncio

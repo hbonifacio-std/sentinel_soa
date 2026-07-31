@@ -1,8 +1,8 @@
 import logging
 from typing import Optional, Dict, Any, List
 
-from core_orchestrator.domain.models.analysis import AnalysisReportResponse
-from core_orchestrator.domain.models.telemetry.log_event import LogEvent
+from core_orchestrator.domain.entities.analysis import AnalysisReportResponse
+from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
 from core_orchestrator.domain.ports.telemetry.telemetry_repository import TelemetryRepository
 
 logger = logging.getLogger(__name__)

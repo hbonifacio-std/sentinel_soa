@@ -6,34 +6,37 @@ from functools import lru_cache
 from datetime import timedelta
 
 # Services
-from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AnalysisService
+from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AiAnalysis
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
-from core_orchestrator.application.modules.auth_clients.services.auth_service import AuthService
+from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
 from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
+from core_orchestrator.application.modules.auth_clients.user_service import UserService
 from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
 from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
 from core_orchestrator.application.modules.analysis_reports.services.threat_context_service import ThreatContextService
-from core_orchestrator.application.modules.auth_clients.services.user_service import UserService
 from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
 from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
+from core_orchestrator.domain.ports import PasswordHasherPort
+from core_orchestrator.infrastructure.adapters.redis_black_list.redis_black_list_adapter import \
+    RedisTokenBlacklistAdapter
+from core_orchestrator.infrastructure.adapters.security.password_hasher_adapter import PasswordHasherAdapter
 
 # Repositories and their Implementations
-from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsRepository
+from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsPorts
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import MongoTelemetryClientRepository
 from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
-from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepository
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepository
-from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepository
+from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
+from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepositoryPort
 from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
 
 # Core Infrastructure
-from core_orchestrator.infrastructure.agent.mcp_client import MCPClientManager
+from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
@@ -43,15 +46,16 @@ from core_orchestrator.infrastructure.cache.cache_service import CacheService
 from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
 from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
-from core_orchestrator.infrastructure.config.config import orchestrator_settings
-from core_orchestrator.infrastructure.config.database import DatabaseManager
-from core_orchestrator.infrastructure.api.rate_limiter import limiter
-from core_orchestrator.infrastructure.security.password_hasher import BcryptPasswordHasher
-from core_orchestrator.infrastructure.security.signature_verifier import HmacSignatureVerifier
-from core_orchestrator.infrastructure.security.token_service import JwtTokenService
-from core_orchestrator.infrastructure.security.api_key_cipher import ApiKeyCipher
+from core_orchestrator.infrastructure.config.config import orchestrator_settings_deprecated
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
+from core_orchestrator.infrastructure.rate_limit.rate_limiter import  limiter
+
+
+from core_orchestrator.infrastructure.adapters.security.jwt_token_provider_adapter import JwtTokenProviderAdapter
+from core_orchestrator.infrastructure.adapters.security.api_key_cipher_adapter import ApiKeyCipher
 from core_orchestrator.infrastructure.cache.redis_tenant_provider_cache import RedisTenantProviderCache
 from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+
 
 
 class Container:
@@ -62,7 +66,7 @@ class Container:
     def __init__(self):
         # 1. En el constructor SOLO inicializamos la infraestructura base síncrona
         self.db_manager = DatabaseManager()
-        self.mcp_client_manager = MCPClientManager()
+        self.mcp_client_manager = MCPClientManagerAdapter()
         self.limiter = limiter
 
         # 2. Espacios para dependencias que necesitan conexión activa
@@ -101,18 +105,20 @@ class Container:
         """Connects to databases and initializes long-running services."""
         # === PASO 1: Conexiones reales ===
         self.db_manager.connect()
-        if self.db_manager.redis_client is None:
+        if self.db_manager.redis_client_window_telemetry is None:
             raise RuntimeError("Redis client is not connected")
 
-        redis_client = self.db_manager.redis_client
+        redis_client_telemetry = self.db_manager.redis_client_window_telemetry
+        redis_client_auth = self.db_manager.redis_client_auth
+        redis_client_rules = self.db_manager.redis_client_rules
 
         # === PASO 2: Repositorios y Servicios ===
         self.cache_service = CacheService(db_manager=self.db_manager)
-        self.redis_cache = RedisCache(redis_client=redis_client)
-        self.telemetry_window_cache = RedisTelemetryWindowCache(redis_client=redis_client)
+        self.redis_cache = RedisCache(redis_client=redis_client_telemetry)
+        self.telemetry_window_cache = RedisTelemetryWindowCache(redis_client=redis_client_telemetry)
 
         # Repositories
-        self.analytics_repository = MongoAnalyticsRepository(db_manager=self.db_manager)
+        self.analytics_repository = MongoAnalyticsPorts(db_manager=self.db_manager)
         self.audit_repository = MongoAuditRepository(db_manager=self.db_manager)
         self.rule_repository = MongoRuleRepository(db_manager=self.db_manager)
 
@@ -123,9 +129,9 @@ class Container:
         )
 
         self.telemetry_repository = MongoTelemetryRepository(db_manager=self.db_manager)
-        self.token_blacklist_repository = RedisTokenBlacklistRepository(redis_client=redis_client)
-        self.user_repository = MongoUserRepository(db_manager=self.db_manager)
-        self.tenant_repository = MongoTenantRepository(db_manager=self.db_manager)
+        self.token_blacklist_repository = RedisTokenBlacklistAdapter(redis_client=redis_client_auth)
+        self.user_repository = MongoUserRepositoryAdapter(db_manager=self.db_manager)
+        self.tenant_repository = MongoTenantRepositoryPort(db_manager=self.db_manager)
         self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
 
         await self.analytics_repository.ensure_indexes()
@@ -134,31 +140,33 @@ class Container:
 
         # Services
         self.analytics_service = ReportTelemetryService(analytics_repository=self.analytics_repository)
-        self.password_hasher = BcryptPasswordHasher()
-        self.token_service = JwtTokenService()
-        self.signature_verifier = HmacSignatureVerifier()
+
+        self.token_service = JwtTokenProviderAdapter()
+
+        self.password_hasher = PasswordHasherAdapter()
         self.user_service = UserService(
             user_repository=self.user_repository,
             password_hasher=self.password_hasher,
         )
         self.tenant_service = TenantService(tenant_repository=self.tenant_repository)
         self.api_key_cipher = ApiKeyCipher(
-            orchestrator_settings.tenant_api_key_encryption_key.get_secret_value()
+            orchestrator_settings_deprecated.tenant_api_key_encryption_key.get_secret_value()
         )
-        self.tenant_provider_cache = RedisTenantProviderCache(redis_client=redis_client)
+        self.tenant_provider_cache = RedisTenantProviderCache(redis_client=redis_client_auth)
         self.tenant_provider_service = TenantProviderService(
             tenant_repository=self.tenant_repository,
             cipher=self.api_key_cipher,
             cache=self.tenant_provider_cache,
         )
         self.auth_service = AuthService(
-            user_provider=self.user_service,
-            token_blacklist_repository=self.token_blacklist_repository,
+            user_service=self.user_service,
+            token_blacklist_repo=self.token_blacklist_repository,
             token_service=self.token_service,
-            access_token_expires_delta=timedelta(minutes=orchestrator_settings.jwt_expiration_minutes),
+            access_token_expires_delta=timedelta(minutes=orchestrator_settings_deprecated.jwt_expiration_minutes),
+            refresh_token_expires_delta=timedelta(minutes=orchestrator_settings_deprecated.jwt_expiration_minutes)
         )
 
-        self.rules_bundle_cache = RedisRulesBundleCache(redis_client=redis_client)
+        self.rules_bundle_cache = RedisRulesBundleCache(redis_client=redis_client_rules)
         self.rule_validator = DefaultRuleValidatorService()
 
         self.rule_service = RuleService(
@@ -170,13 +178,12 @@ class Container:
         self.rules_engine_service = RulesEngineService(rules_service=self.rule_service)
         self.telemetry_service = TelemetryService(repository=self.telemetry_repository)
         self.telemetry_client_service = TelemetryClientService(
-            telemetry_client_repository=self.telemetry_client_repository,
-            signature_verifier=self.signature_verifier,
-        )
+            telemetry_client_repository=self.telemetry_client_repository)
+
         self.telemetry_processing_service = TelemetryProcessingService(
             window_cache=self.telemetry_window_cache,
-            window_duration_seconds=orchestrator_settings.window_duration_seconds,
-            window_threshold_requests=orchestrator_settings.window_threshold_requests,
+            window_duration_seconds=orchestrator_settings_deprecated.window_duration_seconds,
+            window_threshold_requests=orchestrator_settings_deprecated.window_threshold_requests,
         )
         self.forensic_intelligence_adapter = MCPForensicIntelligenceAdapter(mcp_manager=self.mcp_client_manager)
         self.forensic_service = ForensicService(
@@ -198,11 +205,11 @@ class Container:
         await self.rules_engine_service.initialize()
         self.agent_runner.initialize_subsystem()
 
-    def _create_mcp_agent(self, mcp_manager: MCPClientManager) -> OrchestratorAgent:
+    def _create_mcp_agent(self, mcp_manager: MCPClientManagerAdapter) -> OrchestratorAgent:
         """Factory centralizada para construir el agente con sus dependencias MCP."""
         llm_adapter = MCPLlmAnalysisAdapter(mcp_manager=mcp_manager)
         threat_adapter = MCPThreatContextAdapter(mcp_manager=mcp_manager)
-        analysis_svc = AnalysisService(
+        analysis_svc = AiAnalysis(
             llm_analysis_port=llm_adapter,
             rules_engine_service=self.rules_engine_service,
             tenant_provider_service=self.tenant_provider_service,
@@ -221,8 +228,8 @@ class Container:
             await self.agent_runner.shutdown_subsystem()
         if self.db_manager.mongo_client:
             await self.db_manager.mongo_client.close()
-        if self.db_manager.redis_client:
-            await self.db_manager.redis_client.close()
+        if self.db_manager.redis_client_window_telemetry:
+            await self.db_manager.redis_client_window_telemetry.close()
 
 
 # Use lru_cache to ensure the container is a singleton

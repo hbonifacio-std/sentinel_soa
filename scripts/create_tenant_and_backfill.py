@@ -10,7 +10,7 @@ import os
 import sys
 import hashlib
 import asyncio
-from core_orchestrator.infrastructure.config.database import DatabaseManager
+from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 
 
 def hash_key(key: str) -> str:
