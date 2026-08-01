@@ -29,7 +29,7 @@ from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_reposit
     MongoTelemetryClientRepository
 from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
 from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
+from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
@@ -145,7 +145,7 @@ async def bootstrap(
         password_hasher = BcryptPasswordHasher()
         user_service = UserServicePort(user_repository=user_repo, password_hasher=password_hasher)
 
-        redis_cache = RedisCache(redis_client=db_manager.redis_client_window_telemetry)
+        redis_cache = RedisCacheRepository(redis_client=db_manager.redis_client_window_telemetry)
 
         mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
         telemetry_client_repo = CachingTelemetryClientRepository(

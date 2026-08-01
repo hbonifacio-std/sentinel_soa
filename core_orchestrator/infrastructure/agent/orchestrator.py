@@ -12,7 +12,7 @@ from core_orchestrator.domain.entities.analysis import AnalysisReportResponse
 from core_orchestrator.domain.ports.analysis.ia_analysis_port import AiAnalysisPort
 from core_orchestrator.domain.ports.telemetry.threat_context_service_port import ThreatContextServicePort
 from core_orchestrator.domain.ports.telemetry.report_telemetry_service_port import ReportTelemetryServicePort
-from core_orchestrator.domain.ports.shared.cache_port import CachePort
+from core_orchestrator.domain.ports.shared.cache_port import CacheRepositoryPort
 
 logger = logging.getLogger("core_orchestrator.agent.orchestrator")
 
@@ -25,7 +25,7 @@ class OrchestratorAgent:
 
     def __init__(
         self,
-        cache_port: CachePort,
+        cache_port: CacheRepositoryPort,
         analysis_service: AiAnalysisPort,
         analytics_service: ReportTelemetryServicePort,
         threat_context_service: ThreatContextServicePort,

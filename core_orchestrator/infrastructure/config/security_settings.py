@@ -12,6 +12,7 @@ class SecuritySettings(BaseSettings):
     jwt_secret_key: SecretStr = Field(validation_alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
     jwt_expiration_minutes: int = Field(default=60, validation_alias="JWT_EXPIRATION_MINUTES", gt=0)
+    jwt_expiration_refresh_days: int = Field(default=7, validation_alias="JWT_EXPIRATION_DAY_REFRESH", gt=0)
 
     @field_validator("jwt_secret_key")
     @classmethod

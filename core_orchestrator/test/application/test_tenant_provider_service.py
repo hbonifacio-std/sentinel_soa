@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, Mock
 
 from core_orchestrator.domain.entities.auth.tenant import TenantInDB, ProviderAIConfig, TenantModelAIDefinition
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
 
 
 def _build_test_tenant(client_id: str = "acme"):
@@ -39,7 +39,7 @@ async def test_get_default_provider_config_success():
     tenant = _build_test_tenant("acme")
     repo.get_by_client_id.return_value = tenant
 
-    service = TenantProviderService(tenant_repository=repo, cipher=cipher, cache=cache)
+    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, cache_repository=cache)
     config = await service.get_default_provider_config("acme")
 
     assert config is not None
@@ -59,7 +59,7 @@ async def test_get_provider_config_for_model_raises_if_not_enabled():
     tenant = _build_test_tenant("acme")
     repo.get_by_client_id.return_value = tenant
 
-    service = TenantProviderService(tenant_repository=repo, cipher=cipher, cache=cache)
+    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, cache_repository=cache)
 
     with pytest.raises(ValueError, match="not enabled"):
         await service.get_provider_config_for_model("acme", "non-existent-model")

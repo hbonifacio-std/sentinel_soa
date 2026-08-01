@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 
-class CachePort(ABC):
+class CacheRepositoryPort(ABC):
     """
     An abstract port defining the interface for a generic key-value cache.
     """

@@ -1,4 +1,7 @@
-class LLMException(Exception):
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
+
+
+class LLMException(DomainException):
     """
     Generic exception for errors related to LLM providers.
     Inherits from Exception and can be caught for general LLM error handling.

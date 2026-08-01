@@ -150,10 +150,10 @@ class MongoUserRepositoryAdapter(UserRepositoryPort):
 
         user_create.hashed_password = hashed_password
 
-        await self.collection.insert_one(user_create)
+        await self.collection.insert_one(user_create.__dict__)
         logger.info(f"User created: {user_create.username} (role: {user_create.role})")
 
-        return UserInDB(**user_create.__dict__)
+        return user_create
 
     async def list_all(self) -> List[UserInDB]:
         """

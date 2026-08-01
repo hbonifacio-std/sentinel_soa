@@ -1,6 +1,7 @@
-# core_orchestrator/domain/exceptions/auth_exceptions.py
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
 
-class AuthException(Exception):
+
+class AuthException(DomainException):
     """Base authentication exception."""
     pass
 

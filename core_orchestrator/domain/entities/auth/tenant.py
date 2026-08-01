@@ -9,8 +9,10 @@ management, and checking provider availability.
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Literal
+from typing import Dict, List, Optional, Literal, get_args
 
+ProviderType = Literal["gemini", "openai", "groq", "ollama"]
+VALID_PROVIDERS = get_args(ProviderType)
 
 @dataclass
 class ProviderAIConfig:
@@ -23,6 +25,7 @@ class ProviderAIConfig:
 @dataclass
 class TenantModelAIDefinition:
     provider: str
+    model_id: str
     model_name: str
     base_url: Optional[str] = None
     max_output_tokens: Optional[int] = None
@@ -48,6 +51,7 @@ class Tenant:
 
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
 
     def deactivate(self) -> None:
         self.is_active = False

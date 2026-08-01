@@ -1,7 +1,9 @@
-from typing import Optional, Any, Dict
+from typing import Optional
+
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
 
 
-class MCPClientError(Exception):
+class MCPClientError(DomainException):
     """Base exception for all MCP Client errors."""
     pass
 

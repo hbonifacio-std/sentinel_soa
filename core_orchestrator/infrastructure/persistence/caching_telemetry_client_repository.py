@@ -3,7 +3,7 @@ import logging
 from typing import List, Optional
 
 from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
-from core_orchestrator.domain.ports.shared.cache_port import CachePort
+from core_orchestrator.domain.ports.shared.cache_port import CacheRepositoryPort
 from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class CachingTelemetryClientRepository(TelemetryClientRepository):
     A decorator for TelemetryClientRepository that adds a caching layer.
     """
 
-    def __init__(self, primary_repository: TelemetryClientRepository, cache: CachePort):
+    def __init__(self, primary_repository: TelemetryClientRepository, cache: CacheRepositoryPort):
         self._primary_repository = primary_repository
         self._cache = cache
 

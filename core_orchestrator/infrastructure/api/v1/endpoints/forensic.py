@@ -12,7 +12,7 @@ from core_orchestrator.domain.entities.forensic.forensic_analysis import (
 )
 from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.domain.ports.forensic import ForensicServicePort
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_provider_service, \
     get_forensic_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
@@ -23,7 +23,7 @@ router = APIRouter()
 @router.get("/models")
 async def get_available_models_for_chat(
     current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
-    tenant_provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    tenant_provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
 ):
     """Devuelve los modelos disponibles para el tenant del usuario actual."""
     models = await tenant_provider_service.get_available_models_for_tenant(

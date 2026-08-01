@@ -25,7 +25,7 @@ from core_orchestrator.domain.ports.rules import (
     RulesBundleCachePort,
     VersionRepository,
 )
-from core_orchestrator.domain.ports.shared import AuditRepository, CachePort
+from core_orchestrator.domain.ports.shared import AuditRepository, CacheRepositoryPort
 from core_orchestrator.domain.ports.telemetry import (
     TelemetryClientRepository,
     TelemetryRepository,
@@ -37,7 +37,7 @@ __all__ = [
     "AnalyticsPorts",
     "ReportTelemetryServicePort",
     "AuditRepository",
-    "CachePort",
+    "CacheRepositoryPort",
     "ForensicAnalysisRepositoryPort",
     "ForensicIntelligencePort",
     "ForensicServicePort",

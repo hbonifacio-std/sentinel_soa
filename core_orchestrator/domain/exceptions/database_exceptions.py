@@ -1,4 +1,7 @@
-class DatabaseError(Exception):
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
+
+
+class DatabaseError(DomainException):
     """Base exception for all errors related to database infrastructure."""
     def __init__(self, message: str = "Database error occurred."):
         self.message = message
@@ -20,3 +23,24 @@ class DatabaseConnectionFailedError(DatabaseError):
         self.details = details
         self.message = f"Failed to initialize connection to {self.service_name}: {self.details}"
         super().__init__(self.message)
+
+
+class DatabaseOperationError(DomainException):
+    """
+    Represents an error that occurs during a database operation.
+
+    This exception is specifically designed to handle errors related to database
+    operations and provides meaningful information about the operation that
+    triggered the error and any additional details.
+
+    Args:
+        operation: str
+            The name or type of database operation where the error occurred.
+        detail: str
+            Additional details about the error, if available.
+    """
+    def __init__(self, operation: str, detail: str = ""):
+        message = f"Error performing database operation [{operation}]."
+        if detail:
+            message += f" Details: {detail}"
+        super().__init__(message=message, code="DATABASE_OPERATION_ERROR")

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 from datetime import datetime, timezone, timedelta
 import json
 from types import SimpleNamespace
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
+from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
 from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepositoryPort
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
 from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
@@ -27,7 +27,7 @@ def mock_db_manager(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache(mock_redis):
-    cache = RedisCache(mock_redis)
+    cache = RedisCacheRepository(mock_redis)
     
     mock_redis.get.return_value = b"val"
     assert await cache.get("key") == b"val"
@@ -40,7 +40,7 @@ async def test_redis_cache(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache_disconnected():
-    cache = RedisCache(None)
+    cache = RedisCacheRepository(None)
     assert await cache.get("key") is None
     await cache.set("key", "val")
     await cache.delete("key")

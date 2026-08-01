@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from core_orchestrator.domain.entities.auth.user import UserInDB
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_provider_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_current_user
 
@@ -56,7 +56,7 @@ def _require_admin(user: UserInDB):
 @router.get("/{client_id}/providers", response_model=List[ProviderResponse])
 async def list_tenant_providers(
     client_id: str,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """List AI providers configured for tenant (never returns raw API keys)."""
@@ -80,7 +80,7 @@ async def list_tenant_providers(
 async def add_or_update_tenant_provider(
     client_id: str,
     req: AddProviderRequest,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """Add or update an AI provider entry for a tenant."""
@@ -120,7 +120,7 @@ async def add_or_update_tenant_provider(
 async def delete_tenant_provider(
     client_id: str,
     provider: str,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """Remove an AI provider from a tenant."""
@@ -135,7 +135,7 @@ async def delete_tenant_provider(
 @router.get("/{client_id}/providers/models")
 async def list_tenant_models(
     client_id: str,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """List available AI entities configured for tenant."""
@@ -154,7 +154,7 @@ async def list_tenant_models(
 async def add_or_update_tenant_model(
     client_id: str,
     req: AddModelRequest,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """Add or update an AI model in tenant catalog."""
@@ -181,7 +181,7 @@ async def add_or_update_tenant_model(
 async def delete_tenant_model(
     client_id: str,
     model_id: str,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """Delete an AI model from tenant catalog."""
@@ -197,7 +197,7 @@ async def delete_tenant_model(
 async def set_tenant_default_model(
     client_id: str,
     req: SetDefaultModelRequest,
-    provider_service: Annotated[TenantProviderService, Depends(get_tenant_provider_service)],
+    provider_service: Annotated[TenantProviderAiService, Depends(get_tenant_provider_service)],
     current_user: Annotated[UserInDB, Depends(get_current_user)],
 ):
     """Set tenant default entities for background log analysis and/or MongoDB query translation."""

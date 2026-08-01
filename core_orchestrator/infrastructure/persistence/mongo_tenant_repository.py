@@ -3,9 +3,11 @@ MongoDB implementation of the tenant repository.
 """
 
 import logging
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import List, Optional, Any
-from core_orchestrator.domain.entities.auth.tenant import Tenant
+from core_orchestrator.domain.entities.auth.tenant import Tenant, ProviderAIConfig
+from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRepositoryPort
 
@@ -13,7 +15,7 @@ from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRep
 logger = logging.getLogger(__name__)
 
 
-class MongoTenantRepositoryPort(TenantRepositoryPort):
+class MongoTenantRepositoryAdapter(TenantRepositoryPort):
     """
     Handles tenant data management and operations in the MongoDB database.
 
@@ -30,7 +32,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
     async def get(self, tenant_id: str) -> Optional[Tenant]:
         tenant_doc = await self.collection.find_one({"client_id": tenant_id})
         if tenant_doc:
-            return Tenant(**tenant_doc)
+            return map_to_dataclass(Tenant, tenant_doc)
         return None
 
     async def get_by_api_key_hash(self, api_key_hash: str) -> Optional[Tenant]:
@@ -49,7 +51,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         """
         tenant_doc = await self.collection.find_one({"api_key_hash": api_key_hash})
         if tenant_doc:
-            return Tenant(**tenant_doc)
+            return map_to_dataclass(Tenant, tenant_doc)
         return None
 
     async def get_by_client_id(self, client_id: str, include_inactive: bool = False) -> Optional[Tenant]:
@@ -79,7 +81,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         
         tenant_doc = await self.collection.find_one(query)
         if tenant_doc:
-            return Tenant(**tenant_doc)
+            return map_to_dataclass(Tenant, tenant_doc)
         return None
 
     async def get_by_api_key(self, api_key: str) -> Optional[Tenant]:
@@ -101,7 +103,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             "is_active": True
         })
         if tenant_doc:
-            return Tenant(**tenant_doc)
+            return map_to_dataclass(Tenant, tenant_doc)
         return None
 
     async def create(
@@ -129,7 +131,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         tenant_create.api_key_hash = api_key_hash
         tenant_create.api_key_plaintext = api_key_plaintext
 
-        await self.collection.insert_one(tenant_create.__dict__)
+        await self.collection.insert_one(asdict(tenant_create))
         logger.info(f"Tenant created: {tenant_create.client_id} ({tenant_create.display_name})")
 
         return tenant_create
@@ -149,7 +151,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         query = {} if include_inactive else {"is_active": True}
         cursor = self.collection.find(query)
         tenants = await cursor.to_list(length=None)
-        return [Tenant(**doc) for doc in tenants]
+        return [map_to_dataclass(Tenant, doc) for doc in tenants]
 
     async def update(self, tenant_id: str, **kwargs) -> Optional[Tenant]:
         """
@@ -179,7 +181,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         )
         
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def delete(self, tenant_id: str) -> bool:
@@ -213,7 +215,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         await self.collection.create_index("client_id", unique=True)
         await self.collection.create_index([("client_id", 1), ("ai_providers.provider", 1)])
 
-    async def update_provider(self, client_id: str, provider_config: dict) -> Optional[Tenant]:
+    async def update_provider(self, client_id: str, provider_config: ProviderAIConfig) -> Optional[Tenant]:
         """
         Updates the AI provider configuration for a tenant in the database.
 
@@ -234,7 +236,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
         """
         now = datetime.now(timezone.utc)
         # Pull existing provider configuration if present
-        provider_name = provider_config["provider"]
+        provider_name = provider_config.provider
         await self.collection.update_one(
             {"client_id": client_id},
             {"$pull": {"ai_providers": {"provider": provider_name}}}
@@ -249,7 +251,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def remove_provider(self, client_id: str, provider_name: str) -> Optional[Tenant]:
@@ -301,7 +303,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def update_model(self, client_id: str, model_id: str, model_def: dict) -> Optional[Tenant]:
@@ -336,7 +338,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def remove_model(self, client_id: str, model_id: str) -> Optional[Tenant]:
@@ -377,7 +379,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def set_default_log_analysis_model(self, client_id: str, model_id: Optional[str]) -> Optional[Tenant]:
@@ -412,7 +414,7 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None
 
     async def set_default_mongo_translator_model(self, client_id: str, model_id: Optional[str]) -> Optional[Tenant]:
@@ -450,5 +452,5 @@ class MongoTenantRepositoryPort(TenantRepositoryPort):
             return_document=True
         )
         if result:
-            return Tenant(**result)
+            return map_to_dataclass(Tenant, result)
         return None

@@ -23,6 +23,7 @@ from core_orchestrator.domain.ports import PasswordHasherPort
 from core_orchestrator.infrastructure.adapters.redis_black_list.redis_black_list_adapter import \
     RedisTokenBlacklistAdapter
 from core_orchestrator.infrastructure.adapters.security.password_hasher_adapter import PasswordHasherAdapter
+from core_orchestrator.infrastructure.config.settings import orchestrator_settings
 
 # Repositories and their Implementations
 from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsPorts
@@ -32,7 +33,7 @@ from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_reposit
 from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
 from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
 from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
-from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepositoryPort
+from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepositoryAdapter
 from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
 
 # Core Infrastructure
@@ -43,7 +44,7 @@ from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MC
 from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
 from core_orchestrator.infrastructure.agent.runner import AgentRunner
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCache
+from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
 from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
 from core_orchestrator.infrastructure.config.config import orchestrator_settings_deprecated
@@ -54,7 +55,7 @@ from core_orchestrator.infrastructure.rate_limit.rate_limiter import  limiter
 from core_orchestrator.infrastructure.adapters.security.jwt_token_provider_adapter import JwtTokenProviderAdapter
 from core_orchestrator.infrastructure.adapters.security.api_key_cipher_adapter import ApiKeyCipher
 from core_orchestrator.infrastructure.cache.redis_tenant_provider_cache import RedisTenantProviderCache
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_service import TenantProviderService
+from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
 
 
 
@@ -114,7 +115,7 @@ class Container:
 
         # === PASO 2: Repositorios y Servicios ===
         self.cache_service = CacheService(db_manager=self.db_manager)
-        self.redis_cache = RedisCache(redis_client=redis_client_telemetry)
+        self.redis_cache = RedisCacheRepository(redis_client=redis_client_telemetry)
         self.telemetry_window_cache = RedisTelemetryWindowCache(redis_client=redis_client_telemetry)
 
         # Repositories
@@ -131,7 +132,7 @@ class Container:
         self.telemetry_repository = MongoTelemetryRepository(db_manager=self.db_manager)
         self.token_blacklist_repository = RedisTokenBlacklistAdapter(redis_client=redis_client_auth)
         self.user_repository = MongoUserRepositoryAdapter(db_manager=self.db_manager)
-        self.tenant_repository = MongoTenantRepositoryPort(db_manager=self.db_manager)
+        self.tenant_repository = MongoTenantRepositoryAdapter(db_manager=self.db_manager)
         self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
 
         await self.analytics_repository.ensure_indexes()
@@ -153,17 +154,17 @@ class Container:
             orchestrator_settings_deprecated.tenant_api_key_encryption_key.get_secret_value()
         )
         self.tenant_provider_cache = RedisTenantProviderCache(redis_client=redis_client_auth)
-        self.tenant_provider_service = TenantProviderService(
+        self.tenant_provider_service = TenantProviderAiService(
             tenant_repository=self.tenant_repository,
             cipher=self.api_key_cipher,
-            cache=self.tenant_provider_cache,
+            cache_repository=redis_client_auth,
         )
         self.auth_service = AuthService(
             user_service=self.user_service,
             token_blacklist_repo=self.token_blacklist_repository,
             token_service=self.token_service,
-            access_token_expires_delta=timedelta(minutes=orchestrator_settings_deprecated.jwt_expiration_minutes),
-            refresh_token_expires_delta=timedelta(minutes=orchestrator_settings_deprecated.jwt_expiration_minutes)
+            access_token_expires_delta=timedelta(minutes=orchestrator_settings.security.jwt_expiration_minutes),
+            refresh_token_expires_delta=timedelta(minutes=orchestrator_settings.security.jwt_expiration_refresh_days)
         )
 
         self.rules_bundle_cache = RedisRulesBundleCache(redis_client=redis_client_rules)

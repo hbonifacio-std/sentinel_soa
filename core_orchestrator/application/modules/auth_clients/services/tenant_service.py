@@ -1,8 +1,8 @@
 """
-Tenant service - Application layer use cases for tenant management.
+Module for tenant management service.
 
-Orchestrates tenant creation, retrieval, and management with proper validation.
-Also handles telemetry client authentication (API keys, HMAC verification).
+Provides functionalities for creating, updating, retrieving, listing, and managing tenants.
+This includes API key generation, activation/deactivation of tenants, and tenant deletion.
 """
 
 import logging

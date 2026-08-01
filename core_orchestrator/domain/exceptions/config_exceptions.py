@@ -1,5 +1,7 @@
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
 
-class ConfigurationError(Exception):
+
+class ConfigurationError(DomainException):
     """Base exception for all configuration-related errors."""
     pass
 
