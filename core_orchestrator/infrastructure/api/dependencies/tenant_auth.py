@@ -1,13 +1,10 @@
-import hashlib
-import hmac
 import logging
 
 from fastapi import Header, HTTPException, Request, status, Depends
 
-from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
+from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
 from core_orchestrator.infrastructure.adapters.security.tenant_auth_adapter import TenantContext, validate_tenant_api_key
-from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_db_manager, \
-    get_telemetry_client_service
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_db_manager, get_tenant_service
 from core_orchestrator.infrastructure.config.settings import orchestrator_settings
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientAuthContext
@@ -17,7 +14,7 @@ logger = logging.getLogger("core_orchestrator.security.dependencies")
 async def verify_api_key_header(
         x_sentinel_client_id: str = Header(alias="x-sentinel-client-id", default=None, description="Telemetry Client ID"),
         x_sentinel_api_key: str = Header(alias="x-sentinel-api-key", default=None, description="Telemetry API Key"),
-        telemetry_client_service: TelemetryClientService = Depends(get_telemetry_client_service),
+        telemetry_client_service: TenantService = Depends(get_tenant_service),
 ) -> TelemetryClientAuthContext:
     """
     API key verification for telemetry client ingestion.
@@ -36,11 +33,10 @@ async def verify_api_key_header(
 
     client_context = await telemetry_client_service.authorize_api_key(
         client_id=x_sentinel_client_id,
+        api_key=x_sentinel_api_key
     )
-    computed_hash = hashlib.sha256(
-        x_sentinel_api_key.encode("utf-8")
-    ).hexdigest()
-    if not client_context or hmac.compare_digest(computed_hash, client_context.api_key_hash) is False:
+
+    if not client_context:
         logger.warning(f"Unauthorized API Key attempt for client_id: {x_sentinel_client_id}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

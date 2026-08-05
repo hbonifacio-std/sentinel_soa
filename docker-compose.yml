@@ -211,7 +211,7 @@ services:
     volumes:
       - redis_data:/data
     # Inicia Redis con una contraseña requerida para todas las operaciones.
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD} --notify-keyspace-events Kx
     networks:
       - sentinel_net
     healthcheck:

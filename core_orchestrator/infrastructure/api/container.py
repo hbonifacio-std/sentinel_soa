@@ -9,44 +9,43 @@ from datetime import timedelta
 from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AiAnalysis
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
 from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
-from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
+from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
-from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
 from core_orchestrator.application.modules.auth_clients.user_service import UserService
-from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
+from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
 from core_orchestrator.application.modules.analysis_reports.services.threat_context_service import ThreatContextService
 from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
-from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
-from core_orchestrator.domain.ports import PasswordHasherPort
-from core_orchestrator.infrastructure.adapters.redis_black_list.redis_black_list_adapter import \
+from core_orchestrator.application.modules.forensic.forensic_service import ForensicService
+from core_orchestrator.infrastructure.adapters.redis.redis_black_list_adapter import \
     RedisTokenBlacklistAdapter
+from core_orchestrator.infrastructure.adapters.redis.redis_keyspace_notification_adapter import \
+    RedisKeyspaceNotificationAdapter
 from core_orchestrator.infrastructure.adapters.security.password_hasher_adapter import PasswordHasherAdapter
 from core_orchestrator.infrastructure.config.settings import orchestrator_settings
 
 # Repositories and their Implementations
-from core_orchestrator.infrastructure.persistence.mongo_analytics_repository import MongoAnalyticsPorts
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_analytics_repository_adapter import MongoAnalyticsReportsAdapter
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
-from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import MongoTelemetryClientRepository
-from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
-from core_orchestrator.infrastructure.persistence.mongo_telemetry_repository import MongoTelemetryRepository
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
-from core_orchestrator.infrastructure.persistence.mongo_tenant_repository import MongoTenantRepositoryAdapter
-from core_orchestrator.infrastructure.persistence.mongo_forensic_analysis_repository import MongoForensicAnalysisRepository
+from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepositoryPort
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_telemetry_repository_adapter import MongoTelemetryRepositoryPortAdapter
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_user_repository_adapter import MongoUserRepositoryAdapter
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_tenant_repository_adapter import MongoTenantRepositoryAdapter
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_forensic_analysis_repository_adapter import MongoForensicAnalysisRepositoryAdapter
 
 # Core Infrastructure
 from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
-from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
-from core_orchestrator.infrastructure.agent.runner import AgentRunner
+from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
+from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import TelemetryProcessingWorker
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
-from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
+from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_window_adapter import RedisTelemetryWindowAdapter
 from core_orchestrator.infrastructure.config.config import orchestrator_settings_deprecated
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.infrastructure.rate_limit.rate_limiter import  limiter
@@ -55,7 +54,7 @@ from core_orchestrator.infrastructure.rate_limit.rate_limiter import  limiter
 from core_orchestrator.infrastructure.adapters.security.jwt_token_provider_adapter import JwtTokenProviderAdapter
 from core_orchestrator.infrastructure.adapters.security.api_key_cipher_adapter import ApiKeyCipher
 from core_orchestrator.infrastructure.cache.redis_tenant_provider_cache import RedisTenantProviderCache
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
+from core_orchestrator.application.modules.auth_clients.tenant_provider_ai_service import TenantProviderAiService
 
 
 
@@ -74,6 +73,7 @@ class Container:
         self.cache_service = None
         self.redis_cache = None
         self.telemetry_window_cache = None
+        self.telemetry_window_notification_expiratory = None
         self.analytics_repository = None
         self.audit_repository = None
         self.rule_repository = None
@@ -114,33 +114,36 @@ class Container:
         redis_client_rules = self.db_manager.redis_client_rules
 
         # === PASO 2: Repositorios y Servicios ===
+        self.telemetry_window_notification_expiratory = RedisKeyspaceNotificationAdapter(redis_client=redis_client_telemetry)
+        await self.telemetry_window_notification_expiratory.start_listening()
+
         self.cache_service = CacheService(db_manager=self.db_manager)
-        self.redis_cache = RedisCacheRepository(redis_client=redis_client_telemetry)
-        self.telemetry_window_cache = RedisTelemetryWindowCache(redis_client=redis_client_telemetry)
+        self.redis_cache = BaseRedisCacheAdapter(redis_client=redis_client_telemetry)
+        self.telemetry_window_cache = RedisTelemetryWindowAdapter(redis_client=redis_client_telemetry)
 
         # Repositories
-        self.analytics_repository = MongoAnalyticsPorts(db_manager=self.db_manager)
+        self.analytics_repository = MongoAnalyticsReportsAdapter(db_manager=self.db_manager)
         self.audit_repository = MongoAuditRepository(db_manager=self.db_manager)
         self.rule_repository = MongoRuleRepository(db_manager=self.db_manager)
 
-        mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager=self.db_manager)
-        self.telemetry_client_repository = CachingTelemetryClientRepository(
+        mongo_telemetry_client_repo = MongoTenantRepositoryAdapter(db_manager=self.db_manager)
+        self.telemetry_client_repository = CachingTelemetryClientRepositoryPort(
             primary_repository=mongo_telemetry_client_repo,
             cache=self.redis_cache
         )
 
-        self.telemetry_repository = MongoTelemetryRepository(db_manager=self.db_manager)
+        self.telemetry_repository = MongoTelemetryRepositoryPortAdapter(db_manager=self.db_manager)
         self.token_blacklist_repository = RedisTokenBlacklistAdapter(redis_client=redis_client_auth)
         self.user_repository = MongoUserRepositoryAdapter(db_manager=self.db_manager)
         self.tenant_repository = MongoTenantRepositoryAdapter(db_manager=self.db_manager)
-        self.forensic_repository = MongoForensicAnalysisRepository(db_manager=self.db_manager)
+        self.forensic_repository = MongoForensicAnalysisRepositoryAdapter(db_manager=self.db_manager)
 
-        await self.analytics_repository.ensure_indexes()
         await self.rule_repository.ensure_indexes()
         await self.audit_repository.ensure_indexes()
 
         # Services
-        self.analytics_service = ReportTelemetryService(analytics_repository=self.analytics_repository)
+        self.analytics_service = ReportTelemetryService(analytics_repository=self.analytics_repository,
+                                                        redis_client= redis_client_telemetry)
 
         self.token_service = JwtTokenProviderAdapter()
 
@@ -178,13 +181,11 @@ class Container:
         )
         self.rules_engine_service = RulesEngineService(rules_service=self.rule_service)
         self.telemetry_service = TelemetryService(repository=self.telemetry_repository)
-        self.telemetry_client_service = TelemetryClientService(
-            telemetry_client_repository=self.telemetry_client_repository)
 
         self.telemetry_processing_service = TelemetryProcessingService(
             window_cache=self.telemetry_window_cache,
-            window_duration_seconds=orchestrator_settings_deprecated.window_duration_seconds,
-            window_threshold_requests=orchestrator_settings_deprecated.window_threshold_requests,
+            window_duration_seconds=orchestrator_settings.detection.window_duration_seconds,
+            window_threshold_requests=orchestrator_settings.detection.window_threshold_requests,
         )
         self.forensic_intelligence_adapter = MCPForensicIntelligenceAdapter(mcp_manager=self.mcp_client_manager)
         self.forensic_service = ForensicService(
@@ -194,7 +195,7 @@ class Container:
         )
 
         # Agent Runner — agent_factory centraliza el wiring MCP en cada reconexión
-        self.agent_runner = AgentRunner(
+        self.agent_runner = TelemetryProcessingWorker(
             telemetry_processing_service=self.telemetry_processing_service,
             cache_service=self.cache_service,
             telemetry_service=self.telemetry_service,
@@ -206,7 +207,7 @@ class Container:
         await self.rules_engine_service.initialize()
         self.agent_runner.initialize_subsystem()
 
-    def _create_mcp_agent(self, mcp_manager: MCPClientManagerAdapter) -> OrchestratorAgent:
+    def _create_mcp_agent(self, mcp_manager: MCPClientManagerAdapter) -> TelemetryAnalysisService:
         """Factory centralizada para construir el agente con sus dependencias MCP."""
         llm_adapter = MCPLlmAnalysisAdapter(mcp_manager=mcp_manager)
         threat_adapter = MCPThreatContextAdapter(mcp_manager=mcp_manager)
@@ -216,7 +217,7 @@ class Container:
             tenant_provider_service=self.tenant_provider_service,
         )
         threat_ctx_svc = ThreatContextService(threat_context_port=threat_adapter)
-        return OrchestratorAgent(
+        return TelemetryAnalysisService(
             cache_port=self.cache_service,
             analytics_service=self.analytics_service,
             threat_context_service=threat_ctx_svc,

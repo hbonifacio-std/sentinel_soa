@@ -27,7 +27,6 @@ class TenantModelAIDefinition:
     provider: str
     model_id: str
     model_name: str
-    base_url: Optional[str] = None
     max_output_tokens: Optional[int] = None
     max_input_tokens: Optional[int] = None
     enabled: bool = True

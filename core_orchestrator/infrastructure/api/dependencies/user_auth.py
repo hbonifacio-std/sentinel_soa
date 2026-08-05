@@ -10,7 +10,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
-from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
+from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
 from core_orchestrator.application.modules.auth_clients.user_service import UserService
 from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.domain.exceptions.auth_exceptions import InvalidCredentialsError, UserInactiveError
@@ -167,11 +167,8 @@ async def get_analyst_user_with_client(
             detail="User is not assigned to any client"
         )
 
-    tenant = await tenant_service.get_client_by_client_id(
-        current_user.client_id,
-        include_inactive=False,
-    )
-    if not tenant:
+    tenant = await tenant_service.get_tenant(current_user.client_id)
+    if not tenant or tenant.is_active is False:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User client is inactive or not authorized"

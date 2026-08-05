@@ -2,11 +2,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock
 from datetime import datetime, timezone, timedelta
 import json
-from types import SimpleNamespace
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepositoryPort
-from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
-from core_orchestrator.infrastructure.cache.redis_telemetry_window_cache import RedisTelemetryWindowCache
+from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_window_adapter import RedisTelemetryWindowAdapter
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
 from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
@@ -27,7 +25,7 @@ def mock_db_manager(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache(mock_redis):
-    cache = RedisCacheRepository(mock_redis)
+    cache = BaseRedisCacheAdapter(mock_redis)
     
     mock_redis.get.return_value = b"val"
     assert await cache.get("key") == b"val"
@@ -40,7 +38,7 @@ async def test_redis_cache(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache_disconnected():
-    cache = RedisCacheRepository(None)
+    cache = BaseRedisCacheAdapter(None)
     assert await cache.get("key") is None
     await cache.set("key", "val")
     await cache.delete("key")
@@ -66,7 +64,7 @@ async def test_redis_token_blacklist(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_telemetry_window_cache(mock_redis):
-    cache = RedisTelemetryWindowCache(mock_redis)
+    cache = RedisTelemetryWindowAdapter(mock_redis)
     
     # Add to window
     await cache.add_to_window("win-1", "val", 10)

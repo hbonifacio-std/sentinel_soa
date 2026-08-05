@@ -2,12 +2,13 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 
-from pydantic import BaseModel
+from redis.asyncio import Redis
 
-from core_orchestrator.domain.entities.analysis import AnalysisActionEntry
-from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsPorts
-
-from core_orchestrator.domain.ports.telemetry.report_telemetry_service_port import ReportTelemetryServicePort
+from core_orchestrator.domain.entities.telemetry.reports import AnalysisReport
+from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsReportsPorts
+from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
+from core_orchestrator.infrastructure.dto.telemetry.analysis_report_dto import AnalysisActionEntryDTO
 
 logger = logging.getLogger(__name__)
 GROUP_STAGE = "$group"
@@ -18,15 +19,17 @@ class CrossTenantAccessError(PermissionError):
 
 
 class ReportResolutionPayload:
-    def to_dict(self) -> Dict[str, Any]:
+    @staticmethod
+    def to_dict() -> Dict[str, Any]:
         return {
             "reviewed": True,
             "resolved": True,
             "resolved_at_utc": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         }
 
-class ReportTelemetryService(ReportTelemetryServicePort):
-    def __init__(self, analytics_repository: AnalyticsPorts):
+class ReportTelemetryService(BaseRedisCacheAdapter):
+    def __init__(self, analytics_repository: AnalyticsReportsPorts, redis_client: Redis):
+        super().__init__(redis_client)
         self.analytics_repository = analytics_repository
 
     async def get_paginated_reports(
@@ -35,7 +38,7 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         limit: int,
         client_id: str,
         source_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> PaginatedResult[AnalysisReport]:
         query: Dict[str, Any] = {"client_id": client_id}
         if source_id:
             query["source_id"] = source_id
@@ -71,7 +74,7 @@ class ReportTelemetryService(ReportTelemetryServicePort):
     ) -> Optional[Dict[str, Any]]:
         report = await self._get_mutable_report_in_scope(report_id, client_id)
         if not report:
-            return None # Report not found
+            return None
 
         if report.get("resolved"):
             raise ValueError("Report is resolved. No more actions can be added")
@@ -80,7 +83,7 @@ class ReportTelemetryService(ReportTelemetryServicePort):
             raise ValueError("Report must be reviewed before adding actions")
 
         comment_text = action_request.get("comment", "").strip()
-        action_model = AnalysisActionEntry(comment=comment_text)
+        action_model = AnalysisActionEntryDTO(comment=comment_text)
         action_doc = action_model.model_dump(mode="json", by_alias=True)
 
 
@@ -140,16 +143,16 @@ class ReportTelemetryService(ReportTelemetryServicePort):
         limit: int,
         client_id: str,
         query: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    ) -> PaginatedResult[AnalysisReport]:
         resolved_query = {"client_id": client_id}
         if query:
             resolved_query.update({k: v for k, v in query.items() if v is not None})
-        return await self.analytics_repository.get_paginated_logs(query=resolved_query, page=page, limit=limit)
+        return await self.get_paginated_reports(page=page, limit=limit,client_id=client_id)
 
     async def get_debug_reports(self, client_id: str) -> List[Dict[str, Any]]:
         return await self.analytics_repository.get_debug_reports(client_id=client_id, limit=5)
 
-    async def create_analysis_report(self, report_data: BaseModel) -> str:
+    async def create_report(self, report_data: AnalysisReport) -> str:
         """
         Creates a new analysis report in the database.
         """
@@ -161,5 +164,5 @@ class ReportTelemetryService(ReportTelemetryServicePort):
             logger.info(f"Analysis report created successfully with ID: {result} for {source_ip}")
             return result
         except Exception as e:
-            logger.error(f"Failed to create analysis report for {source_ip}: {e}", exc_info=True)
+            logger.exception(f"Failed to create analysis report for {source_ip}: {e}", exc_info=True)
             raise

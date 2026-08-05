@@ -15,9 +15,9 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core_orchestrator.infrastructure.agent.runner import (
-    AgentRunner, _PendingAnalysis,
-    _ANALYSIS_MAX_RETRIES, _MCP_RETRY_INITIAL_DELAY_S
+from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import (
+    TelemetryProcessingWorker, _PendingAnalysis,
+    _MCP_RETRY_INITIAL_DELAY_S
 )
 
 
@@ -25,7 +25,7 @@ from core_orchestrator.infrastructure.agent.runner import (
 # Shared factory
 # ---------------------------------------------------------------------------
 def make_runner():
-    return AgentRunner(
+    return TelemetryProcessingWorker(
         telemetry_processing_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),

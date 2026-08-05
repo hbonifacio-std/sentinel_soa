@@ -1,8 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timezone
-from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
+from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_user_repository_adapter import MongoUserRepositoryAdapter
 from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleContent, RuleMetadata
 from core_orchestrator.domain.entities.auth.user import UserCreate
 

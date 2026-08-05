@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime, timezone
 
 from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import (
-    CachingTelemetryClientRepository,
+    CachingTelemetryClientRepositoryPort,
     CACHE_KEY_PREFIX_ID,
     CACHE_KEY_PREFIX_PK,
     CACHE_TTL_SECONDS,
@@ -41,7 +41,7 @@ def mock_cache():
 
 @pytest.fixture
 def repo(mock_primary, mock_cache):
-    return CachingTelemetryClientRepository(
+    return CachingTelemetryClientRepositoryPort(
         primary_repository=mock_primary,
         cache=mock_cache,
     )

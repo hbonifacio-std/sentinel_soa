@@ -6,7 +6,7 @@ from uuid import UUID
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-from core_orchestrator.domain.entities.telemetry.log_event import LogEvent, InfrastructureContext
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 """
 Aggregated Telemetry Model Module (TelemetryWindow).
 
@@ -93,7 +93,6 @@ class TelemetryWindow(BaseModel):
                                                               description="Structural log samples.")
     critical_payload_features: List[str] = Field(default_factory=list,
                                                  description="Sanitized high-signal payload fragments.")
-    infra_context: Optional[InfrastructureContext] = Field(default=None, description="Compact infrastructure summary.")
 
     security_state_features: SecurityStateFeatures = Field(
         default_factory=SecurityStateFeatures,
@@ -101,25 +100,8 @@ class TelemetryWindow(BaseModel):
     )
 
 
-def _extract_infra_context(raw_logs: List[LogEvent]) -> Optional[InfrastructureContext]:
-    """Returns the first available infrastructure context from the raw logs."""
-    for log in raw_logs:
-        if getattr(log, "infra_context", None):
-            return log.infra_context
-        host = getattr(log, "host", None)
-        network = getattr(log, "network", None)
-        if host or network:
-            return InfrastructureContext(
-                environment=getattr(host, "environment", None),
-                process_name=getattr(host, "process_name", None),
-                server_port=getattr(network, "server_port", None),
-                proxy_real_ip=getattr(network, "proxy_real_ip", None),
-                proxy_forwarded_for=getattr(network, "proxy_forwarded_for", None),
-            )
-    return None
 
-
-def build_web_activity_window(raw_logs: List[LogEvent]) -> TelemetryWindow:
+def build_web_activity_window(raw_logs: List[LogEventDTO]) -> TelemetryWindow:
     """
     Toma una lista de logs crudos, calcula métricas avanzadas correlacionando el tráfico
     en un formato matricial de (Path, Method, Status, UA) para no romper la historia,
@@ -371,7 +353,6 @@ def build_web_activity_window(raw_logs: List[LogEvent]) -> TelemetryWindow:
         max_response_size_bytes=max_response_size_bytes,
         suspicious_samples=detected_samples[:5],
         critical_payload_features=sorted(extracted_critical_payloads)[:5],
-        infra_context=_extract_infra_context(raw_logs),
         security_state_features=SecurityStateFeatures(
             compromised_accounts=list(compromised_accounts_set),
             successful_logins_count=successful_logins_count,

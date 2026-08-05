@@ -4,15 +4,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from core_orchestrator.domain.entities.forensic.forensic_analysis import (
-    ForensicAnalyzeRequest,
-    ForensicAnalysisRecord,
-    ForensicHistoryQuery,
-    ForensicHistoryResponse,
+from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import (
+    ForensicAnalyzeRequestDTO,
+    ForensicAnalysisRecordDTO,
+    ForensicHistoryQueryDTO,
+    ForensicHistoryResponseDTO,
 )
 from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.domain.ports.forensic import ForensicServicePort
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
+from core_orchestrator.application.modules.auth_clients.tenant_provider_ai_service import TenantProviderAiService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_provider_service, \
     get_forensic_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
@@ -29,7 +29,7 @@ async def get_available_models_for_chat(
     models = await tenant_provider_service.get_available_models_for_tenant(
         current_user.client_id
     )
-    tenant = await tenant_provider_service._get_tenant(current_user.client_id)
+    tenant = await tenant_provider_service.get_tenant_by_client_id(current_user.client_id)
     default_model = tenant.default_log_analysis_model_id if tenant else None
     return {
         "default_model_id": default_model,
@@ -39,10 +39,10 @@ async def get_available_models_for_chat(
 
 @router.post("/analyze", status_code=status.HTTP_201_CREATED)
 async def run_forensic_analysis(
-    request: ForensicAnalyzeRequest,
+    request: ForensicAnalyzeRequestDTO,
     forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
     current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
-) -> ForensicAnalysisRecord:
+) -> ForensicAnalysisRecordDTO:
     """Run a forensic query and persist the generated report."""
 
     return await forensic_service.analyze_activity(
@@ -57,10 +57,10 @@ async def get_forensic_history(
     source_id: str | None = None,
     page: int = Query(default=1, ge=1, description="Número de la página (mínimo 1)"),
     limit: int = Query(default=10, ge=1, le=100, description="Cantidad de registros por página (máximo 100)"),
-) -> ForensicHistoryResponse:
+) -> ForensicHistoryResponseDTO:
     """List paginated forensic reports."""
 
-    history_query = ForensicHistoryQuery(
+    history_query = ForensicHistoryQueryDTO(
         source_id=source_id,
         client_id=current_user.client_id,
         page=page,
@@ -74,7 +74,7 @@ async def get_forensic_report(
     analysis_id: str,
     forensic_service: Annotated[ForensicServicePort, Depends(get_forensic_service)],
     current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
-) -> ForensicAnalysisRecord:
+) -> ForensicAnalysisRecordDTO:
     """Return one forensic report by id."""
 
     report = await forensic_service.get_analysis_by_id(analysis_id, current_user.client_id)

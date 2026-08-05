@@ -8,6 +8,7 @@ class UserCreateDTO(BaseModel):
 
 class UserResponseDTO(BaseModel):
     user_id: str
+    client_id: str
     username: str
     email: str
     role: str

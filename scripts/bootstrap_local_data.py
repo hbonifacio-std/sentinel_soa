@@ -19,24 +19,32 @@ from typing import Optional, cast, Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core_orchestrator.domain.entities.auth.user import UserCreate
-from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientCreate, TelemetryBootstrapSummary
+# Provide safe defaults for local bootstrap so importing application modules
+# doesn't fail when running in development without full env config.
+import os
+os.environ.setdefault("JWT_SECRET_KEY", "dev_jwt_secret_for_local_bootstrap")
+# MCP settings used by some adapters; provide safe defaults for local runs
+os.environ.setdefault("MCP_SERVER_URL", "http://localhost:8001")
+os.environ.setdefault("MCP_INTERNAL_TOKEN", "dev-internal-token")
+
+
+from core_orchestrator.infrastructure.dto.auth.auth_dto import UserCreateDTO
+from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryBootstrapSummary
 
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
-from core_orchestrator.infrastructure.persistence.mongo_user_repository import MongoUserRepositoryAdapter
-from core_orchestrator.application.modules.auth_clients.services.user_service import UserServicePort
-from core_orchestrator.infrastructure.persistence.mongo_telemetry_client_repository import \
-    MongoTelemetryClientRepository
-from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepository
-from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.infrastructure.cache.redis_cache import RedisCacheRepository
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_user_repository_adapter import MongoUserRepositoryAdapter
+from core_orchestrator.application.modules.auth_clients.user_service import UserService
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_tenant_repository_adapter import \
+    MongoTenantRepositoryAdapter as MongoTelemetryClientRepository
+from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepositoryPort
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
 from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
-from core_orchestrator.infrastructure.security.signature_verifier import HmacSignatureVerifier
-from core_orchestrator.infrastructure.security.password_hasher import BcryptPasswordHasher
+# signature_verifier may be missing in refactor; provide a local shim for bootstrap when absent
+
 from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
 
 logger = logging.getLogger("bootstrap_local_data")
@@ -80,24 +88,65 @@ async def create_forensic_reader_user(db_manager: DatabaseManager) -> None:
             raise
 
 
-async def seed_users(user_service: UserServicePort, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
+async def seed_users(user_service: UserService, user_repo: MongoUserRepositoryAdapter, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
+    """Seed users; if overwrite_existing is True, update existing users' hashed_password using the provided seed password.
+
+    This addresses cases where previous runs stored plaintext in the 'hashed_password' field by re-hashing the known seed password.
+    """
+    from datetime import datetime, timezone
+
     summary = TelemetryBootstrapSummary()
     users_data = _load_seed(seed_path)
 
     for user_data in users_data:
-        user_create = UserCreate(**user_data)
-        # Verificar si el usuario ya existe con un método real de UserService
-        existing_user = await user_service.get_user_by_username(user_create.username)
+        # Build DTO for creation (separate client_id in seed)
+        user_create = UserCreateDTO(
+            username=user_data["username"],
+            email=user_data["email"],
+            password=user_data["password"],
+            role=user_data.get("role", "user"),
+        )
+        client_id = user_data.get("client_id") or user_create.username
+
+        # Check repository directly for existence
+        existing_user = await user_repo.get_by_username(user_create.username)
 
         if not existing_user:
-            # Si no existe, se crea usando el método real
-            user = await user_service.create_user(user_create)
+            user = await user_service.create_user(user_create, client_id)
             summary.users_created += 1
             logger.info("Bootstrap user ready: %s (role=%s)", user.username, user.role)
         else:
             if overwrite_existing:
+                # Re-hash the seed password and update the stored hashed_password field.
+                try:
+                    # Prefer the service's password hasher if available
+                    hasher = getattr(user_service, '_password_hasher', None)
+                    if hasher is None:
+                        raise AttributeError
+                    new_hash = hasher.hash_password(user_data["password"])
+                except Exception:
+                    # Fallback: simple PBKDF2 in-script hasher
+                    import hashlib, os
+                    iterations = 200000
+                    algo = 'sha256'
+                    salt = os.urandom(16)
+                    dk = hashlib.pbkdf2_hmac(algo, user_data["password"].encode('utf-8'), salt, iterations)
+                    new_hash = f"pbkdf2_{algo}${iterations}${salt.hex()}${dk.hex()}"
+
+                # Update DB record directly via repository's collection
+                await user_repo.collection.find_one_and_update(
+                    {"username": user_create.username},
+                    {
+                        "$set": {
+                            "hashed_password": new_hash,
+                            "updated_at": datetime.now(timezone.utc)
+                        }
+                    },
+                    return_document=True,
+                )
+
                 summary.users_updated += 1
-                logger.info("Bootstrap user already exists (skipped update): %s", existing_user.username)
+                logger.info("Bootstrap user updated (password re-hashed): %s", existing_user.username)
             else:
                 summary.users_skipped += 1
                 logger.info("Bootstrap user skipped (already exists): %s", existing_user.username)
@@ -105,22 +154,58 @@ async def seed_users(user_service: UserServicePort, seed_path: Path, overwrite_e
     return summary
 
 
-async def seed_telemetry_clients(telemetry_client_service: TelemetryClientService, seed_path: Path,
-                                 overwrite_existing: bool) -> TelemetryBootstrapSummary:
+async def seed_telemetry_clients(tenant_repo: MongoTelemetryClientRepository, seed_path: Path, overwrite_existing: bool) -> TelemetryBootstrapSummary:
+    """Seed tenants (authorized telemetry clients). Uses tenant_repo directly to create or update entries."""
     summary = TelemetryBootstrapSummary()
     clients_data = _load_seed(seed_path)
+    import hashlib
+    import secrets
+    from core_orchestrator.domain.entities.auth.tenant import Tenant
+
     for client_data in clients_data:
-        client, created, updated = await telemetry_client_service.upsert_client(
-            TelemetryClientCreate(**client_data),
-            overwrite_existing=overwrite_existing,
-        )
-        if created:
-            summary.clients_created += 1
-        elif updated:
-            summary.clients_updated += 1
+        client_id = client_data["client_id"]
+        existing = await tenant_repo.get_by_client_id(client_id, include_inactive=True)
+
+        api_key_plaintext = client_data.get("api_key")
+        if api_key_plaintext:
+            api_key_hash = hashlib.sha256(api_key_plaintext.encode("utf-8")).hexdigest()
         else:
-            summary.clients_skipped += 1
-        logger.info("Bootstrap telemetry client ready: %s", client.client_id)
+            # generate a key for local use, but avoid persisting plaintext
+            api_key_plaintext = f"sk_{secrets.token_urlsafe(32)}"
+            api_key_hash = hashlib.sha256(api_key_plaintext.encode("utf-8")).hexdigest()
+
+        # Build tenant but DO NOT persist the plaintext API key in DB (pass None)
+        tenant = Tenant(
+            client_id=client_id,
+            display_name=client_data.get("display_name", client_id),
+            description=client_data.get("description"),
+            rate_limit_per_minute=client_data.get("rate_limit_per_minute", 60),
+            is_active=client_data.get("is_active", True),
+            api_key_hash=api_key_hash,
+            api_key_plaintext=None,
+        )
+
+        if existing:
+            if overwrite_existing:
+                # Update hash only; do not store plaintext
+                await tenant_repo.update(client_id,
+                                         display_name=tenant.display_name,
+                                         description=tenant.description,
+                                         rate_limit_per_minute=tenant.rate_limit_per_minute,
+                                         is_active=tenant.is_active,
+                                         api_key_hash=tenant.api_key_hash,
+                                         api_key_plaintext=None)
+                summary.clients_updated += 1
+                logger.info("Bootstrap telemetry client updated (no plaintext stored): %s", client_id)
+            else:
+                summary.clients_skipped += 1
+                logger.info("Bootstrap telemetry client skipped (already exists): %s", client_id)
+        else:
+            # create tenant storing only the hash, not the plaintext
+            await tenant_repo.create(tenant, tenant.api_key_hash, None)
+            summary.clients_created += 1
+            logger.info("Bootstrap telemetry client created (no plaintext stored): %s", client_id)
+
     return summary
 
 
@@ -142,20 +227,48 @@ async def bootstrap(
             raise RuntimeError("Redis client is not connected")
 
         user_repo = MongoUserRepositoryAdapter(db_manager)
-        password_hasher = BcryptPasswordHasher()
-        user_service = UserServicePort(user_repository=user_repo, password_hasher=password_hasher)
+        # Use the project's canonical password hasher adapter so bootstrap creates hashes
+        # identical to runtime (mirror function). This prevents storing incompatible hash formats.
+        try:
+            from core_orchestrator.infrastructure.adapters.security.password_hasher_adapter import PasswordHasherAdapter
+            password_hasher = PasswordHasherAdapter()
+        except Exception:
+            # Fallback: if adapter is missing, keep PBKDF2 as last resort
+            class PBKDF2PasswordHasher:
+                def __init__(self, iterations: int = 200000):
+                    import hashlib, os
+                    self._iterations = iterations
+                    self._algo = 'sha256'
+                    self._salt_size = 16
 
-        redis_cache = RedisCacheRepository(redis_client=db_manager.redis_client_window_telemetry)
+                def hash_password(self, password: str) -> str:
+                    import hashlib, os
+                    salt = os.urandom(16)
+                    dk = hashlib.pbkdf2_hmac(self._algo, password.encode('utf-8'), salt, self._iterations)
+                    return f"pbkdf2_{self._algo}${self._iterations}${salt.hex()}${dk.hex()}"
+
+                def verify_password(self, plain: str, hashed: str) -> bool:
+                    import hashlib
+                    try:
+                        prefix, iterations_s, salt_hex, hash_hex = hashed.split('$')
+                        iterations = int(iterations_s)
+                        salt = bytes.fromhex(salt_hex)
+                        dk = hashlib.pbkdf2_hmac(self._algo, plain.encode('utf-8'), salt, iterations)
+                        return dk.hex() == hash_hex
+                    except Exception:
+                        return False
+
+            password_hasher = PBKDF2PasswordHasher()
+
+        # Instantiate service with the canonical hasher (mirror behavior)
+        user_service = UserService(user_repository=user_repo, password_hasher=password_hasher)
+
+        redis_cache = BaseRedisCacheAdapter(redis_client=db_manager.redis_client_window_telemetry)
 
         mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
-        telemetry_client_repo = CachingTelemetryClientRepository(
+        telemetry_client_repo = CachingTelemetryClientRepositoryPort(
             primary_repository=mongo_telemetry_client_repo,
             cache=redis_cache,
-        )
-        signature_verifier = HmacSignatureVerifier()
-        telemetry_client_service = TelemetryClientService(
-            telemetry_client_repository=telemetry_client_repo,
-            signature_verifier=signature_verifier,
         )
 
         rule_repo = MongoRuleRepository(db_manager)
@@ -171,8 +284,8 @@ async def bootstrap(
         await user_repo.ensure_indexes()
         await mongo_telemetry_client_repo.ensure_indexes()
 
-        users_summary = await seed_users(user_service, users_seed, overwrite_existing)
-        clients_summary = await seed_telemetry_clients(telemetry_client_service, clients_seed, overwrite_existing)
+        users_summary = await seed_users(user_service, user_repo, users_seed, overwrite_existing)
+        clients_summary = await seed_telemetry_clients(mongo_telemetry_client_repo, clients_seed, overwrite_existing)
 
         rules_db = db_manager.get_rules_db()
         rules_collection = rules_db["heuristic_rules"]

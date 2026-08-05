@@ -6,7 +6,7 @@ from core_orchestrator.infrastructure.api.v1.endpoints.forensic import router
 from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
 from core_orchestrator.domain.entities.auth.user import UserInDB
-from core_orchestrator.domain.entities.forensic.forensic_analysis import ForensicAnalysisRecord, ForensicHistoryResponse
+from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import ForensicAnalysisRecordDTO, ForensicHistoryResponseDTO
 
 dummy_analyst = UserInDB(
     user_id="u-analyst",
@@ -18,7 +18,7 @@ dummy_analyst = UserInDB(
     hashed_password="hashed_pwd"
 )
 
-dummy_record = ForensicAnalysisRecord(
+dummy_record = ForensicAnalysisRecordDTO(
     analysis_id="an-1",
     query="SELECT foo",
     source_id="src-1",
@@ -57,7 +57,7 @@ def test_run_forensic_analysis(client, mock_forensic_service):
     assert request_arg.client_id == "client-1"
 
 def test_get_forensic_history(client, mock_forensic_service):
-    mock_forensic_service.get_analysis_history.return_value = ForensicHistoryResponse(
+    mock_forensic_service.get_analysis_history.return_value = ForensicHistoryResponseDTO(
         info={"total_records": 10, "page": 1, "limit": 10, "next_page": None, "prev_page": None},
         results=[dummy_record]
     )

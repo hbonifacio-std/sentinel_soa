@@ -1,66 +1,33 @@
-
-import asyncio
-import json
 import logging
 from typing import List, Annotated
 from fastapi import APIRouter, HTTPException, status, Depends, BackgroundTasks, Request
 
 from core_orchestrator.infrastructure.adapters.security.tenant_auth_adapter import TenantContext
-from core_orchestrator.infrastructure.agent.runner import AgentRunner
-
-
-from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
-from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
-from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.infrastructure.adapters.temeletry.sanitizer_utility import redact_sensitive_data
+from core_orchestrator.infrastructure.dto.responses import OperationResponseDTO
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
+from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_telemetry_service, \
-    get_telemetry_processing_service, get_agent_runner
+    get_telemetry_processing_service
 
 from core_orchestrator.infrastructure.api.dependencies.tenant_auth import get_tenant_context, get_source_id
+from core_orchestrator.infrastructure.mappers.mappers import log_event_mapper
 from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/", status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit("100/minute")
-async def ingest_single_event(
-    request: Request,
-    event: LogEvent,
-    background_tasks: BackgroundTasks,
-    tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
-    telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)],
-    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)]
-):
-
-    # Stamp tenant_id on the event server-side (never trust incoming tenant_id)
-    event.client_id = tenant_context.client_id
-
-    event_dict = event.model_dump()
-    sanitized_event_json = json.dumps(redact_sensitive_data(event_dict))
-    logger.info(f"Single event ingestion request received: {sanitized_event_json}")
-
-    background_tasks.add_task(telemetry_service.ingest_log_event, event)
-    await telemetry_processing_service.add_log_event(event)
-
-    return {
-        "status": "accepted",
-        "client_id": tenant_context.client_id,
-        "event_buffered": event.model_dump()
-    }
-
-
-@router.post("/ingest/batch", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/ingest/batch", status_code=status.HTTP_202_ACCEPTED,response_model=OperationResponseDTO)
 @limiter.limit("10/minute")
 async def ingest_batch_events(
     request: Request,
-    events: List[LogEvent],
+    events: List[LogEventDTO],
     background_tasks: BackgroundTasks,
     tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
     source_id: Annotated[str, Depends(get_source_id)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)] ,
-    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)] = None,
+    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
 ):
     """Batch ingest telemetry events with multitenant isolation and source tracking.
     
@@ -69,8 +36,8 @@ async def ingest_batch_events(
     - X-Sentinel-Source-ID: Unique identifier of the telemetry source
     
     Server-side guarantees:
-    - client_id is stamped from authenticated tenant context (never trusts client input)
-    - source_id is stamped from request header (single source of truth)
+      - client_id is stamped from an authenticated tenant context (never trusts client input)
+      - source_id is stamped from the request header (single source of truth)
     """
     if not events:
         raise HTTPException(
@@ -78,7 +45,6 @@ async def ingest_batch_events(
             detail="The request body does not contain events."
         )
 
-    # Stamp tenant_id and source_id server-side on every event (multitenant isolation)
     for event in events:
         event.client_id = tenant_context.client_id
         event.source_id = source_id
@@ -87,60 +53,17 @@ async def ingest_batch_events(
         f"Batch ingestion: {len(events)} events from source '{source_id}' for client '{tenant_context.client_id}'"
     )
 
-    background_tasks.add_task(telemetry_service.ingest_bulk_logs, events)
-    await telemetry_processing_service.add_multiple_logs_events(events)
+    logs_events = log_event_mapper.to_dataclass_list(events)
+    background_tasks.add_task(telemetry_service.ingest_bulk_logs, logs_events)
+    await telemetry_processing_service.add_multiple_logs_events(logs_events)
 
-    return {
-        "status": "accepted",
-        "client_id": tenant_context.client_id,
-        "source_id": source_id,
-        "processed_records": len(events)
-    }
-
-@router.post("/flush", status_code=status.HTTP_200_OK)
-async def flush_windows(
-        telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
-        agent_runner: Annotated[AgentRunner, Depends(get_agent_runner)]):
-    
-    logger.info("Manual flush request for telemetry windows received.")
-
-    processed_windows = 0
-    keys = await telemetry_processing_service.get_active_windows()
-    if not keys:
-        logger.info("No active windows found to process.")
-        return {"status": "ok", "message": "No active windows to flush.", "processed_windows": 0}
-
-    async def process_key(key):
-        nonlocal processed_windows
-        decoded_key = key.decode('utf-8')
-        # Use agent_runner.cache_service.lock instead of agent_runner.redis_client.lock
-        lock = agent_runner.cache_service.lock(f"lock:{decoded_key}", timeout=10)
-        if await lock.acquire(blocking=False):
-            try:
-                telemetry_window = await telemetry_processing_service.process_window(decoded_key)
-                if telemetry_window:
-                    await agent_runner.run_analysis(telemetry_window.model_dump())
-                    processed_windows += 1
-            finally:
-                await lock.release()
-        else:
-            logger.warning(f"Could not acquire lock for key {decoded_key}, skipping. It might already be being processed.")
-
-    try:
-        await asyncio.gather(*(process_key(key) for key in keys))
-    except Exception as e:
-        logger.error(
-            f"Error during manual flush of windows: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during the flush operation: {e}"
-        )
-
-    logger.info(
-        f"Manual flush completed. Processed windows: {processed_windows}/{len(keys)}")
-
-    return {
-        "status": "ok",
-        "processed_windows": processed_windows,
-        "total_active_windows_found": len(keys)
-    }
+    return OperationResponseDTO(
+        status="accepted",
+        client_id=tenant_context.client_id,
+        source_id=source_id,
+        message=f"Batch ingestion of {len(events)} events accepted for source '{source_id}'",
+        affected_records=0,
+        details={
+            "processed_records": len(events)
+        }
+    )

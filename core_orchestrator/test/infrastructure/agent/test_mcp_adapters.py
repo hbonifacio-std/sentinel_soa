@@ -5,7 +5,7 @@ from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter imp
 from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
-from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
+from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
 
 @pytest.fixture
 def mock_mcp_manager():
@@ -86,7 +86,7 @@ async def test_orchestrator_agent():
     analytics_service = AsyncMock()
     threat_context_service = AsyncMock()
     
-    agent = OrchestratorAgent(cache_port, analysis_service, analytics_service, threat_context_service)
+    agent = TelemetryAnalysisService(cache_port, analysis_service, analytics_service, threat_context_service)
     
     # Cache hit case
     cache_port.get.return_value = '{"cached": true}'

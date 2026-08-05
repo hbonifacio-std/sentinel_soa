@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -55,10 +54,10 @@ def mock_repositories_and_services():
     # Ensure RulesEngineService.initialize is an async mock (awaitable)
     from core_orchestrator.infrastructure.api import container as container_mod
     container_mod.RulesEngineService.return_value.initialize = AsyncMock()
-    container_mod.MongoAnalyticsPorts.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoAnalyticsReportsAdapter.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoRuleRepository.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoAuditRepository.return_value.ensure_indexes = AsyncMock()
-    container_mod.MongoForensicAnalysisRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoForensicAnalysisRepositoryAdapter.return_value.ensure_indexes = AsyncMock()
     yield
     for p in patches:
         p.stop()
@@ -112,5 +111,5 @@ async def test_create_mcp_agent():
     
     mock_mcp_mgr = MagicMock()
     agent = container._create_mcp_agent(mock_mcp_mgr)
-    from core_orchestrator.infrastructure.agent.orchestrator import OrchestratorAgent
-    assert isinstance(agent, OrchestratorAgent)
+    from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
+    assert isinstance(agent, TelemetryAnalysisService)

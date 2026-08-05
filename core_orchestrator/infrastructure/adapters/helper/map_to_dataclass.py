@@ -1,13 +1,19 @@
 import inspect
 import json
 import logging
-from dataclasses import is_dataclass
-from typing import TypeVar, Type, Any, get_origin, get_args, get_type_hints, Optional, cast
+
+from dataclasses import is_dataclass, asdict
+from datetime import datetime, date
+from typing import Type, Any, get_origin, get_args, get_type_hints, Optional, cast, TypeVar
+from uuid import UUID
+
+
 
 from core_orchestrator.domain.exceptions.mapper_exepcions import DeserializationException
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
+
 def _resolve_field_value(field_type: Any, value: Any) -> Any:
     """
     Resolves the value of a field by processing it based on its field type, handling
@@ -146,3 +152,43 @@ def string_to_dataclass(target_cls: Type[T], raw_data: Optional[str]) -> Optiona
 
     data_dict = json.loads(raw_data)
     return map_to_dataclass(target_cls, data_dict)
+
+def dataclass_to_string_json(data: T) -> Optional[str]:
+    """
+    Converts a dataclass instance to a JSON string representation with custom handling for
+    non-standard types.
+
+    The function serializes the provided dataclass instance into a JSON-formatted string
+    using the built-in `json.dumps` method, while accommodating the serialization of
+    datetime, date, and UUID objects. If the input is not a dataclass instance, it raises
+    a ValueError.
+
+    Parameters:
+    data: T
+        A dataclass instance to be serialized to JSON. It should be an instance of a
+        Python dataclass object. Passing a non-dataclass instance will raise an error.
+
+    Returns:
+    Optional[str]
+        A JSON string representation of the dataclass instance, or None if the serialization
+        process fails.
+
+    Raises:
+    ValueError
+        If the provided `data` is not a dataclass instance.
+
+    TypeError
+        If the data contains non-serializable objects that are neither datetime/date
+        objects nor UUIDs.
+    """
+    if isinstance(data, type) or not is_dataclass(data):
+        raise ValueError(f"Expected a dataclass instance, got {type(data).__name__}")
+
+    def custom_encoder(obj: Any) -> Any:
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        if isinstance(obj, UUID):
+            return str(obj)
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+    return json.dumps(asdict(data), default=custom_encoder)

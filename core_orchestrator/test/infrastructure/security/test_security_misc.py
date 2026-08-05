@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 # ===========================================================================
 # sanitizer_utility.py
 # ===========================================================================
-from core_orchestrator.infrastructure.adapters.temeletry.sanitizer_utility import redact_sensitive_data, REDACTION_MASK
+from core_orchestrator.infrastructure.adapters.helper.sanitizer_utility import redact_sensitive_data, REDACTION_MASK
 
 
 class TestRedactSensitiveData:

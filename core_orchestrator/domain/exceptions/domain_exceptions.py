@@ -9,11 +9,26 @@ class DomainException(Exception):
     both a message and an optional error code to help identify specific error
     conditions within the domain context.
     """
-    def __init__(self, message: str, code: str = "DOMAIN_ERROR"):
+    def __init__(self, message: str, code: str = "DOMAIN_ERROR", status_code: int = 400):
         self.message = message
         self.code = code
+        self.status_code = status_code
         super().__init__(self.message)
 
+class ProviderNotConfiguredException(DomainException):
+    """
+    Exception raised when a specified AI provider is not correctly configured.
+
+    This exception is triggered when an invalid or unsupported AI provider is
+    encountered. It provides feedback about the unsupported provider and lists
+    the valid supported providers to help resolve the error.
+    """
+
+    def __init__(self, message: str = "No providers are configured.", code: str = "PROVIDER_NOT_CONFIGURED"):
+        super().__init__(
+            message=message,
+            code=code
+        )
 
 class InvalidProviderException(DomainException):
     """
@@ -121,4 +136,105 @@ class ModelDisabledException(DomainException):
         super().__init__(
             message=f"Model '{model_id}' is currently disabled for tenant '{client_id}'.",
             code="MODEL_DISABLED"
+        )
+class EntityNotFoundException(DomainException):
+    """
+    Exception raised when a specific entity is not found.
+
+    This exception is typically used in scenarios where the requested entity,
+    identified by its name and ID, does not exist in the system. It provides
+    a detailed error message and sets an appropriate status code for the
+    error response.
+    """
+    def __init__(self, entity_name: str, entity_id: str):
+        super().__init__(
+            message=f"{entity_name} with ID '{entity_id}' was not found.",
+            code=f"{entity_name.upper()}_NOT_FOUND",
+            status_code=404
+        )
+
+
+class EntityAlreadyExistsException(DomainException):
+    """
+    Exception raised when attempting to create an entity that already exists.
+
+    This exception is used to enforce uniqueness constraints in the domain layer. It contains
+    information about the entity type, the unique field, and the conflicting value that caused
+    the exception.
+    """
+    def __init__(self, entity_name: str, field_name: str, value: str):
+        super().__init__(
+            message=f"{entity_name} with {field_name} '{value}' already exists.",
+            code=f"{entity_name.upper()}_ALREADY_EXISTS",
+            status_code=409
+        )
+
+
+class InvalidEntityOperationException(DomainException):
+    """
+    Exception raised for invalid operations on domain entities.
+
+    This exception is intended to be used when an operation performed
+    on a domain entity is considered invalid. It inherits from the
+    DomainException class and provides specific details about the
+    nature of the invalid operation. The exception includes a message,
+    a code, and a default status code of 422.
+    """
+    def __init__(self, message: str, code: str = "INVALID_OPERATION"):
+        super().__init__(
+            message=message,
+            code=code,
+            status_code=422
+        )
+
+
+
+class ReportAlreadyResolvedException(DomainException):
+    """
+    Exception raised when an attempt is made to modify an already resolved report.
+
+    This exception should be used in scenarios where further actions or modifications
+    on a report are not allowed due to its resolved state.
+    """
+    def __init__(self, report_id: str):
+        super().__init__(
+            message=f"Analysis report '{report_id}' is already resolved and cannot be modified.",
+            code="REPORT_ALREADY_RESOLVED",
+            status_code=400
+        )
+
+
+class InvalidThreatScoreException(DomainException):
+    """
+    Exception raised for invalid threat scores.
+
+    This exception is used to indicate that a threat score provided falls outside
+    the acceptable range, typically between 0.0 and 10.0. It is intended to enforce
+    validation and ensure proper use of threat score values within the system.
+
+    Attributes:
+        score (float): The invalid threat score value that triggered the exception.
+    """
+    def __init__(self, score: float):
+        super().__init__(
+            message=f"Threat score '{score}' is invalid. Must be between 0.0 and 10.0.",
+            code="INVALID_THREAT_SCORE",
+            status_code=422
+        )
+
+
+class InvalidForensicMatchCountException(DomainException):
+    """
+    Exception raised for invalid forensic match counts.
+
+    This exception is used when the total matches count provided is negative,
+    indicating invalid data. It inherits from the DomainException class and
+    provides a specific message, code, and status code relevant to the context
+    of forensic match count validation.
+    """
+    def __init__(self, matches: int):
+        super().__init__(
+            message=f"Total matches count cannot be negative: {matches}.",
+            code="INVALID_MATCH_COUNT",
+            status_code=422
         )

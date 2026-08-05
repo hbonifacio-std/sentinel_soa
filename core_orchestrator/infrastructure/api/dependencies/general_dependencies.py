@@ -13,17 +13,16 @@ from core_orchestrator.application.modules.auth_clients.user_service import User
 from core_orchestrator.infrastructure.api.container import Container, get_container
 
 
-from core_orchestrator.infrastructure.agent.runner import AgentRunner
+from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import TelemetryProcessingWorker
 from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
 
-from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
+from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
 from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
 from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
-from core_orchestrator.application.modules.auth_clients.services.telemetry_client_service import TelemetryClientService
-from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.application.modules.telemetry.services.telemetry_service import TelemetryService
-from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
+from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
+from core_orchestrator.application.modules.forensic.forensic_service import ForensicService
 
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 
@@ -47,8 +46,6 @@ def get_rules_engine_service(container: Container = Depends(get_container)) -> R
 def get_rule_validator(container: Container = Depends(get_container)) -> RuleValidatorPort:
     return container.rule_validator
 
-def get_telemetry_client_service(container: Container = Depends(get_container)) -> TelemetryClientService:
-    return container.telemetry_client_service
 
 def get_telemetry_service(container: Container = Depends(get_container)) -> TelemetryService:
     return container.telemetry_service
@@ -68,7 +65,7 @@ def get_tenant_provider_service(container: Container = Depends(get_container)):
 def get_forensic_service(container: Container = Depends(get_container)) -> ForensicService:
     return container.forensic_service
 
-def get_agent_runner(container: Container = Depends(get_container)) -> AgentRunner:
+def get_agent_runner(container: Container = Depends(get_container)) -> TelemetryProcessingWorker:
     return container.agent_runner
 
 def get_limiter(container: Container = Depends(get_container)):

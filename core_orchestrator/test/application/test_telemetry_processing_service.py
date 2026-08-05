@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core_orchestrator.application.modules.telemetry.services.telemetry_processing_service import TelemetryProcessingService
-from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 
 
 @pytest.mark.asyncio
@@ -15,7 +15,7 @@ async def test_add_log_event_uses_injected_window_duration() -> None:
         window_duration_seconds=45,
         window_threshold_requests=10,
     )
-    event = LogEvent(
+    event = LogEventDTO(
         source_id="victim-app",
         source_ip="1.1.1.1",
         timestamp_utc=datetime.now(timezone.utc),
@@ -38,7 +38,7 @@ async def test_process_window_builds_telemetry_window() -> None:
         window_duration_seconds=45,
         window_threshold_requests=10,
     )
-    event = LogEvent(
+    event = LogEventDTO(
         source_id="victim-app",
         source_ip="1.1.1.1",
         timestamp_utc=datetime.now(timezone.utc),

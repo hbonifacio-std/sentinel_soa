@@ -1,12 +1,12 @@
 """Telemetry-related domain ports."""
 
-from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
-from core_orchestrator.domain.ports.telemetry.telemetry_repository import TelemetryRepository
-from core_orchestrator.domain.ports.telemetry.telemetry_window_cache import TelemetryWindowCachePort
+from core_orchestrator.domain.ports.telemetry.telemetry_client_repository_port import TelemetryClientRepositoryPort
+from core_orchestrator.domain.ports.telemetry.telemetry_repository_port import TelemetryRepositoryPort
+from core_orchestrator.domain.ports.telemetry.telemetry_window_cache_port import TelemetryWindowCachePort
 
 __all__ = [
-    "TelemetryClientRepository",
-    "TelemetryRepository",
+    "TelemetryClientRepositoryPort",
+    "TelemetryRepositoryPort",
     "TelemetryWindowCachePort",
 ]
 

@@ -2,8 +2,7 @@
 
 from core_orchestrator.domain.ports.analysis import (
     AiAnalysisPort,
-    AnalyticsPorts,
-    ReportTelemetryServicePort,
+    AnalyticsReportsPorts,
     LlmAnalysisPort,
     ThreatContextPort,
     ThreatContextServicePort,
@@ -22,22 +21,19 @@ from core_orchestrator.domain.ports.forensic import (
 from core_orchestrator.domain.ports.rules import (
     RuleRepository,
     RuleValidatorPort,
-    RulesBundleCachePort,
-    VersionRepository,
+    RulesBundleCachePort
 )
-from core_orchestrator.domain.ports.shared import AuditRepository, CacheRepositoryPort
+from core_orchestrator.domain.ports.shared import AuditRepository
 from core_orchestrator.domain.ports.telemetry import (
-    TelemetryClientRepository,
-    TelemetryRepository,
+    TelemetryClientRepositoryPort,
+    TelemetryRepositoryPort,
     TelemetryWindowCachePort,
 )
 
 __all__ = [
     "AiAnalysisPort",
-    "AnalyticsPorts",
-    "ReportTelemetryServicePort",
+    "AnalyticsReportsPorts",
     "AuditRepository",
-    "CacheRepositoryPort",
     "ForensicAnalysisRepositoryPort",
     "ForensicIntelligencePort",
     "ForensicServicePort",
@@ -46,13 +42,12 @@ __all__ = [
     "RuleRepository",
     "RuleValidatorPort",
     "RulesBundleCachePort",
-    "TelemetryClientRepository",
-    "TelemetryRepository",
+    "TelemetryClientRepositoryPort",
+    "TelemetryRepositoryPort",
     "TelemetryWindowCachePort",
     "ThreatContextPort",
     "ThreatContextServicePort",
     "TokenBlacklistRepositoryPort",
     "TokenProviderPort",
     "UserRepositoryPort",
-    "VersionRepository",
 ]

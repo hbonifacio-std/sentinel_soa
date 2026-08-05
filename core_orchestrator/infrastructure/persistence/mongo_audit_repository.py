@@ -4,7 +4,7 @@ from pymongo import ASCENDING, DESCENDING
 
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.rules.audit_repository import AuditRepository
-from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
+from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 # Using a generic dictionary for the model since audit logs can be flexible
 class MongoAuditRepository(BaseRepository[Dict], AuditRepository):

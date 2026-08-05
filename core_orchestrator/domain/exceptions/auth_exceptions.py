@@ -24,3 +24,23 @@ class InvalidTokenError(AuthException):
 class TokenRevokedError(AuthException):
     def __init__(self, message: str = "The presented token has been revoked."):
         super().__init__(message)
+
+class InvalidApiKeyError(AuthException):
+    def __init__(self, message: str = "Invalid API key"):
+        super().__init__(
+            message=message
+        )
+
+
+class ClientIdMismatchError(AuthException):
+    def __init__(self,message: str = "Client ID mismatch"):
+        super().__init__(
+            message=message
+        )
+
+
+class InactiveTenantError(AuthException):
+    def __init__(self,message: str = "Tenant account is inactive or disabled."):
+        super().__init__(
+            message=message
+        )

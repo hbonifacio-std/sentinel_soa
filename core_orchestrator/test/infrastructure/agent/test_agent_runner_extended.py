@@ -14,9 +14,9 @@ Extended AgentRunner tests covering lines NOT yet hit:
 """
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from core_orchestrator.infrastructure.agent.runner import AgentRunner, _PendingAnalysis
+from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import TelemetryProcessingWorker, _PendingAnalysis
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ from core_orchestrator.infrastructure.agent.runner import AgentRunner, _PendingA
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def runner():
-    return AgentRunner(
+    return TelemetryProcessingWorker(
         telemetry_processing_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),

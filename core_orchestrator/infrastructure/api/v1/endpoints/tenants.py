@@ -9,11 +9,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, status, Depends
 
-from core_orchestrator.application.modules.auth_clients.services.tenant_service import TenantService
+from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_tenant_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_current_user
 from core_orchestrator.infrastructure.dto.auth.auth_dto import UserResponseDTO
-from core_orchestrator.infrastructure.dto.tenant.tenant_dto import TenantCreatedResponseDTO, TenantCreateDTO, \
+from core_orchestrator.infrastructure.dto.tenant.tenant_dto import TenantCreatedResponseDTO, TenantCreateRequestDTO, \
     TenantResponseDTO
 
 logger = logging.getLogger("core_orchestrator.api.tenants")
@@ -29,7 +29,7 @@ router = APIRouter()
     summary="Create a new tenant"
 )
 async def create_tenant(
-    tenant_create: TenantCreateDTO,
+    tenant_create: TenantCreateRequestDTO,
     tenant_service: Annotated[TenantService, Depends(get_tenant_service)],
     current_user: Annotated[UserResponseDTO, Depends(get_current_user)]
 
@@ -43,7 +43,7 @@ async def create_tenant(
     returns the details of the created tenant.
 
     Parameters:
-        tenant_create (TenantCreateDTO): The data transfer object containing tenant
+        tenant_create (TenantCreateRequestDTO): The data transfer object containing tenant
             creation details such as name, description, and metadata
         tenant_service (TenantService): A dependency-injected instance of the
             tenant service for accessing tenant-related operations

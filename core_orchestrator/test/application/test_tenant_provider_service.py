@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import AsyncMock, Mock
 
-from core_orchestrator.domain.entities.auth.tenant import TenantInDB, ProviderAIConfig, TenantModelAIDefinition
-from core_orchestrator.application.modules.auth_clients.services.tenant_provider_ai_service import TenantProviderAiService
+from core_orchestrator.domain.entities.auth.tenant import ProviderAIConfig, TenantModelAIDefinition
+from core_orchestrator.application.modules.auth_clients.tenant_provider_ai_service import TenantProviderAiService
 
 
 def _build_test_tenant(client_id: str = "acme"):

@@ -16,7 +16,7 @@ from core_orchestrator.infrastructure.api.dependencies.user_auth import (
 )
 from core_orchestrator.infrastructure.api.auth import get_tenant_context, TenantContext
 from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientAuthContext
-from core_orchestrator.domain.entities.telemetry.log_event import LogEvent
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 
 dummy_auth_context = TelemetryClientAuthContext(
     client_id="client-1",
@@ -28,7 +28,7 @@ dummy_tenant_context = TenantContext(
     rate_limit_per_minute=60,
 )
 
-dummy_event = LogEvent(
+dummy_event = LogEventDTO(
     source_id="src-1",
     source_ip="127.0.0.1",
     timestamp_utc=datetime.now(timezone.utc),

@@ -2,11 +2,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core_orchestrator.application.modules.forensic.services.forensic_service import ForensicService
-from core_orchestrator.domain.entities.forensic.forensic_analysis import (
-    ForensicAnalyzeRequest,
-    ForensicAnalysisRecord,
-    ForensicHistoryQuery,
+from core_orchestrator.application.modules.forensic.forensic_service import ForensicService
+from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import (
+    ForensicAnalyzeRequestDTO,
+    ForensicAnalysisRecordDTO,
+    ForensicHistoryQueryDTO,
 )
 
 
@@ -40,7 +40,7 @@ async def test_analyze_activity_uses_mcp_query_plan_and_persists_report() -> Non
         forensic_repository=repository,
         forensic_intelligence_port=intelligence_port,
     )
-    result = await service.analyze_activity(ForensicAnalyzeRequest(query="login", source_id="victim-app"))
+    result = await service.analyze_activity(ForensicAnalyzeRequestDTO(query="login", source_id="victim-app"))
 
     assert result.analysis_id == "analysis-1"
     assert result.total_matches == 1
@@ -77,7 +77,7 @@ async def test_analyze_activity_falls_back_when_mcp_report_is_empty() -> None:
         forensic_repository=repository,
         forensic_intelligence_port=intelligence_port,
     )
-    result = await service.analyze_activity(ForensicAnalyzeRequest(query="admin", source_id="victim-app"))
+    result = await service.analyze_activity(ForensicAnalyzeRequestDTO(query="admin", source_id="victim-app"))
 
     assert "Reporte Forense" in result.markdown_report
     assert result.highlights
@@ -97,7 +97,7 @@ async def test_analyze_activity_falls_back_when_mcp_query_plan_is_invalid() -> N
         forensic_repository=repository,
         forensic_intelligence_port=intelligence_port,
     )
-    await service.analyze_activity(ForensicAnalyzeRequest(query="login", source_id="victim-app"))
+    await service.analyze_activity(ForensicAnalyzeRequestDTO(query="login", source_id="victim-app"))
 
     query_filter = repository.query_telemetry.await_args.kwargs["query_filter"]
     assert query_filter == {}
@@ -106,8 +106,8 @@ async def test_analyze_activity_falls_back_when_mcp_query_plan_is_invalid() -> N
 @pytest.mark.asyncio
 async def test_get_analysis_history_wraps_repository_payload() -> None:
     repository = AsyncMock()
-    query = ForensicHistoryQuery(source_id="victim-app", page=1, limit=10)
-    record = ForensicAnalysisRecord(
+    query = ForensicHistoryQueryDTO(source_id="victim-app", page=1, limit=10)
+    record = ForensicAnalysisRecordDTO(
         analysis_id="analysis-1",
         query="admin",
         source_id="victim-app",

@@ -1,54 +1,105 @@
-from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi import Request
 from starlette import status
 from starlette.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-import json
-
 import logging
+
+from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
 
 logger = logging.getLogger("core_orchestrator.exceptions")
 
 
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+def validation_exception_handler(request: Request, exc: RequestValidationError):
     """
-    Captura los errores de validación de los modelos (Error 422)
-    e imprime detalladamente qué campo y por qué falló.
+    Handles request validation errors by logging detailed error information and returning
+    a formatted JSON response with sanitized error details.
+
+    This handler is triggered when a `RequestValidationError` occurs due to invalid input
+    data during a request. It logs details such as the affected route, error location,
+    message, and type. Sanitizes any byte data in the error details to prevent raw
+    byte content from being exposed in logs or responses.
+
+    Arguments:
+        request (Request): The HTTP request that caused the validation error
+        exc (RequestValidationError): The exception containing validation error details.
+
+    Returns:
+        JSONResponse: A response object with HTTP status 422 and a JSON body containing
+        sanitized error details.
     """
     errors = exc.errors()
-    
-    # Imprime una alerta visual clara en los logs de la consola
-    logger.error("❌ === DETECTADO ERROR DE VALIDACIÓN (422) ===")
-    logger.error(f"Ruta afectada: {request.url.path}")
+    logger.warning("⚠️ === VALIDATION ERROR DETECTED (422) ===")
+    logger.warning(f"Affected route: {request.url.path}")
 
     for i, error in enumerate(errors, 1):
-        # El "loc" indica la ruta exacta del campo en el JSON (ej: ['body', 0, 'network'])
         campo = " -> ".join(str(x) for x in error.get("loc", []))
-        mensaje = error.get("msg")
-        tipo_error = error.get("type")
+        message = error.get("msg")
+        type_error = error.get("type")
 
-        logger.error(f" Error #{i} en el campo: [{campo}]")
-        logger.error(f"   Motivo: {mensaje} (Tipo: {tipo_error})")
+        logger.warning(f" Error #{i} in field: [{campo}]")
+        logger.warning(f"   Reason: {message} (Type: {type_error})")
 
-    logger.error("==========================================")
-
-    # Retorna la respuesta - sanitiza los bytes
-    sanitized_errors = []
+    logger.warning("==========================================")
+    public_errors = []
     for error in errors:
-        e_copy = dict(error)
-        if isinstance(e_copy.get("input"), bytes):
-            e_copy["input"] = f"<{len(e_copy['input'])} bytes>"
-        sanitized_errors.append(e_copy)
-    
+        public_errors.append({
+            "field": " -> ".join(str(x) for x in error.get("loc", []) if x != "body"),
+            "message": error.get("msg"),
+            "type": error.get("type"),
+        })
+
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": str(sanitized_errors)},
+        content={"detail": public_errors},
     )
 
 
-async def unhandled_exception_handler(request: Request, exc: Exception):
+def domain_exception_handler(request: Request, exc: DomainException)->JSONResponse:
     """
-    Handles unanticipated runtime exceptions without leaking internal details.
+    Handles domain-related exceptions and generates an appropriate JSON response.
+
+    This function is designed to catch and process exceptions of type DomainException
+    that occur during the handling of requests. It logs the details of the exception,
+    including the code and message, and returns a JSON response with the relevant
+    error information.
+
+    Args:
+        request (Request): The incoming HTTP request object, which provides information
+            such as the requested URL path
+        exc (DomainException): The exception instance representing the domain-related
+            error that has been raised. This includes a code and a descriptive message
+
+    Returns:
+        JSONResponse: A JSON response with a 400 HTTP status code containing details
+        of the domain exception, including its error code and message.
+    """
+    logger.warning(
+        f"⚠️ Domain rule violation at {request.url.path} [{exc.code}]: {exc.message}"
+    )
+
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={
+            "error_code": getattr(exc, "code", "DOMAIN_ERROR"),
+            "detail": exc.message,
+        },
+    )
+
+def unhandled_exception_handler(request: Request, exc: Exception)->JSONResponse:
+    """
+    Handles unhandled exceptions occurring during request processing.
+
+    This function is an exception handler for unexpected errors that occur
+    during the lifecycle of a request. It logs the exception details and returns
+    a JSON response with an HTTP status code indicating an internal server error.
+
+    Arguments:
+    - request (Request): The HTTP request object that triggered the exception.
+    - exc (Exception): The exception instance that was raised.
+
+    Returns:
+    JSONResponse: A JSON response with a status code of 500 and a standardized
+    error message.
     """
     logger.error("Unhandled exception at %s: %s", request.url.path, exc, exc_info=True)
     return JSONResponse(

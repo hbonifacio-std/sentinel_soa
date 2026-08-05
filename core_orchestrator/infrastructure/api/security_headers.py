@@ -30,7 +30,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         """
-        Add security headers to response.
+        Add security headers to the response.
         """
         response = await call_next(request)
 

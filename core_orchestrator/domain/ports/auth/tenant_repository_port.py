@@ -8,7 +8,7 @@ Supports both multi-tenancy and telemetry client authentication.
 from abc import ABC, abstractmethod
 from typing import Optional, List
 
-from core_orchestrator.domain.entities.auth.tenant import Tenant, ProviderAIConfig
+from core_orchestrator.domain.entities.auth.tenant import Tenant, ProviderAIConfig, TenantModelAIDefinition
 
 
 class TenantRepositoryPort(ABC):
@@ -255,7 +255,7 @@ class TenantRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def update_model(self, client_id: str, model_id: str, model_def: dict) -> Optional[Tenant]:
+    async def update_model(self, client_id: str, model_id: str, model_def: TenantModelAIDefinition) -> Optional[Tenant]:
         pass
 
     @abstractmethod
@@ -263,5 +263,5 @@ class TenantRepositoryPort(ABC):
         pass
 
     @abstractmethod
-    async def update_provider(self, client_id: str, provider_name: str, provider_def: ProviderAIConfig) -> Optional[Tenant]:
+    async def update_provider(self, client_id: str, provider_def: ProviderAIConfig) -> Optional[Tenant]:
         pass

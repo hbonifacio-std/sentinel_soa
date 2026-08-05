@@ -3,14 +3,17 @@ from typing import List, Optional, Dict, Any
 
 from pydantic import BaseModel
 
+from core_orchestrator.domain.entities.telemetry.reports import ReportSummary, AnalysisReport
+from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
 
-class AnalyticsPorts(ABC):
+
+class AnalyticsReportsPorts(ABC):
     """
     Port for the analytics repository.
     """
 
     @abstractmethod
-    async def get_paginated_reports(self, query: dict, page: int, limit: int) -> dict:
+    async def get_paginated_reports(self, query: dict, page: int, limit: int) -> PaginatedResult[AnalysisReport]:
         """
         Retrieves a paginated list of analysis reports.
         """
@@ -59,18 +62,12 @@ class AnalyticsPorts(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def get_summary_stats(self) -> Dict[str, Any]:
+    async def get_summary_stats(self) -> ReportSummary:
         """
         Retrieves summary statistics for the dashboard.
         """
         raise NotImplementedError
 
-    @abstractmethod
-    async def get_paginated_logs(self, query: dict, page: int, limit: int) -> dict:
-        """
-        Retrieves a paginated list of raw telemetry logs.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def get_debug_reports(self, client_id: str, limit: int) -> List[Dict[str, Any]]:
@@ -80,7 +77,7 @@ class AnalyticsPorts(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def create_report(self, report: BaseModel) -> str:
+    async def create_report(self, report: AnalysisReport) -> str:
         """
         Creates a new analysis report.
         """

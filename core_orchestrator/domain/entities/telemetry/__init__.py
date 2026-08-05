@@ -1,12 +1,11 @@
 """Telemetry-related domain entities."""
 
-from core_orchestrator.domain.entities.telemetry.log_event import (
-    HostContext,
-    HttpContext,
-    InfrastructureContext,
-    LogEvent,
-    NetworkContext,
-    SecurityContext,
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import (
+    HostContextDTO,
+    HttpContextDTO,
+    LogEventDTO,
+    NetworkContextDTO,
+    SecurityContextDTO,
 )
 from core_orchestrator.domain.entities.auth.telemetry_client import (
     TelemetryBootstrapSummary,
@@ -26,13 +25,12 @@ from core_orchestrator.domain.entities.telemetry.telemetry_window import (
 
 __all__ = [
     "CorrelatedTrafficEntry",
-    "HostContext",
-    "HttpContext",
-    "InfrastructureContext",
-    "LogEvent",
-    "NetworkContext",
+    "HostContextDTO",
+    "HttpContextDTO",
+    "LogEventDTO",
+    "NetworkContextDTO",
     "SecurityStateFeatures",
-    "SecurityContext",
+    "SecurityContextDTO",
     "SuspiciousPayloadSample",
     "TelemetryBootstrapSummary",
     "TelemetryClientAuthContext",

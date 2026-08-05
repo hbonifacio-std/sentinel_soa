@@ -1,5 +1,5 @@
 """
-Additional tests to cover missing branches of BaseRepository (base_mongo_repository.py):
+Additional tests to cover missing branches of BaseRepository (base_mongo_adapter.py):
 - exists() returns False when count is 0
 - find_paginated() when page/limit is None
 - update_partial() with empty updates (returns False)
@@ -9,7 +9,7 @@ Additional tests to cover missing branches of BaseRepository (base_mongo_reposit
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from core_orchestrator.infrastructure.persistence.base_mongo_repository import BaseRepository
+from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 class DummyModel:
     def __init__(self, **kwargs):

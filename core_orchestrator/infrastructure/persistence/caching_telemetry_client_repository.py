@@ -3,8 +3,9 @@ import logging
 from typing import List, Optional
 
 from core_orchestrator.domain.entities.auth.telemetry_client import TelemetryClientInDB, TelemetryClientCreate
-from core_orchestrator.domain.ports.shared.cache_port import CacheRepositoryPort
-from core_orchestrator.domain.ports.telemetry.telemetry_client_repository import TelemetryClientRepository
+from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRepositoryPort
+from core_orchestrator.domain.ports.telemetry.telemetry_client_repository_port import TelemetryClientRepositoryPort
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +14,12 @@ CACHE_KEY_PREFIX_PK = "telemetry_client:pk:"
 CACHE_TTL_SECONDS = 3600  # 1 hour
 
 
-class CachingTelemetryClientRepository(TelemetryClientRepository):
+class CachingTelemetryClientRepositoryPort(TelemetryClientRepositoryPort):
     """
     A decorator for TelemetryClientRepository that adds a caching layer.
     """
 
-    def __init__(self, primary_repository: TelemetryClientRepository, cache: CacheRepositoryPort):
+    def __init__(self, primary_repository: TenantRepositoryPort, cache: BaseRedisCacheAdapter):
         self._primary_repository = primary_repository
         self._cache = cache
 
