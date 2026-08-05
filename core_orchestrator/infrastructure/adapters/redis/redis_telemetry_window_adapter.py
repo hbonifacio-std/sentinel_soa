@@ -16,18 +16,23 @@ class RedisTelemetryWindowAdapter(BaseRedisCacheAdapter,TelemetryWindowCachePort
         if not self._redis:
             raise DatabaseNotConnectedError(client_name="Redis")
 
+        ttl_key = f"ttl:{key}"
         pipe = self._redis.pipeline()
         pipe.rpush(key, value)
-        pipe.expire(key, expire_seconds)
+        await pipe.expire(key, 86400)
+
+        await pipe.set(ttl_key, "", ex=expire_seconds)
         await pipe.execute()
 
     async def add_multiple_to_window(self, key: str, values: List[Any], expire_seconds: int):
         if not self._redis:
             raise DatabaseNotConnectedError(client_name="Redis")
 
+        ttl_key = f"ttl:{key}"
         pipe = self._redis.pipeline()
         pipe.rpush(key, *values)
-        pipe.expire(key, expire_seconds)
+        await pipe.expire(key, 86400)
+        await pipe.set(ttl_key, "", ex=expire_seconds)
         await pipe.execute()
 
     async def get_active_window_keys(self, pattern: str) -> List[str]:
@@ -50,7 +55,6 @@ class RedisTelemetryWindowAdapter(BaseRedisCacheAdapter,TelemetryWindowCachePort
         
         pipe = self._redis.pipeline()
         pipe.lrange(key, 0, -1)
-        await pipe.delete(key)
         results = await pipe.execute()
         
         events_json = results[0]
