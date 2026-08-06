@@ -1,11 +1,16 @@
+from dataclasses import asdict
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import logging
 from pymongo import ASCENDING, DESCENDING
 
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
-from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion
+from core_orchestrator.domain.entities.rule_engine.rules import (
+    HeuristicRule,
+    RuleVersion,
+)
 from core_orchestrator.domain.ports.rules.rule_repository import RuleRepositoryPort as RuleRepositoryPort
+from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -117,8 +122,7 @@ class MongoAuditRulesAdapter(BaseRepository[HeuristicRule], RuleRepositoryPort):
 
     # Versioning methods
     async def create_version(self, version: RuleVersion) -> RuleVersion:
-        # mode="json" serializes nested objects, by_alias=True handles field mapping
-        doc = version.model_dump(mode="json", by_alias=True)
+        doc = asdict(version)
         logger.debug(f"Inserting rule version: {version.version_hash}")
         try:
             await self.versions_collection.insert_one(doc)
@@ -130,17 +134,17 @@ class MongoAuditRulesAdapter(BaseRepository[HeuristicRule], RuleRepositoryPort):
 
     async def get_version(self, version_hash: str, client_id: Optional[str]) -> Optional[RuleVersion]:
         doc = await self.versions_collection.find_one({"version_hash": version_hash, "client_id": client_id})
-        return RuleVersion(**doc) if doc else None
+        return map_to_dataclass(RuleVersion, doc) if doc else None
 
     async def get_active_version(self, client_id: Optional[str]) -> Optional[RuleVersion]:
         doc = await self.versions_collection.find_one({"is_active": True, "client_id": client_id})
-        return RuleVersion(**doc) if doc else None
+        return map_to_dataclass(RuleVersion, doc) if doc else None
 
     async def list_versions(self, client_id: Optional[str], limit: int = 50) -> List[RuleVersion]:
         cursor = self.versions_collection.find({"client_id": client_id}).sort("created_at", -1).limit(limit)
         versions = []
         async for doc in cursor:
-            versions.append(RuleVersion(**doc))
+            versions.append(map_to_dataclass(RuleVersion, doc))
         return versions
 
     async def activate_version(self, version_hash: str, client_id: Optional[str]) -> bool:
@@ -165,4 +169,3 @@ class MongoAuditRulesAdapter(BaseRepository[HeuristicRule], RuleRepositoryPort):
             return False
         finally:
             await session.end_session()
-

@@ -1,9 +1,10 @@
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from typing import TypeVar, Generic, List, Optional, Dict, Any, Mapping
 from pymongo import InsertOne
 from pymongo.asynchronous.collection import AsyncCollection
 import asyncio
 
+from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult, PaginationMeta
 
 ModelType = TypeVar("ModelType")
@@ -49,12 +50,7 @@ class BaseRepository(Generic[ModelType]):
         if "_id" in data:
             data["id"] = str(data.pop("_id"))
 
-        if not is_dataclass(self.model):
-            raise TypeError(f"Repository model {self.model} must be a valid @dataclass")
-
-        fields = self.model.__dataclass_fields__.keys()
-        clean_dict = {k: v for k, v in data.items() if k in fields}
-        return self.model(**clean_dict)
+        return map_to_dataclass(self.model, data)
 
     async def insert(self, model_instance: ModelType) -> str:
         document = asdict(model_instance)
@@ -105,15 +101,12 @@ class BaseRepository(Generic[ModelType]):
         cursor = self.collection.find(query)
         docs = await cursor.to_list(length=None)
 
-        fields = self.model.__dataclass_fields__.keys()
         results = []
 
         for doc in docs:
             if "_id" in doc:
                 doc["id"] = str(doc.pop("_id"))
-
-            clean_dict = {k: v for k, v in doc.items() if k in fields}
-            results.append(self.model(**clean_dict))
+            results.append(map_to_dataclass(self.model, doc))
         return results
 
 

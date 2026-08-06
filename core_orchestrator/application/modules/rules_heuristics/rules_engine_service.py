@@ -8,8 +8,17 @@ from datetime import datetime
 import logging
 from typing import Optional
 
-from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle, rules_to_bundle, hash_version, HeuristicRule, build_default_rules_bundle, RuleVersion, RuleAuditLog
+from core_orchestrator.domain.entities.rule_engine.rules import (
+    RulesBundle,
+    rules_to_bundle,
+    hash_version,
+    HeuristicRule,
+    build_default_rules_bundle,
+    RuleVersion,
+    RuleAuditLog,
+)
 from core_orchestrator.application.modules.rules_heuristics.rule_service import RuleService
+from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from shared.rules_seed import load_rules_seed_payload
 
 logger = logging.getLogger(__name__)
@@ -147,12 +156,12 @@ class RulesEngineService:
     async def _seed_rules_store_if_empty(self) -> Optional[RulesBundle]:
         """Bootstrap the dedicated rules DB (`heuristy`) from the canonical seed file."""
         payload = load_rules_seed_payload()
-        rules = [HeuristicRule(**doc) for doc in payload.get("heuristic_rules", [])]
+        rules = [map_to_dataclass(HeuristicRule, doc) for doc in payload.get("heuristic_rules", [])]
         if not rules:
             return None
 
-        versions = [RuleVersion(**doc) for doc in payload.get("rule_versions", [])]
-        audits = [RuleAuditLog(**doc) for doc in payload.get("rule_audit_log", [])]
+        versions = [map_to_dataclass(RuleVersion, doc) for doc in payload.get("rule_versions", [])]
+        audits = [map_to_dataclass(RuleAuditLog, doc) for doc in payload.get("rule_audit_log", [])]
 
         for rule in rules:
             await self._service.create_rule(rule)

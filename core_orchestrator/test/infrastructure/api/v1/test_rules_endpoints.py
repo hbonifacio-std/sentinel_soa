@@ -1,17 +1,19 @@
+from dataclasses import asdict
 import pytest
 from unittest.mock import AsyncMock, Mock
 from datetime import datetime, timezone
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.rules import router
-from core_orchestrator.infrastructure.api.dependencies import (
+from core_orchestrator.infrastructure.api.dependencies.general_dependencies import (
     get_rule_service,
     get_rule_validator,
     get_rules_engine_service,
 )
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user, get_analyst_user_with_client
 from core_orchestrator.domain.entities.auth.user import UserInDB
-from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RulesBundle
+from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RulesBundle, RuleContent, RuleMetadata
 
 dummy_analyst = UserInDB(
     user_id="u-analyst",
@@ -40,8 +42,8 @@ dummy_rule = HeuristicRule(
     version=1,
     is_active=True,
     description="A test rule",
-    content={"type": "keyword_mapping", "data": {"test": 10}},
-    metadata={"source": "test", "changed_by": "admin", "change_reason": "init"},
+    content=RuleContent(type="keyword_mapping", data={"test": 10}),
+    metadata=RuleMetadata(source="test", changed_by="admin", change_reason="init"),
     created_at=datetime.now(timezone.utc),
     updated_at=datetime.now(timezone.utc)
 )
@@ -117,7 +119,7 @@ def test_validate_rules(client, mock_validator):
     mock_validator.test_rules_with_patterns.return_value = test_result
     
     payload = {
-        "rules": [dummy_rule.model_dump(mode="json")]
+        "rules": [jsonable_encoder(asdict(dummy_rule))]
     }
     response = client.post("/rules/validate", json=payload)
     assert response.status_code == 200
@@ -246,7 +248,7 @@ def test_create_rule(client, mock_rule_service, mock_validator):
     
     mock_rule_service.create_rule.return_value = dummy_rule
     
-    payload = dummy_rule.model_dump(mode="json")
+    payload = jsonable_encoder(asdict(dummy_rule))
     response = client.post("/rules", json=payload)
     assert response.status_code == 201
     assert response.json()["rule_id"] == "rule-1"
@@ -272,7 +274,7 @@ def test_update_rule(client, mock_rule_service, mock_validator):
     mock_validator.validate_rule.return_value = validation
     mock_rule_service.update_rule.return_value = True
     
-    payload = {"name": "Updated Test Rule", "metadata": {"source": "test", "changed_by": "admin", "change_reason": "fix"}}
+    payload = {"description": "Updated Test Rule", "metadata": {"source": "test", "changed_by": "admin", "change_reason": "fix"}}
     # Test update with X-Forwarded-For header to hit _client_ip line 107
     response = client.patch("/rules/rule-1", json=payload, headers={"X-Forwarded-For": "1.1.1.1, 2.2.2.2"})
     assert response.status_code == 200
@@ -336,8 +338,8 @@ def test_delete_rule(client, mock_rule_service):
         version=1,
         is_active=False,
         description="A test rule",
-        content={"type": "keyword_mapping", "data": {"test": 10}},
-        metadata={"source": "test", "changed_by": "admin", "change_reason": "init"},
+        content=RuleContent(type="keyword_mapping", data={"test": 10}),
+        metadata=RuleMetadata(source="test", changed_by="admin", change_reason="init"),
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc)
     )

@@ -5,11 +5,11 @@ Provides CRUD, versioning, validation, audit log, and health endpoints
 for managing threat detection rules stored in MongoDB with Redis cache.
 """
 import logging
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Annotated, Any, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request, status, Depends
-from pydantic import BaseModel, Field
 
 # New imports for refactored architecture
 from core_orchestrator.application.modules.rules_heuristics.rule_service import RuleService
@@ -17,15 +17,31 @@ from core_orchestrator.application.modules.rules_heuristics.rules_engine_service
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
 
 
-from core_orchestrator.domain.entities.rule_engine.rules import (
-    HeuristicRule,
-    HeuristicRuleUpdate,
-    RuleVersion,
-    hash_version,
-)
+from core_orchestrator.domain.entities.rule_engine.rules import RuleVersion, hash_version
 from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_rules_engine_service, \
     get_rule_service, get_rule_validator
+
+# DTOs and mappers
+from core_orchestrator.infrastructure.dto.rules_heuristics.rules_heuristics_dto import (
+    ActivateVersionResponseDTO,
+    CreateVersionRequestDTO,
+    RuleCreateDTO,
+    RuleCreateResponseDTO,
+    RuleDeleteResponseDTO,
+    RuleResponseDTO,
+    RuleUpdateDTO,
+    RuleUpdateResponseDTO,
+    RuleVersionDTO,
+    RulesHealthResponseDTO,
+    RulesListResponseDTO,
+    ValidateRulesRequestDTO,
+    ValidateRulesResponseDTO,
+)
+from core_orchestrator.infrastructure.mappers.mappers import rule_mapper, GenericMapper
+
+# Mapper instance for versions
+version_mapper = GenericMapper(dataclass_cls=RuleVersion, dto_cls=RuleVersionDTO)
 
 from core_orchestrator.infrastructure.rate_limit.rate_limiter import limiter
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admin_user, get_analyst_user_with_client
@@ -33,68 +49,6 @@ from core_orchestrator.infrastructure.api.dependencies.user_auth import get_admi
 logger = logging.getLogger("core_orchestrator.api.rules")
 
 router = APIRouter()
-
-# ============================================================================
-# Schemas y Modelos Pydantic
-# ============================================================================
-
-class RulesListResponse(BaseModel):
-    rules: List[HeuristicRule]
-    version_hash: str
-    total: int
-
-
-class RuleCreateResponse(BaseModel):
-    rule_id: str
-    message: str
-    version_hash: str
-    created_at: datetime
-
-
-class RuleUpdateResponse(BaseModel):
-    message: str
-    rule_id: str
-    updated_at: datetime
-
-
-class RuleDeleteResponse(BaseModel):
-    message: str
-    rule_id: str
-
-
-class ValidateRulesRequest(BaseModel):
-    rules: List[HeuristicRule]
-
-
-class ValidateRulesResponse(BaseModel):
-    valid: bool
-    errors: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    tests_passed: Optional[int] = None
-    tests_total: Optional[int] = None
-
-
-class ActivateVersionResponse(BaseModel):
-    message: str
-    active_version: str
-    deployed_at: datetime
-    rules_included: List[str]
-
-
-class RulesHealthResponse(BaseModel):
-    status: str
-    cached: bool
-    version_hash: str
-    last_updated: Optional[datetime] = None
-    source: str
-    total_active_rules: int
-
-
-class CreateVersionRequest(BaseModel):
-    rules_included: List[str]
-    changelog: str = ""
-    deployed_by: str = "admin"
-
 
 # ============================================================================
 # Helpers
@@ -140,16 +94,16 @@ async def _raise_if_cross_tenant_rule_mutation(
 # Endpoints de la API
 # ============================================================================
 
-@router.get("/health", response_model=RulesHealthResponse, tags=["Rules Health"])
+@router.get("/health", response_model=RulesHealthResponseDTO, tags=["Rules Health"])
 async def rules_health(
-    rules_engine_service: RulesEngineService = Depends(get_rules_engine_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client),
+    rules_engine_service: Annotated[RulesEngineService, Depends(get_rules_engine_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ):
     """Health check for rules engine (requires analyst/admin role)."""
     _require_client_scope(current_user)
     health = await rules_engine_service.health_check()
     stats = await rules_engine_service.get_rules_stats()
-    return RulesHealthResponse(
+    return RulesHealthResponseDTO(
         status=health.status,
         cached=health.cached,
         version_hash=health.version_hash,
@@ -161,11 +115,11 @@ async def rules_health(
 
 @router.get("/audit-log", tags=["Rules Audit"])
 async def get_audit_log(
-    rule_id: Optional[str] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
+    rule_id: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """Get audit log (requires analyst/admin role)."""
     logs = await rule_service.get_audit_logs(
@@ -177,22 +131,23 @@ async def get_audit_log(
     return {"total": len(logs), "offset": offset, "limit": limit, "entries": logs}
 
 
-@router.post("/validate", response_model=ValidateRulesResponse, tags=["Rules Validation"])
+@router.post("/validate", response_model=ValidateRulesResponseDTO, tags=["Rules Validation"])
 @limiter.limit("20/minute")
 async def validate_rules(
     request: Request,
-    body: ValidateRulesRequest = Body(...),
-    validator: RuleValidatorPort = Depends(get_rule_validator),
-    _: UserInDB = Depends(get_analyst_user_with_client)
+    body: Annotated[ValidateRulesRequestDTO, Body(...)],
+    validator: Annotated[RuleValidatorPort, Depends(get_rule_validator)],
+    _: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ):
     """Validate rules (requires analyst/admin role)."""
-    validation = validator.validate_rule_bundle(body.rules)
-    test_result = validator.test_rules_with_patterns(body.rules)
+    domain_rules = rule_mapper.to_dataclass_list(body.rules)
+    validation = validator.validate_rule_bundle(domain_rules)
+    test_result = validator.test_rules_with_patterns(domain_rules)
     all_valid = validation.valid and test_result.passed
     errors = list(validation.errors)
     if not test_result.passed:
         errors.extend(test_result.failures)
-    return ValidateRulesResponse(
+    return ValidateRulesResponseDTO(
         valid=all_valid,
         errors=errors,
         warnings=validation.warnings,
@@ -201,41 +156,42 @@ async def validate_rules(
     )
 
 
-@router.get("/versions", response_model=List[RuleVersion], tags=["Rule Versions"])
+@router.get("/versions", response_model=List[RuleVersionDTO], tags=["Rule Versions"])
 async def list_versions(
-    limit: int = Query(default=50, ge=1, le=200),
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ):
     """List rule versions (requires analyst/admin role)."""
-    return await rule_service.list_versions(client_id=_require_client_scope(current_user), limit=limit)
+    versions = await rule_service.list_versions(client_id=_require_client_scope(current_user), limit=limit)
+    return version_mapper.to_dto_list(versions)
 
 
-@router.get("/versions/{version_hash}", response_model=RuleVersion, tags=["Rule Versions"])
+@router.get("/versions/{version_hash}", response_model=RuleVersionDTO, tags=["Rule Versions"])
 async def get_version(
     version_hash: str,
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ):
     """Get specific rule version (requires analyst/admin role)."""
     version = await rule_service.get_version(version_hash, _require_client_scope(current_user))
     if not version:
         raise HTTPException(status_code=404, detail=f"Version not found: {version_hash}")
-    return version
+    return version_mapper.to_dto(version)
 
 
 @router.post(
     "/versions",
-    response_model=RuleVersion,
+    response_model=RuleVersionDTO,
     status_code=status.HTTP_201_CREATED,
     tags=["Rule Versions"],
 )
 @limiter.limit("10/minute")
 async def create_version(
     request: Request,
-    body: CreateVersionRequest = Body(...),
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_admin_user)
+    body: Annotated[CreateVersionRequestDTO, Body(...)],
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_admin_user)],
 ):
     """Create new rule version (requires admin role)."""
     client_id = _require_client_scope(current_user)
@@ -253,25 +209,25 @@ async def create_version(
         action="CREATE",
         rule_id=version.version_hash,
         user=body.deployed_by,
-        changes={"after": version.model_dump(mode="json")},
+        changes={"after": asdict(version)},
         reason=body.changelog or "New rule version created",
         ip_address=_client_ip(request),
         client_id=client_id,
     )
-    return version
+    return version_mapper.to_dto(version)
 
 
 @router.post(
     "/versions/activate/{version_hash}",
-    response_model=ActivateVersionResponse,
+    response_model=ActivateVersionResponseDTO,
     tags=["Rule Versions"],
 )
 @limiter.limit("10/minute")
 async def activate_version(
     request: Request,
     version_hash: str,
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_admin_user)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_admin_user)],
 ):
     """Activate rule version (requires admin role)."""
     client_id = _require_client_scope(current_user)
@@ -290,8 +246,8 @@ async def activate_version(
         rule_id=version_hash,
         user=version.deployed_by,
         changes={
-            "before": previous.model_dump(mode="json") if previous else None,
-            "after": version.model_dump(mode="json"),
+            "before": asdict(previous) if previous else None,
+            "after": asdict(version),
         },
         reason=f"Activated version {version_hash}",
         ip_address=_client_ip(request),
@@ -299,7 +255,7 @@ async def activate_version(
     )
 
     deployed_at = datetime.now(timezone.utc)
-    return ActivateVersionResponse(
+    return ActivateVersionResponseDTO(
         message="Version activated successfully",
         active_version=bundle.version_hash,
         deployed_at=deployed_at,
@@ -307,11 +263,11 @@ async def activate_version(
     )
 
 
-@router.get("", response_model=RulesListResponse, tags=["Rules Management"])
+@router.get("", response_model=RulesListResponseDTO, tags=["Rules Management"])
 async def list_rules(
-    include_inactive: bool = Query(default=False),
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
+    include_inactive: Annotated[bool, Query()] = False,
 ):
     """List all rules (requires analyst/admin role)."""
     client_id = _require_client_scope(current_user)
@@ -319,36 +275,38 @@ async def list_rules(
     active_version = await rule_service.get_active_version(client_id)
     version_hash = active_version.version_hash if active_version else hash_version(rules)
 
-    return RulesListResponse(rules=rules, version_hash=version_hash, total=len(rules))
+    dto_rules = rule_mapper.to_dto_list(rules)
+    return RulesListResponseDTO(rules=dto_rules, version_hash=version_hash, total=len(rules))
 
 
-@router.get("/{rule_id}", response_model=HeuristicRule, tags=["Rules Management"])
+@router.get("/{rule_id}", response_model=RuleResponseDTO, tags=["Rules Management"])
 async def get_rule(
     rule_id: str,
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_analyst_user_with_client)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ):
     """Get specific rule (requires analyst/admin role)."""
     rule = await rule_service.fetch_rule_by_id(rule_id, _require_client_scope(current_user))
     if not rule:
         raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
-    return rule
+    return rule_mapper.to_dto(rule)
 
 
-@router.post("", response_model=RuleCreateResponse, status_code=status.HTTP_201_CREATED, tags=["Rules Management"])
+@router.post("", response_model=RuleCreateResponseDTO, status_code=status.HTTP_201_CREATED, tags=["Rules Management"])
 @limiter.limit("10/minute")
 async def create_rule(
     request: Request,
-    rule: HeuristicRule = Body(...),
-    rule_service: RuleService = Depends(get_rule_service),
-    validator: RuleValidatorPort = Depends(get_rule_validator),
-    current_user: UserInDB = Depends(get_admin_user)
+    rule: Annotated[RuleCreateDTO, Body(...)],
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    validator: Annotated[RuleValidatorPort, Depends(get_rule_validator)],
+    current_user: Annotated[UserInDB, Depends(get_admin_user)],
 ):
     """Create new rule (requires admin role)."""
     client_id = _require_client_scope(current_user)
-    scoped_rule = rule.model_copy(update={"client_id": client_id})
+    domain_rule = rule_mapper.to_dataclass(rule)
+    scoped_rule = replace(domain_rule, client_id=client_id)
     if await rule_service.rule_exists(scoped_rule.rule_id, client_id):
-        raise HTTPException(status_code=409, detail=f"Rule already exists: {rule.rule_id}")
+        raise HTTPException(status_code=409, detail=f"Rule already exists: {scoped_rule.rule_id}")
 
     validation = validator.validate_rule(scoped_rule)
     if not validation.valid:
@@ -361,14 +319,14 @@ async def create_rule(
         action="CREATE",
         rule_id=new_rule.rule_id,
         user=new_rule.metadata.changed_by,
-        changes={"before": None, "after": new_rule.model_dump(mode="json")},
+        changes={"before": None, "after": asdict(new_rule)},
         reason=new_rule.metadata.change_reason,
         ip_address=_client_ip(request),
         client_id=client_id,
     )
 
     logger.info("Rule created: %s by %s", new_rule.rule_id, new_rule.metadata.changed_by)
-    return RuleCreateResponse(
+    return RuleCreateResponseDTO(
         rule_id=new_rule.rule_id,
         message="Rule created successfully",
         version_hash=version_hash,
@@ -376,15 +334,15 @@ async def create_rule(
     )
 
 
-@router.patch("/{rule_id}", response_model=RuleUpdateResponse, tags=["Rules Management"])
+@router.patch("/{rule_id}", response_model=RuleUpdateResponseDTO, tags=["Rules Management"])
 @limiter.limit("20/minute")
 async def update_rule(
     request: Request,
     rule_id: str,
-    updates: HeuristicRuleUpdate = Body(...),
-    rule_service: RuleService = Depends(get_rule_service),
-    validator: RuleValidatorPort = Depends(get_rule_validator),
-    current_user: UserInDB = Depends(get_admin_user)
+    updates: Annotated[RuleUpdateDTO, Body(...)],
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    validator: Annotated[RuleValidatorPort, Depends(get_rule_validator)],
+    current_user: Annotated[UserInDB, Depends(get_admin_user)],
 ):
     """Update rule (requires admin role)."""
     client_id = _require_client_scope(current_user)
@@ -393,12 +351,12 @@ async def update_rule(
     if not existing:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Rule ownership validation failed")
 
-    before = existing.model_dump(mode="json")
+    before = asdict(existing)
     update_data = updates.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    merged = HeuristicRule.model_validate({**existing.model_dump(), **update_data})
+    merged = rule_mapper.to_dataclass(RuleCreateDTO(**{**before, **update_data}))
     validation = validator.validate_rule(merged)
     if not validation.valid:
         raise HTTPException(status_code=422, detail={"errors": validation.errors})
@@ -412,29 +370,29 @@ async def update_rule(
         action="UPDATE",
         rule_id=rule_id,
         user=merged.metadata.changed_by,
-        changes={"before": before, "after": updated.model_dump(mode="json") if updated else update_data},
+        changes={"before": before, "after": asdict(updated) if updated else update_data},
         reason=merged.metadata.change_reason,
         ip_address=_client_ip(request),
         client_id=client_id,
     )
 
     updated_at = _serialize_datetime(updated.updated_at if updated else datetime.now(timezone.utc))
-    return RuleUpdateResponse(
+    return RuleUpdateResponseDTO(
         message="Rule updated successfully",
         rule_id=rule_id,
         updated_at=updated_at,
     )
 
 
-@router.delete("/{rule_id}", response_model=RuleDeleteResponse, tags=["Rules Management"])
+@router.delete("/{rule_id}", response_model=RuleDeleteResponseDTO, tags=["Rules Management"])
 @limiter.limit("10/minute")
 async def delete_rule(
     request: Request,
     rule_id: str,
-    user: str = Query(default="admin"),
-    reason: str = Query(default="Rule deactivated"),
-    rule_service: RuleService = Depends(get_rule_service),
-    current_user: UserInDB = Depends(get_admin_user)
+    rule_service: Annotated[RuleService, Depends(get_rule_service)],
+    current_user: Annotated[UserInDB, Depends(get_admin_user)],
+    user: Annotated[str, Query()] = "admin",
+    reason: Annotated[str, Query()] = "Rule deactivated",
 ):
     """Delete/deactivate rule (requires admin role)."""
     client_id = _require_client_scope(current_user)
@@ -445,7 +403,7 @@ async def delete_rule(
     if not existing.is_active:
         raise HTTPException(status_code=409, detail=f"Rule already inactive: {rule_id}")
 
-    before = existing.model_dump(mode="json")
+    before = asdict(existing)
     success = await rule_service.delete_rule(rule_id, client_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to deactivate rule")
@@ -460,4 +418,4 @@ async def delete_rule(
         client_id=client_id,
     )
 
-    return RuleDeleteResponse(message="Rule deactivated successfully", rule_id=rule_id)
+    return RuleDeleteResponseDTO(message="Rule deactivated successfully", rule_id=rule_id)

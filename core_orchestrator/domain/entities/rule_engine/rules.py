@@ -1,19 +1,17 @@
 """
-Pydantic entities for heuristic rules stored in MongoDB and cached in Redis.
+Domain entities for heuristic rules stored in MongoDB and cached in Redis.
 
-Defines the schema for rule documents, version bundles, and the in-memory
-RulesBundle consumed by ThreatHeuristics during analysis.
+Only pure domain types live here as dataclasses. Validation and request/response
+shapes live in infrastructure DTOs (Pydantic BaseModel).
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
-
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from shared.rules_seed import build_bundle_payload_from_rules, build_seed_bundle_payload
 
@@ -24,101 +22,77 @@ MatchStrategy = Literal["substring_case_insensitive", "exact", "regex"]
 AuditAction = Literal["CREATE", "UPDATE", "DELETE", "ACTIVATE", "ROLLBACK"]
 
 
-class RuleContent(BaseModel):
+@dataclass
+class RuleContent:
     type: RuleType
     data: Dict[str, Any]
     match_strategy: MatchStrategy = "substring_case_insensitive"
 
-    @model_validator(mode="after")
-    def validate_content_shape(self) -> "RuleContent":
-        if self.type == "keyword_mapping":
-            for key, score in self.data.items():
-                if not isinstance(score, (int, float)):
-                    raise ValueError(f"Keyword '{key}' score must be numeric")
-                if not 0 <= int(score) <= 100:
-                    raise ValueError(f"Keyword '{key}' score must be between 0 and 100")
-        elif self.type == "pattern_list":
-            patterns = self.data.get("patterns")
-            if not isinstance(patterns, list) or not patterns:
-                raise ValueError("pattern_list requires a non-empty 'patterns' list in data")
-            score = self.data.get("score_per_match", 30)
-            if not 0 <= int(score) <= 100:
-                raise ValueError("score_per_match must be between 0 and 100")
-        return self
 
-
-class RuleMetadata(BaseModel):
+@dataclass
+class RuleMetadata:
     source: str
     changed_by: str
     change_reason: str
     compatibility_version: str = "1.0.0"
 
 
-class ValidationRules(BaseModel):
+@dataclass
+class ValidationRules:
     min_score: int = 0
     max_score: int = 100
-    required_fields: List[str] = Field(default_factory=lambda: ["rule_id", "category"])
+    required_fields: List[str] = field(default_factory=lambda: ["rule_id", "category"])
 
 
-class HeuristicRule(BaseModel):
+@dataclass
+class HeuristicRule:
     rule_id: str
-    client_id: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("client_id", "tenant_id"),
-        serialization_alias="client_id",
-        description="Client ID for tenant-specific rules (None for global rules)",
-    )
-    rule_type: RuleType
-    category: RuleCategory
-    version: int = Field(ge=1)
+    client_id: Optional[str] = None
+    rule_type: RuleType = "keyword_mapping"
+    category: RuleCategory = "user_agent"
+    version: int = 1
     is_active: bool = True
-    description: str
-    content: RuleContent
-    metadata: RuleMetadata
-    validation_rules: ValidationRules = Field(default_factory=ValidationRules)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @field_validator("rule_id")
-    @classmethod
-    def rule_id_not_empty(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("rule_id cannot be empty")
-        return v.strip()
+    description: str = ""
+    content: RuleContent = field(default_factory=lambda: RuleContent(type="keyword_mapping", data={}))
+    metadata: RuleMetadata = field(default_factory=lambda: RuleMetadata(source="system", changed_by="system", change_reason="init"))
+    validation_rules: ValidationRules = field(default_factory=ValidationRules)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class HeuristicRuleUpdate(BaseModel):
-    """Partial update payload for PATCH /rules/{rule_id}."""
-
+@dataclass
+class HeuristicRuleUpdate:
     rule_type: Optional[RuleType] = None
     category: Optional[RuleCategory] = None
-    version: Optional[int] = Field(default=None, ge=1)
+    version: Optional[int] = None
     is_active: Optional[bool] = None
     description: Optional[str] = None
     content: Optional[RuleContent] = None
     metadata: Optional[RuleMetadata] = None
 
 
-class RuleVersion(BaseModel):
+@dataclass
+class RuleVersion:
     version_hash: str
-    client_id: Optional[str] = Field(default=None, description="Client ID this version belongs to (None for global)")
-    created_at: datetime
+    client_id: Optional[str] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     is_active: bool = False
-    rules_included: List[str]
+    rules_included: List[str] = field(default_factory=list)
     changelog: str = ""
     deployed_by: str = "system"
     deployment_timestamp: Optional[datetime] = None
     rollback_url: Optional[str] = None
 
 
-class RuleAuditLog(BaseModel):
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    action: AuditAction
-    rule_id: str
-    user: str
+@dataclass
+class RuleAuditLog:
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    action: AuditAction = "CREATE"
+    rule_id: str = ""
+    user: str = "system"
     client_id: Optional[str] = None
     ip_address: str = "127.0.0.1"
-    changes: Dict[str, Any] = Field(default_factory=dict)
+    changes: Dict[str, Any] = field(default_factory=dict)
     reason: str = ""
     status: str = "success"
 
@@ -183,10 +157,9 @@ def build_default_rules_bundle() -> RulesBundle:
 
 def rules_to_bundle(rules: List[HeuristicRule], version_hash: str = "default") -> RulesBundle:
     """Build a RulesBundle from a list of HeuristicRule documents."""
-    bundle_payload = build_bundle_payload_from_rules(
-        [rule.model_dump(mode="json") for rule in rules],
-        version_hash=version_hash,
-    )
+    # convert dataclass rule instances into serializable dicts expected by the shared builder
+    rules_payload = [asdict(rule) if is_dataclass(rule) else rule for rule in rules]
+    bundle_payload = build_bundle_payload_from_rules(rules_payload, version_hash=version_hash)
     return RulesBundle.from_cache_dict(bundle_payload)
 
 
