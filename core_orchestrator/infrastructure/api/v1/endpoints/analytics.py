@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated
 from fastapi import APIRouter, Depends, Query
-from core_orchestrator.application.modules.analysis_reports.services.analytics_service import (ReportTelemetryService)
+from core_orchestrator.application.modules.telemetry.telemetry_report_service import (TelemetryReportService)
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
 from core_orchestrator.domain.entities.auth.user import UserInDB
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_analytics_service, get_telemetry_service
@@ -58,7 +58,7 @@ async def get_logs_row_telemetry(
 @router.patch("/analytics/reports/{report_id}/review")
 async def mark_report_reviewed(
         report_id: str,
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)]
     ):
     """
@@ -70,7 +70,7 @@ async def mark_report_reviewed(
 
     Arguments:
         report_id (str): The unique identifier of the report to be marked as reviewed
-        analytics_service (ReportTelemetryService): A service dependency for handling analytics operations
+        analytics_service (TelemetryReportService): A service dependency for handling analytics operations
         current_user (UserInDB): The current authenticated user, with access to their client ID
 
     Returns:
@@ -83,7 +83,7 @@ async def mark_report_reviewed(
 async def add_report_action(
         report_id: str,
         action_request: ReportActionRequestDTO,
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user:  Annotated[UserInDB, Depends(get_analyst_user_with_client)]
 ):
     """
@@ -97,7 +97,7 @@ async def add_report_action(
         report_id (str): The unique identifier of the report to which the action will be added
         action_request (ReportActionRequestDTO): The details of the action being added,
             encapsulated in a request object
-        analytics_service (ReportTelemetryService): A service dependency for handling
+        analytics_service (TelemetryReportService): A service dependency for handling
             analytics-related operations
         current_user (UserInDB): The currently authenticated user, provided by a dependency.
 
@@ -117,7 +117,7 @@ async def add_report_action(
 @router.patch("/analytics/reports/{report_id}/resolve")
 async def mark_report_resolved(
         report_id: str,
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user:  Annotated[UserInDB, Depends(get_analyst_user_with_client)]
 ):
     """
@@ -131,7 +131,7 @@ async def mark_report_resolved(
 
 @router.get("/analytics/source_ids")
 async def get_source_ids(
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user: Annotated[UserInDB,Depends(get_analyst_user_with_client)],
 ):
     """
@@ -155,7 +155,7 @@ async def get_source_ids(
 
 @router.get("/analytics/reports", response_model=ResponsePaginatedDTO[AnalysisReportResponseDTO])
 async def get_reports(
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
         source_id: str | None = None,
         page: Annotated[int, Query(ge=1, description="Page number (minimum 1)")]=1,
@@ -197,7 +197,7 @@ async def get_reports(
 @router.get("/analytics/stats")
 async def get_stats(
         source_id: str,
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)],
 ):
     """
@@ -233,7 +233,7 @@ async def get_stats(
 
 @router.get("/analytics/debug_reports")
 async def debug_reports(
-        analytics_service: Annotated[ReportTelemetryService, Depends(get_analytics_service)],
+        analytics_service: Annotated[TelemetryReportService, Depends(get_analytics_service)],
         current_user: Annotated[UserInDB, Depends(get_analyst_user_with_client)]
 ):
     """

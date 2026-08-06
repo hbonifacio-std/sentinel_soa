@@ -55,8 +55,8 @@ def mock_repositories_and_services():
     from core_orchestrator.infrastructure.api import container as container_mod
     container_mod.RulesEngineService.return_value.initialize = AsyncMock()
     container_mod.MongoAnalyticsReportsAdapter.return_value.ensure_indexes = AsyncMock()
-    container_mod.MongoRuleRepository.return_value.ensure_indexes = AsyncMock()
-    container_mod.MongoAuditRepository.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoAuditRulesAdapter.return_value.ensure_indexes = AsyncMock()
+    container_mod.MongoAuditRulesAdapter.return_value.ensure_indexes = AsyncMock()
     container_mod.MongoForensicAnalysisRepositoryAdapter.return_value.ensure_indexes = AsyncMock()
     yield
     for p in patches:
@@ -69,10 +69,10 @@ async def test_container_startup(mock_db_manager, mock_cache_and_services, mock_
     await container.startup()
     # Verify that key attributes are no longer None after startup
     assert container.cache_service is not None
-    assert container.redis_cache is not None
-    assert container.analytics_repository is not None
+    assert container.redis_base_telemetry_cache is not None
+    assert container.mongo_analytics_report_adapter is not None
     assert container.auth_service is not None
-    assert container.agent_runner is not None
+    assert container.telemetry_analysis_orchestrator_service is not None
     # Ensure DatabaseManager.connect was called
     mock_db_manager.connect.assert_called_once()
 
@@ -93,12 +93,12 @@ async def test_container_startup_no_redis_raises(mock_db_manager):
 @pytest.mark.asyncio
 async def test_container_shutdown(mock_db_manager):
     container = Container()
-    container.agent_runner = AsyncMock()
+    container.telemetry_analysis_orchestrator_service = AsyncMock()
     container.db_manager.mongo_client = AsyncMock()
     container.db_manager.redis_client_window_telemetry = AsyncMock()
 
     await container.shutdown()
-    container.agent_runner.shutdown_subsystem.assert_awaited_once()
+    container.telemetry_analysis_orchestrator_service.shutdown_subsystem.assert_awaited_once()
     container.db_manager.mongo_client.close.assert_awaited_once()
     container.db_manager.redis_client_window_telemetry.close.assert_awaited_once()
 
@@ -106,10 +106,10 @@ async def test_container_shutdown(mock_db_manager):
 async def test_create_mcp_agent():
     container = Container()
     container.cache_service = MagicMock()
-    container.analytics_service = MagicMock()
+    container.telemetry_reports_service = MagicMock()
     container.rules_engine_service = MagicMock()
     
     mock_mcp_mgr = MagicMock()
-    agent = container._create_mcp_agent(mock_mcp_mgr)
+    agent = container._telemetry_analysis_service(mock_mcp_mgr)
     from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
     assert isinstance(agent, TelemetryAnalysisService)

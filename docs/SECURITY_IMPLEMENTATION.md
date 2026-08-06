@@ -55,12 +55,12 @@ Sentinel SOA implements RBAC to restrict access to specific API endpoints based 
 *   **Role-Specific Dependencies:**
     *   `get_admin_user`: This dependency builds upon `get_current_user`. If the authenticated user does not have the "admin" role, a `403 Forbidden` HTTP exception is raised.
     *   `get_analyst_user`: This dependency also builds upon `get_current_user`. It grants access if the authenticated user has either the "admin" or "analyst" role.
-*   **Endpoint Protection:** By applying these role-specific dependencies to FastAPI route functions, access is automatically restricted. For example:
-    ```python
-    @router.get("/admin_only_data", dependencies=[Depends(get_admin_user)])
-    async def get_sensitive_data():
-        pass
-    ```
+* **Endpoint Protection:** By applying these role-specific dependencies to FastAPI route functions, access is automatically restricted. For example:
+  ```python
+  @router.get("/admin_only_data", dependencies=[Depends(get_admin_user)])
+  async def get_sensitive_data():
+      pass
+  ```
 
 *Relevant Files:*
 *   `core_orchestrator/domain/models/auth/user.py` (User model with `role` field)

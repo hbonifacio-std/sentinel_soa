@@ -10,7 +10,7 @@ from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEven
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 
-class MongoTelemetryRepositoryPortAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
+class MongoTelemetryAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
     """
     Adapter class for a MongoDB-based telemetry repository.
 

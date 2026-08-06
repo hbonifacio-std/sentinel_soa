@@ -1,13 +1,9 @@
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
-
-from redis.asyncio import Redis
-
 from core_orchestrator.domain.entities.telemetry.reports import AnalysisReport
-from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsReportsPorts
+from core_orchestrator.domain.ports.telemetry.telemetry_reports_port import AnalyticsReportsPort
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
-from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 from core_orchestrator.infrastructure.dto.telemetry.analysis_report_dto import AnalysisActionEntryDTO
 
 logger = logging.getLogger(__name__)
@@ -27,9 +23,8 @@ class ReportResolutionPayload:
             "resolved_at_utc": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         }
 
-class ReportTelemetryService(BaseRedisCacheAdapter):
-    def __init__(self, analytics_repository: AnalyticsReportsPorts, redis_client: Redis):
-        super().__init__(redis_client)
+class TelemetryReportService:
+    def __init__(self, analytics_repository: AnalyticsReportsPort):
         self.analytics_repository = analytics_repository
 
     async def get_paginated_reports(

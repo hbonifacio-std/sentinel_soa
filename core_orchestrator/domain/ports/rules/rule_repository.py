@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion
 
-class RuleRepository(ABC):
+class RuleRepositoryPort(ABC):
     @abstractmethod
     async def get_by_id(self, rule_id: str, client_id: Optional[str]) -> Optional[HeuristicRule]:
         raise NotImplementedError

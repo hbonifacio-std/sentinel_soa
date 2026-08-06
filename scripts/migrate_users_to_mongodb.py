@@ -78,7 +78,7 @@ async def migrate_users():
                 created_count += 1
             
             except Exception as e:
-                logger.error(f"Error creating user '{username}': {e}")
+                logger.exception(f"Error creating user '{username}': {e}")
         
         # Create unique index on username
         collection = await UserServicePort.get_user_collection()

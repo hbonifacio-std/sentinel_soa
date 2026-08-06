@@ -9,8 +9,8 @@ from core_orchestrator.domain.entities.rule_engine.rules import (
     hash_version,
     rules_to_bundle,
 )
-from core_orchestrator.domain.ports.rules.audit_repository import AuditRepository
-from core_orchestrator.domain.ports.rules.rule_repository import RuleRepository
+from core_orchestrator.domain.ports.rules.audit_repository import AuditRulesRepositoryPort
+from core_orchestrator.domain.ports.rules.rule_repository import RuleRepositoryPort
 from core_orchestrator.domain.ports.rules.rules_bundle_cache import RulesBundleCachePort
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
 
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 class RuleService:
     def __init__(
         self,
-        rule_repository: RuleRepository,
-        audit_repository: AuditRepository,
+        rule_repository: RuleRepositoryPort,
+        audit_repository: AuditRulesRepositoryPort,
         rules_bundle_cache: RulesBundleCachePort,
         rule_validator: RuleValidatorPort,
     ):

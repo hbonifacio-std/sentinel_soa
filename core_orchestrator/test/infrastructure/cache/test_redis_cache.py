@@ -2,9 +2,9 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, Mock
 from datetime import datetime, timezone, timedelta
 import json
-from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import RedisBaseCacheAdapter
 from core_orchestrator.infrastructure.cache.redis_token_blacklist_repository import RedisTokenBlacklistRepositoryPort
-from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_window_adapter import RedisTelemetryWindowAdapter
+from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_window_adapter import RedisBaseTelemetryWindowAdapter
 from core_orchestrator.infrastructure.cache.cache_service import CacheService
 from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
@@ -25,7 +25,7 @@ def mock_db_manager(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache(mock_redis):
-    cache = BaseRedisCacheAdapter(mock_redis)
+    cache = RedisBaseCacheAdapter(mock_redis)
     
     mock_redis.get.return_value = b"val"
     assert await cache.get("key") == b"val"
@@ -38,7 +38,7 @@ async def test_redis_cache(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_cache_disconnected():
-    cache = BaseRedisCacheAdapter(None)
+    cache = RedisBaseCacheAdapter(None)
     assert await cache.get("key") is None
     await cache.set("key", "val")
     await cache.delete("key")
@@ -64,7 +64,7 @@ async def test_redis_token_blacklist(mock_redis):
 
 @pytest.mark.asyncio
 async def test_redis_telemetry_window_cache(mock_redis):
-    cache = RedisTelemetryWindowAdapter(mock_redis)
+    cache = RedisBaseTelemetryWindowAdapter(mock_redis)
     
     # Add to window
     await cache.add_to_window("win-1", "val", 10)
@@ -95,7 +95,7 @@ async def test_cache_service(mock_db_manager, mock_redis):
     mock_redis.get.return_value = b"cached-val"
     assert await srv.get("key") == "cached-val"
     
-    await srv.set("key", "val", 5)
+    await srv.cache_tenant_provider_ai("key", "val", 5)
     mock_redis.set.assert_called_once_with("key", "val", ex=5)
     
     mock_redis.ttl.return_value = 100

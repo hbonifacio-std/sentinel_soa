@@ -2,14 +2,13 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from pymongo import ASCENDING, DESCENDING
 
+from core_orchestrator.domain.ports import AuditRulesRepositoryPort
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
-from core_orchestrator.domain.ports.rules.audit_repository import AuditRepository
+
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
-# Using a generic dictionary for the model since audit logs can be flexible
-class MongoAuditRepository(BaseRepository[Dict], AuditRepository):
+class MongoAuditRepositoryAdapter(BaseRepository[Dict], AuditRulesRepositoryPort):
     def __init__(self, db_manager: DatabaseManager):
-        # Assuming the same DB manager provides access to the rules DB
         self.db = db_manager.get_rules_db()
         super().__init__(self.db["rule_audit_log"], dict)
 

@@ -36,16 +36,15 @@ from core_orchestrator.infrastructure.adapters.mongodb.mongo_user_repository_ada
 from core_orchestrator.application.modules.auth_clients.user_service import UserService
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_tenant_repository_adapter import \
     MongoTenantRepositoryAdapter as MongoTelemetryClientRepository
-from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import CachingTelemetryClientRepositoryPort
-from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
-from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
-from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
-from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
-from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
-from core_orchestrator.infrastructure.cache.redis_rules_bundle_cache import RedisRulesBundleCache
+from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_tenant_adapter import RedisTelemetryTenantRepositoryAdapter
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import RedisBaseCacheAdapter
+from core_orchestrator.application.modules.rules_heuristics.rules_engine_service import RulesEngineService
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_rule_repository import MongoAuditRulesAdapter
+from core_orchestrator.application.modules.rules_heuristics.rule_service import RuleService
+from core_orchestrator.infrastructure.adapters.redis.redis_rules_bundle_adapter import RedisRulesBundleAdapter
 # signature_verifier may be missing in refactor; provide a local shim for bootstrap when absent
 
-from core_orchestrator.application.modules.analysis_reports.services.default_rule_validator_service import DefaultRuleValidatorService
+from core_orchestrator.infrastructure.adapters.helper.default_rule_validator_adapter import DefaultRuleValidatorAdapter
 
 logger = logging.getLogger("bootstrap_local_data")
 DEFAULT_RULES_SEED = ROOT / "data" / "mongodb" / "heuristic_rules.json"
@@ -263,21 +262,21 @@ async def bootstrap(
         # Instantiate service with the canonical hasher (mirror behavior)
         user_service = UserService(user_repository=user_repo, password_hasher=password_hasher)
 
-        redis_cache = BaseRedisCacheAdapter(redis_client=db_manager.redis_client_window_telemetry)
+        redis_cache = RedisBaseCacheAdapter(redis_client=db_manager.redis_client_window_telemetry)
 
         mongo_telemetry_client_repo = MongoTelemetryClientRepository(db_manager)
-        telemetry_client_repo = CachingTelemetryClientRepositoryPort(
+        telemetry_client_repo = RedisTelemetryTenantRepositoryAdapter(
             primary_repository=mongo_telemetry_client_repo,
-            cache=redis_cache,
+            redis_client=redis_cache,
         )
 
-        rule_repo = MongoRuleRepository(db_manager)
-        audit_repo = MongoAuditRepository(db_manager)
+        rule_repo = MongoAuditRulesAdapter(db_manager)
+        audit_repo = MongoAuditRulesAdapter(db_manager)
         rule_service = RuleService(
             rule_repository=rule_repo,
             audit_repository=audit_repo,
-            rules_bundle_cache=RedisRulesBundleCache(redis_client=db_manager.redis_client_window_telemetry),
-            rule_validator=DefaultRuleValidatorService(),
+            rules_bundle_cache=RedisRulesBundleAdapter(redis_client=db_manager.redis_client_window_telemetry),
+            rule_validator=DefaultRuleValidatorAdapter(),
         )
 
         # Corregido: Llamar a los índices a través de los repositorios

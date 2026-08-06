@@ -80,13 +80,13 @@ class TestCacheServiceSet:
     @pytest.mark.asyncio
     async def test_set_calls_redis_with_expiry(self, cache_service):
         svc, r, _ = cache_service
-        await svc.set("k", "v", 60)
+        await svc.cache_tenant_provider_ai("k", "v", 60)
         r.set.assert_awaited_once_with("k", "v", ex=60)
 
     @pytest.mark.asyncio
     async def test_set_does_nothing_when_no_redis(self, cache_service_no_redis):
         # Should not raise
-        await cache_service_no_redis.set("k", "v", 60)
+        await cache_service_no_redis.cache_tenant_provider_ai("k", "v", 60)
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 logger = logging.getLogger(__name__)
 
 
-class BaseRedisCacheAdapter:
+class RedisBaseCacheAdapter:
     """
     Base adapter for interacting with a Redis cache.
 
@@ -18,7 +18,7 @@ class BaseRedisCacheAdapter:
     is provided during initialization.
     """
 
-    def __init__(self, redis_client: Redis):
+    def __init__(self, redis_client: Optional[Redis]):
         self._redis = redis_client
 
     async def get(self, key: str) -> Optional[Any]:

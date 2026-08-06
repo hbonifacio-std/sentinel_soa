@@ -120,6 +120,19 @@ async def test_orchestrator_agent():
     assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].source_id == "victim-app"
     assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].client_id == "tenant-42"
 
+    # Error case from fallback analysis
+    analysis_result = {
+        "source_ip": "1.2.3.4",
+        "error": "MCP analysis timed out",
+        "threat_detected": False,
+        "threat_level": "NONE",
+    }
+    analysis_service.analyze_activity.return_value = analysis_result
+
+    res = await agent.process_telemetry_window(payload)
+    assert "error" in res
+    assert analytics_service.create_analysis_report.await_args.kwargs["report_data"].error == "MCP analysis timed out"
+
 @pytest.mark.asyncio
 @patch("core_orchestrator.infrastructure.agent.mcp_client._sse_client")
 @patch("core_orchestrator.infrastructure.agent.mcp_client.ClientSession")

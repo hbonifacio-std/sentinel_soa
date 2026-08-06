@@ -7,7 +7,7 @@ from bson import ObjectId
 from pydantic import BaseModel
 
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_analytics_repository_adapter import MongoAnalyticsReportsAdapter
-from core_orchestrator.infrastructure.persistence.mongo_rule_repository import MongoRuleRepository
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_rule_repository import MongoAuditRulesAdapter
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_forensic_analysis_repository_adapter import MongoForensicAnalysisRepositoryAdapter
 from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RuleContent, RuleMetadata
 from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import (
@@ -42,7 +42,7 @@ def mock_db_manager():
     db.client = AsyncMock()
     
     # Pre-populate known collections so they are accessible before repository instantiation
-    for name in ["analysis_reports", "raw_telemetry", "heuristic_rules", "rule_versions", "rule_audit_log", "forensic_analysis", "authorized_telemetry_clients"]:
+    for name in ["rules_heuristics", "raw_telemetry", "heuristic_rules", "rule_versions", "rule_audit_log", "forensic_analysis", "authorized_telemetry_clients"]:
         get_collection(name)
     
     manager.get_telemetry_db.return_value = db
@@ -58,7 +58,7 @@ def mock_db_manager():
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_stats(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     # Configure cursor mock for aggregates
     cursor1 = AsyncMock()
@@ -84,7 +84,7 @@ async def test_mongo_analytics_repository_stats(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_get_paginated_reports(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     # Mock find_paginated output
     doc_id = ObjectId()
@@ -99,7 +99,7 @@ async def test_mongo_analytics_repository_get_paginated_reports(mock_db_manager)
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_get_report_by_id(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
     client_id = "client-1"
@@ -122,7 +122,7 @@ async def test_mongo_analytics_repository_get_report_by_id(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_update_report(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
     client_id = "client-1"
@@ -140,7 +140,7 @@ async def test_mongo_analytics_repository_update_report(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_add_action_to_report(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
     client_id = "client-1"
@@ -158,7 +158,7 @@ async def test_mongo_analytics_repository_add_action_to_report(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_distinct_and_aggregated_stats(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
 
@@ -191,7 +191,7 @@ async def test_mongo_analytics_repository_get_paginated_logs(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_get_debug_reports(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     doc_id = ObjectId()
     collection.find.return_value.to_list.return_value = [{"_id": doc_id}]
@@ -204,7 +204,7 @@ async def test_mongo_analytics_repository_get_debug_reports(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_create_report(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
     collection.insert_one.return_value = MagicMock(inserted_id="inserted-1")
@@ -219,7 +219,7 @@ async def test_mongo_analytics_repository_create_report(mock_db_manager):
 @pytest.mark.asyncio
 async def test_mongo_analytics_repository_accepts_string_report_ids(mock_db_manager):
     manager, db, collections = mock_db_manager
-    collection = collections["analysis_reports"]
+    collection = collections["rules_heuristics"]
 
     repo = MongoAnalyticsReportsAdapter(manager)
     client_id = "client-1"
@@ -261,7 +261,7 @@ async def test_mongo_rule_repository_crud(mock_db_manager, dummy_rule):
     manager, db, collections = mock_db_manager
     collection = collections["heuristic_rules"]
 
-    repo = MongoRuleRepository(manager)
+    repo = MongoAuditRulesAdapter(manager)
 
     collection.find_one.return_value = dummy_rule.model_dump(mode="json")
     rule = await repo.get_by_id("rule-test", "client-1")
@@ -301,7 +301,7 @@ async def test_mongo_rule_repository_versions(mock_db_manager):
     manager, db, collections = mock_db_manager
     versions_collection = collections["rule_versions"]
 
-    repo = MongoRuleRepository(manager)
+    repo = MongoAuditRulesAdapter(manager)
 
     version = RuleVersion(
         version_hash="vhash-1",
@@ -361,7 +361,7 @@ async def test_mongo_rule_repository_activate_version_success(mock_db_manager):
     versions_collection.update_many = AsyncMock()
     versions_collection.update_one = AsyncMock(return_value=MagicMock(modified_count=1))
 
-    repo = MongoRuleRepository(manager)
+    repo = MongoAuditRulesAdapter(manager)
     res = await repo.activate_version("vhash-1", "client-1")
     assert res is True
     session.end_session.assert_called_once()
@@ -387,7 +387,7 @@ async def test_mongo_rule_repository_activate_version_fail(mock_db_manager):
     # Return modified_count = 0 to trigger value error and rollback
     versions_collection.update_one = AsyncMock(return_value=MagicMock(modified_count=0))
 
-    repo = MongoRuleRepository(manager)
+    repo = MongoAuditRulesAdapter(manager)
     res = await repo.activate_version("vhash-1", "client-1")
     assert res is False
     session.end_session.assert_called_once()
@@ -604,7 +604,7 @@ async def test_mongo_telemetry_client_repository_indexes(mock_db_manager):
 # ──────────────────────────────────────────────────────────────────────────────
 # MongoTelemetryRepository Tests
 # ──────────────────────────────────────────────────────────────────────────────
-from core_orchestrator.infrastructure.adapters.mongodb.mongo_telemetry_repository_adapter import MongoTelemetryRepositoryPortAdapter
+from core_orchestrator.infrastructure.adapters.mongodb.mongo_telemetry_repository_adapter import MongoTelemetryAdapter
 from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 from core_orchestrator.domain.entities.analysis import AnalysisReportResponseDTO
 
@@ -622,8 +622,8 @@ def _make_log_event() -> LogEventDTO:
 async def test_mongo_telemetry_repository(mock_db_manager):
     manager, db, collections = mock_db_manager
     collection = collections["raw_telemetry"]
-    reports_collection = collections["analysis_reports"]
-    repo = MongoTelemetryRepositoryPortAdapter(manager)
+    reports_collection = collections["rules_heuristics"]
+    repo = MongoTelemetryAdapter(manager)
 
     # insert_log_event
     collection.insert_one.return_value = MagicMock(inserted_id="ins-log")

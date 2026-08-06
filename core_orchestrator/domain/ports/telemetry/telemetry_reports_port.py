@@ -1,13 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
-
-from pydantic import BaseModel
-
 from core_orchestrator.domain.entities.telemetry.reports import ReportSummary, AnalysisReport
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
 
 
-class AnalyticsReportsPorts(ABC):
+class AnalyticsReportsPort(ABC):
     """
     Port for the analytics repository.
     """
@@ -72,7 +69,7 @@ class AnalyticsReportsPorts(ABC):
     @abstractmethod
     async def get_debug_reports(self, client_id: str, limit: int) -> List[Dict[str, Any]]:
         """
-        Retrieves a few sample documents from the analysis_reports collection for debugging.
+        Retrieves a few sample documents from the rules_heuristics collection for debugging.
         """
         raise NotImplementedError
 

@@ -17,7 +17,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from core_orchestrator.domain.exceptions.domain_exceptions import DomainException
-from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import TelemetryProcessingWorker
+from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestrator_service import TelemetryAnalysisOrchestratorService
 from core_orchestrator.infrastructure.api.container import get_container
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_agent_runner
 from core_orchestrator.infrastructure.api.security_headers import SecurityHeadersMiddleware
@@ -152,7 +152,7 @@ app.include_router(
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System Health"])
-async def health_check(agent_runner: Annotated[TelemetryProcessingWorker, Depends(get_agent_runner)]):
+async def health_check(agent_runner: Annotated[TelemetryAnalysisOrchestratorService, Depends(get_agent_runner)]):
     """
     Basic monitoring endpoint to check the operational availability of the API.
     """

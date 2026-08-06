@@ -1,12 +1,6 @@
 """Domain ports package grouped by bounded context."""
 
-from core_orchestrator.domain.ports.analysis import (
-    AiAnalysisPort,
-    AnalyticsReportsPorts,
-    LlmAnalysisPort,
-    ThreatContextPort,
-    ThreatContextServicePort,
-)
+
 from core_orchestrator.domain.ports.auth import (
     PasswordHasherPort,
     TokenBlacklistRepositoryPort,
@@ -19,35 +13,35 @@ from core_orchestrator.domain.ports.forensic import (
     ForensicServicePort,
 )
 from core_orchestrator.domain.ports.rules import (
-    RuleRepository,
+    RuleRepositoryPort,
     RuleValidatorPort,
     RulesBundleCachePort
 )
-from core_orchestrator.domain.ports.shared import AuditRepository
+from core_orchestrator.domain.ports.shared import AuditRulesRepositoryPort
+from core_orchestrator.domain.ports.shared.llm_analysis_port import LlmAnalysisPort
 from core_orchestrator.domain.ports.telemetry import (
-    TelemetryClientRepositoryPort,
+    TelemetryTenantCachePort,
     TelemetryRepositoryPort,
     TelemetryWindowCachePort,
 )
 
 __all__ = [
     "AiAnalysisPort",
-    "AnalyticsReportsPorts",
-    "AuditRepository",
+    "AuditRulesRepositoryPort",
     "ForensicAnalysisRepositoryPort",
     "ForensicIntelligencePort",
     "ForensicServicePort",
     "LlmAnalysisPort",
     "PasswordHasherPort",
-    "RuleRepository",
+    "RuleRepositoryPort",
     "RuleValidatorPort",
     "RulesBundleCachePort",
-    "TelemetryClientRepositoryPort",
+    "TelemetryTenantCachePort",
     "TelemetryRepositoryPort",
     "TelemetryWindowCachePort",
-    "ThreatContextPort",
-    "ThreatContextServicePort",
     "TokenBlacklistRepositoryPort",
     "TokenProviderPort",
     "UserRepositoryPort",
 ]
+
+from core_orchestrator.domain.ports.telemetry.telemetry_ia_analysis_port import AiAnalysisPort

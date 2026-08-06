@@ -7,11 +7,11 @@ from core_orchestrator.domain.exceptions.database_exceptions import  DatabaseOpe
 from core_orchestrator.domain.exceptions.domain_exceptions import \
     MongoTranslatorNotConfiguredException, ModelNotFoundError, TenantNotFoundException, ModelNotAvailableException, \
     ModelDisabledException, InvalidProviderException, ProviderNotConfiguredException
+from core_orchestrator.domain.ports import TelemetryTenantCachePort
 from core_orchestrator.domain.ports.auth.tenant_repository_port import TenantRepositoryPort
 from core_orchestrator.domain.ports.auth.api_key_cipher_port import ApiKeyCipherPort
 from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import string_to_dataclass, \
     dataclass_to_string_json
-from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
 from core_orchestrator.infrastructure.dto.tenant.tenant_dto import TenantResponseDTO, AddModelRequestDto, \
     ProviderAiResponseDto, AddProviderAiRequestDto, TenantModelDefinitionRequestDTO
 
@@ -42,11 +42,11 @@ class TenantProviderAiService:
         self,
         tenant_repository: TenantRepositoryPort,
         cipher: ApiKeyCipherPort,
-        cache_repository: BaseRedisCacheAdapter,
+        redis_tenant: TelemetryTenantCachePort,
     ):
         self._tenant_repo = tenant_repository
         self._cipher = cipher
-        self._cache_repository = cache_repository
+        self._redis_auth_repository = redis_tenant
 
     async def get_tenant_by_client_id(self, client_id: str) -> Optional[TenantResponseDTO]:
         """
@@ -66,8 +66,8 @@ class TenantProviderAiService:
         Optional[Tenant]
             The retrieved tenant object, or None if no tenant exists for the given client ID.
         """
-        if self._cache_repository:
-            cached = await self._cache_repository.get(client_id)
+        if self._redis_auth_repository:
+            cached = await self._redis_auth_repository.fetch_cached_tenant(client_id)
             if cached:
                 tenant = string_to_dataclass(Tenant,cached)
                 if tenant:
@@ -76,10 +76,10 @@ class TenantProviderAiService:
         tenant = await self._tenant_repo.get_by_client_id(client_id)
         if not tenant:
             return None
-        if self._cache_repository:
+        if self._redis_auth_repository:
             json_data = dataclass_to_string_json(tenant)
             if json_data:
-                await self._cache_repository.set(client_id, json_data)
+                await self._redis_auth_repository.cache_tenant(client_id, json_data)
 
         return TenantResponseDTO.model_validate(tenant)
 
@@ -306,8 +306,8 @@ class TenantProviderAiService:
         if not tenant_updated:
             raise DatabaseOperationError(f"Failed to update provider for tenant '{client_id}'.")
 
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return [ProviderAiResponseDto.model_validate(asdict(provider)) for provider in tenant_updated.ai_providers ]
 
     async def remove_provider(self, client_id: str, provider: str) -> Tenant:
@@ -336,8 +336,8 @@ class TenantProviderAiService:
         updated = await self._tenant_repo.remove_provider(client_id, provider)
         if not updated:
             raise DatabaseOperationError(f"Failed to remove provider for tenant '{client_id}'.")
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return updated
 
     async def add_or_update_model(
@@ -399,8 +399,8 @@ class TenantProviderAiService:
 
         if not updated:
             raise DatabaseOperationError(f"Failed to update model for tenant '{client_id}'.")
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return TenantResponseDTO.model_validate(updated).available_models
 
     async def remove_model(self, client_id: str, model_id: str) -> Dict[str, TenantModelDefinitionRequestDTO]:
@@ -429,8 +429,8 @@ class TenantProviderAiService:
         updated = await self._tenant_repo.remove_model(client_id, model_id)
         if not updated:
             raise ValueError(f"Failed to remove model for tenant '{client_id}'.")
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return TenantResponseDTO.model_validate(updated).available_models
 
     async def set_default_log_analysis_model(self, client_id: str, model_id: Optional[str]) -> TenantResponseDTO:
@@ -465,8 +465,8 @@ class TenantProviderAiService:
         updated = await self._tenant_repo.set_default_log_analysis_model(client_id, model_id)
         if not updated:
             raise DatabaseOperationError(f"Failed to set default log analysis model for tenant '{client_id}'.")
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return TenantResponseDTO.model_validate(updated)
 
     async def set_default_mongo_translator_model(self, client_id: str, model_id: Optional[str]) -> TenantResponseDTO:
@@ -508,8 +508,8 @@ class TenantProviderAiService:
         updated = await self._tenant_repo.set_default_mongo_translator_model(client_id, model_id)
         if not updated:
             raise DatabaseOperationError(f"Failed to set default mongo translator model for tenant '{client_id}'.")
-        if self._cache_repository:
-            await self._cache_repository.delete(client_id)
+        if self._redis_auth_repository:
+            await self._redis_auth_repository.invalidate(client_id)
         return TenantResponseDTO.model_validate(updated)
 
     @staticmethod

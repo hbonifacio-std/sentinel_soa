@@ -13,18 +13,18 @@ from core_orchestrator.domain.entities.telemetry.reports import (
 )
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
-from core_orchestrator.domain.ports.analysis.analytics_port import AnalyticsReportsPorts
+from core_orchestrator.domain.ports.telemetry.telemetry_reports_port import AnalyticsReportsPort
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 logger = logging.getLogger(__name__)
 GROUP_STAGE = "$group"
 
-class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsReportsPorts):
+class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsReportsPort):
 
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager.get_telemetry_db()
-        super().__init__(self.db["analysis_reports"], AnalysisReport)
+        super().__init__(self.db["rules_heuristics"], AnalysisReport)
 
 
     async def get_summary_stats(self) -> ReportSummary:

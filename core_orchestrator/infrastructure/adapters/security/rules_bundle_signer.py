@@ -15,10 +15,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_internal_token() -> Optional[str]:
-    """Retrieve MCP_INTERNAL_TOKEN from environment.
-    
+    """
+    Retrieve the internal token from the environment variables.
+
+    This function attempts to fetch the value of the environment variable
+    'MCP_INTERNAL_TOKEN'. If the variable is not set, the function returns
+    None.
+
     Returns:
-        The token string or None if not configured.
+        Optional[str]: The value of the 'MCP_INTERNAL_TOKEN' environment
+        variable, or None if it is not set.
     """
     return os.getenv("MCP_INTERNAL_TOKEN")
 
@@ -50,13 +56,24 @@ def sign_rules_bundle(rules_bundle: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def verify_rules_bundle_signature(rules_bundle: Dict[str, Any]) -> bool:
-    """Verify HMAC-SHA256 signature of rules_bundle.
-    
-    Args:
-        rules_bundle: The rules bundle with expected '__signature__' field
-    
+    """
+    Verifies the HMAC signature of a rule bundle to ensure its integrity.
+
+    This function checks if the provided rules bundle contains a valid HMAC signature
+    that matches the expected one based on the internal token and content of the rule
+    bundle. If the bundle is not a dictionary, lacks a signature field, or the signature
+    fails validation, appropriate warnings or errors are logged, and the function returns
+    False.
+
+    Parameters:
+        rules_bundle (Dict[str, Any]): The rule bundle to verify. Must be a dictionary
+            containing a "__signature__" field alongside other content.
+
     Returns:
-        True if signature is valid, False otherwise.
+        bool: True if the signature is valid, False otherwise.
+
+    Raises:
+        This function does not raise any exceptions. Any issues are logged internally.
     """
     if not isinstance(rules_bundle, dict):
         logger.warning("rules_bundle is not a dictionary")

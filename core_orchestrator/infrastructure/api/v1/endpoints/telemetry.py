@@ -6,7 +6,7 @@ from core_orchestrator.infrastructure.adapters.security.tenant_auth_adapter impo
 from core_orchestrator.infrastructure.dto.responses import OperationResponseDTO
 from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
-from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryManagerWindowService
 from core_orchestrator.infrastructure.api.dependencies.general_dependencies import get_telemetry_service, \
     get_telemetry_processing_service
 
@@ -27,7 +27,7 @@ async def ingest_batch_events(
     tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
     source_id: Annotated[str, Depends(get_source_id)],
     telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)] ,
-    telemetry_processing_service: Annotated[TelemetryProcessingService, Depends(get_telemetry_processing_service)],
+    telemetry_processing_service: Annotated[TelemetryManagerWindowService, Depends(get_telemetry_processing_service)],
 ):
     """Batch ingest telemetry events with multitenant isolation and source tracking.
     

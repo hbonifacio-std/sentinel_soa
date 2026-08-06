@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core_orchestrator.application.modules.analysis_reports.services.analysis_service import AiAnalysis
+from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysis
 from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 

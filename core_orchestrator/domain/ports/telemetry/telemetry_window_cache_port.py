@@ -83,6 +83,16 @@ class TelemetryWindowCachePort(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    async def force_expire_window(self, key: str, expire_seconds: int = 1) -> None:
+        """
+        Forces the TTL marker for a window to expire soon so the worker can process it.
+
+        Implementations should update the auxiliary expiration key associated with the
+        window without appending new data to the list itself.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
     async def get_active_window_keys(self, pattern: str) -> List[str]:
         """
         Provides an abstract method signature for retrieving active window keys with a specified
@@ -153,15 +163,7 @@ class TelemetryWindowCachePort(ABC):
         """
         raise NotImplementedError
 
-class TelemetryWindowNotificationExpiratoryPort(ABC):
-    """
-    Abstract base class for handling telemetry window notification expiratory port.
 
-    This class serves as a contract for managing messages and listening mechanisms
-    in a telemetry system. It provides abstract methods that subclasses must implement,
-    enabling them to define how messages are processed and how the
-    listening behavior is started.
-    """
     @abstractmethod
     async def _handle_message(self, message: dict) -> None:
         """

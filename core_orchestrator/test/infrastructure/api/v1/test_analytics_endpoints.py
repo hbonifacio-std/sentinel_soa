@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from core_orchestrator.infrastructure.api.v1.endpoints.analytics import router
-from core_orchestrator.application.modules.analysis_reports.services.analytics_service import CrossTenantAccessError
+from core_orchestrator.application.modules.telemetry.telemetry_report_service import CrossTenantAccessError
 from core_orchestrator.infrastructure.api.dependencies import get_analytics_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
 from core_orchestrator.domain.entities.auth.user import UserInDB

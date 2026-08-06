@@ -4,7 +4,7 @@ from core_orchestrator.domain.exceptions.auth_exceptions import InvalidTokenErro
 from core_orchestrator.domain.ports.auth.api_key_cipher_port import ApiKeyCipherPort
 
 
-class ApiKeyCipher(ApiKeyCipherPort):
+class ApiKeyCipherAdapter(ApiKeyCipherPort):
     """
     Provides encryption and decryption functionalities for API keys using the Fernet cipher.
 

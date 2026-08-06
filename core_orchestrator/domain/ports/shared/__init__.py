@@ -1,6 +1,6 @@
-from ..rules.audit_repository import AuditRepository
+from ..rules.audit_repository import AuditRulesRepositoryPort
 
 __all__ = [
-    "AuditRepository"
+    "AuditRulesRepositoryPort"
 ]
 

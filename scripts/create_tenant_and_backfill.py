@@ -2,7 +2,7 @@
 
 Usage:
   - Set environment variables: TENANT_ID and TENANT_API_KEY
-  - Optionally set BACKFILL_COLLECTIONS to a comma-separated list (raw_telemetry,analysis_reports,heuristic_rules)
+  - Optionally set BACKFILL_COLLECTIONS to a comma-separated list (raw_telemetry,rules_heuristics,heuristic_rules)
 
 This script connects using core_orchestrator.infrastructure.config.database.DatabaseManager and performs safe operations.
 """

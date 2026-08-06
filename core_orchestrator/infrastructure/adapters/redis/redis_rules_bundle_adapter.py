@@ -1,4 +1,4 @@
-# core_orchestrator/infrastructure/cache/redis_rules_bundle_cache.py
+# core_orchestrator/infrastructure/cache/redis_rules_bundle_adapter.py
 import json
 import logging
 from datetime import datetime, timezone
@@ -17,7 +17,7 @@ RULES_UPDATED_KEY = "rules:metadata:last_updated"
 DEFAULT_RULES_TTL = 86400
 
 
-class RedisRulesBundleCache(RulesBundleCachePort):
+class RedisRulesBundleAdapter(RulesBundleCachePort):
     """
     A Redis implementation of the RulesBundleCachePort with optional tenant isolation.
     """

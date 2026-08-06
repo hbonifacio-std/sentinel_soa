@@ -5,13 +5,13 @@ from pymongo import ASCENDING, DESCENDING
 
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion
-from core_orchestrator.domain.ports.rules.rule_repository import RuleRepository as RuleRepositoryPort
+from core_orchestrator.domain.ports.rules.rule_repository import RuleRepositoryPort as RuleRepositoryPort
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
+class MongoAuditRulesAdapter(BaseRepository[HeuristicRule], RuleRepositoryPort):
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager.get_rules_db()
         super().__init__(self.db["heuristic_rules"], HeuristicRule)
@@ -64,7 +64,6 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
         if not client_id:
             return rules
 
-        # Prefer client-specific rules when same rule_id exists in global and client scopes.
         by_rule_id: Dict[str, HeuristicRule] = {}
         for rule in rules:
             existing = by_rule_id.get(rule.rule_id)
@@ -88,7 +87,6 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
         if not client_id:
             return rules
 
-        # Prefer client-specific rules over global ones when both share rule_id.
         merged_by_id: Dict[str, HeuristicRule] = {}
         for rule in rules:
             existing = merged_by_id.get(rule.rule_id)
@@ -126,7 +124,7 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
             await self.versions_collection.insert_one(doc)
             logger.info(f"Rule version {version.version_hash} inserted successfully")
         except Exception as e:
-            logger.error(f"Failed to insert rule version {version.version_hash}: {e}", exc_info=True)
+            logger.exception(f"Failed to insert rule version {version.version_hash}: {e}", exc_info=True)
             raise
         return version
 
@@ -168,24 +166,3 @@ class MongoRuleRepository(BaseRepository[HeuristicRule], RuleRepositoryPort):
         finally:
             await session.end_session()
 
-    async def ensure_indexes(self) -> None:
-        await self.heuristic_rules_collection.create_index(
-            [("client_id", ASCENDING), ("rule_id", ASCENDING)],
-            name="heuristic_rules_client_rule_idx",
-        )
-        await self.heuristic_rules_collection.create_index(
-            [("tenant_id", ASCENDING), ("rule_id", ASCENDING)],
-            name="heuristic_rules_tenant_rule_idx",
-        )
-        await self.heuristic_rules_collection.create_index(
-            [("client_id", ASCENDING), ("is_active", ASCENDING), ("updated_at", DESCENDING)],
-            name="heuristic_rules_client_active_updated_idx",
-        )
-        await self.versions_collection.create_index(
-            [("client_id", ASCENDING), ("created_at", DESCENDING)],
-            name="rule_versions_client_created_idx",
-        )
-        await self.versions_collection.create_index(
-            [("client_id", ASCENDING), ("is_active", ASCENDING)],
-            name="rule_versions_client_active_idx",
-        )

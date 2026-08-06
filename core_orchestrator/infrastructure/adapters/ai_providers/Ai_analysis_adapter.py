@@ -3,10 +3,10 @@
 import logging
 from typing import Any, Dict, List
 
-from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
+from core_orchestrator.application.modules.rules_heuristics.rules_engine_service import RulesEngineService
 from core_orchestrator.domain.entities.agent.agents import LLMResponseAnalyzer
 from core_orchestrator.domain.ports import AiAnalysisPort, LlmAnalysisPort
-from core_orchestrator.infrastructure.security.rules_bundle_signer import sign_rules_bundle
+from core_orchestrator.infrastructure.adapters.security.rules_bundle_signer import sign_rules_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,7 @@ def _build_safe_analysis_result(
 
     if safe.get("error"):
         logger.warning("MCP analysis returned an error for %s: %s", source_ip, safe.get("error"))
+        logger.warning(safe)
 
     safe["source_ip"] = source_ip
     source_id = safe.get("source_id")

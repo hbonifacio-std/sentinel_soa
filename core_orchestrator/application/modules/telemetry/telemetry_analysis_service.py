@@ -9,10 +9,9 @@ import json
 from typing import Dict, Any
 
 from core_orchestrator.domain.entities.telemetry.reports import AnalysisReport
-from core_orchestrator.domain.ports import AnalyticsReportsPorts
-from core_orchestrator.domain.ports.analysis.ia_analysis_port import AiAnalysisPort
-from core_orchestrator.domain.ports.telemetry.threat_context_service_port import ThreatContextServicePort
-from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import BaseRedisCacheAdapter
+from core_orchestrator.domain.ports.telemetry.telemetry_ia_analysis_port import AiAnalysisPort
+from core_orchestrator.domain.ports.telemetry.telemetry_reports_port import AnalyticsReportsPort
+from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import RedisBaseCacheAdapter
 
 logger = logging.getLogger("core_orchestrator.agent.orchestrator")
 
@@ -25,18 +24,16 @@ class TelemetryAnalysisService:
 
     def __init__(
         self,
-        cache_port: BaseRedisCacheAdapter,
+        redis_base_cache_port: RedisBaseCacheAdapter,
         analysis_service: AiAnalysisPort,
-        analytics_service: AnalyticsReportsPorts,
-        threat_context_service: ThreatContextServicePort,
+        analytics_service: AnalyticsReportsPort
     ):
         """
         Initializes the agent and the associated MCP client.
         """
-        self.cache_port = cache_port
+        self.cache_port = redis_base_cache_port
         self.analysis_service = analysis_service
         self.analytics_service = analytics_service
-        self.threat_context_service = threat_context_service
 
     async def _check_cache(self, telemetry_payload: Dict[str, Any]) -> str | None:
         """Checks Redis for a cached analysis result."""

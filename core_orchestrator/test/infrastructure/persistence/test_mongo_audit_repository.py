@@ -3,8 +3,8 @@ Tests for MongoAuditRepository.
 Uses mocked MongoDB collection (motor-like AsyncMock).
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
+from datetime import timezone
 
 
 # ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ def audit_repo(mock_collection):
     mock_db_manager = MagicMock()
     mock_db_manager.get_rules_db.return_value = mock_db
 
-    from core_orchestrator.infrastructure.persistence.mongo_audit_repository import MongoAuditRepository
-    repo = MongoAuditRepository(mock_db_manager)
+    from core_orchestrator.infrastructure.adapters.mongodb.mongo_audit_repository import MongoAuditRulesAdapter
+    repo = MongoAuditRulesAdapter(mock_db_manager)
     return repo, mock_collection
 
 

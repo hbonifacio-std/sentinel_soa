@@ -10,7 +10,7 @@ async def main(tenant_id: str | None):
     dbm.connect()
     try:
         sentinel_db = dbm.get_sentinel_db()
-        collections = ["raw_telemetry", "analysis_reports", "heuristic_rules"]
+        collections = ["raw_telemetry", "rules_heuristics", "heuristic_rules"]
         for c in collections:
             coll = sentinel_db[c]
             # motor-style async count

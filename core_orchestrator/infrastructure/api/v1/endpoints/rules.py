@@ -12,8 +12,8 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request, status, Depe
 from pydantic import BaseModel, Field
 
 # New imports for refactored architecture
-from core_orchestrator.application.modules.analysis_reports.services.rule_service import RuleService
-from core_orchestrator.application.modules.analysis_reports.services.rules_engine_service import RulesEngineService
+from core_orchestrator.application.modules.rules_heuristics.rule_service import RuleService
+from core_orchestrator.application.modules.rules_heuristics.rules_engine_service import RulesEngineService
 from core_orchestrator.domain.ports.rules.rule_validator_port import RuleValidatorPort
 
 

@@ -89,6 +89,7 @@ class AnalysisReport:
     mitre_sub_technique_id: Optional[str] = None
     threat_level: Optional[str] = None
     threat_score: Optional[float] = None
+    error: Optional[str] = None
     indicators_found: List[str] = field(default_factory=list)
     reasoning_summary: Optional[str] = None
     recommendation: Optional[str] = None

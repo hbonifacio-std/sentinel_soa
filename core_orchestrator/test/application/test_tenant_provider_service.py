@@ -39,7 +39,7 @@ async def test_get_default_provider_config_success():
     tenant = _build_test_tenant("acme")
     repo.get_by_client_id.return_value = tenant
 
-    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, cache_repository=cache)
+    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, redis_tenant=cache)
     config = await service.get_default_provider_config("acme")
 
     assert config is not None
@@ -59,7 +59,7 @@ async def test_get_provider_config_for_model_raises_if_not_enabled():
     tenant = _build_test_tenant("acme")
     repo.get_by_client_id.return_value = tenant
 
-    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, cache_repository=cache)
+    service = TenantProviderAiService(tenant_repository=repo, cipher=cipher, redis_tenant=cache)
 
     with pytest.raises(ValueError, match="not enabled"):
         await service.get_provider_config_for_model("acme", "non-existent-model")

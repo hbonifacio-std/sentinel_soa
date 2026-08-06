@@ -21,7 +21,7 @@ _TEST_CASES: List[Dict[str, Any]] = [
 ]
 
 
-class DefaultRuleValidatorService(RuleValidatorPort):
+class DefaultRuleValidatorAdapter(RuleValidatorPort):
 
     def validate_rule(self, rule: HeuristicRule, existing_rule_ids: List[str] | None = None) -> RuleValidationResult:
         errors: List[str] = []

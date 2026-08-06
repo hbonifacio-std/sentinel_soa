@@ -5,6 +5,7 @@ Groups individual HTTP telemetry events by time windows
 based on the source IP address, consolidating traffic distribution metrics.
 """
 import logging
+import re
 from dataclasses import asdict
 from typing import List, Optional, cast
 
@@ -18,7 +19,7 @@ from core_orchestrator.domain.ports.telemetry.telemetry_window_cache_port import
 logger = logging.getLogger(__name__)
 
 
-class TelemetryProcessingService:
+class TelemetryManagerWindowService:
     def __init__(self, window_cache: TelemetryWindowCachePort, window_duration_seconds: int, window_threshold_requests: int):
         self.window_duration = window_duration_seconds
         self.window_threshold_requests = window_threshold_requests
@@ -40,8 +41,11 @@ class TelemetryProcessingService:
         Returns:
         None
         """
-        key = self._build_window_key(log_line.client_id, log_line.source_ip)
-        await self._window_cache.add_to_window(key, log_line.model_dump_json(), self.window_duration)
+        await self._store_log_payloads(
+            client_id=log_line.client_id,
+            source_ip=log_line.source_ip,
+            payloads=[log_line.model_dump_json()],
+        )
 
     async def add_multiple_logs_events(self, logs_event: List[LogEvent]) -> None:
         """
@@ -62,9 +66,12 @@ class TelemetryProcessingService:
         """
         if not logs_event:
             return
-        key = self._build_window_key(logs_event[0].client_id, logs_event[0].source_ip)
         payloads = [dataclass_to_string_json(line) for line in logs_event]
-        await self._window_cache.add_multiple_to_window(key, payloads, self.window_duration)
+        await self._store_log_payloads(
+            client_id=logs_event[0].client_id,
+            source_ip=logs_event[0].source_ip,
+            payloads=payloads,
+        )
 
     async def get_active_windows(self) -> List[str]:
         """
@@ -143,8 +150,60 @@ class TelemetryProcessingService:
         current_size = await self.get_window_size(key)
         return current_size >= self.window_threshold_requests
 
+    async def start_listening(self) -> None:
+        """
+        Starts listening for messages from the window cache.
+
+        This method initiates the listening process for incoming messages from the
+        window cache. It is an asynchronous operation that will continue to listen
+        for messages until the process is stopped.
+
+        Returns:
+            None
+        """
+        await self._window_cache.start_listening()
+
+    async def _store_log_payloads(self, client_id: Optional[str], source_ip: str, payloads: List[str]) -> None:
+        remaining_payloads = list(payloads)
+        while remaining_payloads:
+            key = await self._resolve_window_key(client_id, source_ip)
+            current_size = await self.get_window_size(key)
+            remaining_capacity = self.window_threshold_requests - current_size
+            if remaining_capacity <= 0:
+                await self._window_cache.force_expire_window(key, 1)
+                continue
+
+            chunk = remaining_payloads[:remaining_capacity]
+            await self._window_cache.add_multiple_to_window(key, chunk, self.window_duration)
+            remaining_payloads = remaining_payloads[len(chunk):]
+
+            if current_size + len(chunk) >= self.window_threshold_requests:
+                await self._window_cache.force_expire_window(key, 1)
+
+    async def _resolve_window_key(self, client_id: Optional[str], source_ip: str) -> str:
+        base_key = self._build_window_key(client_id, source_ip)
+        pattern = self._build_window_pattern(client_id, source_ip)
+        active_keys = await self._window_cache.get_active_window_keys(pattern)
+        key_regex = self._build_window_regex(client_id, source_ip)
+        active_keys = [key for key in active_keys if key_regex.match(key)]
+        if not active_keys:
+            return base_key
+
+        key_suffix = self._extract_window_suffix(base_key)
+        latest_key = base_key
+        latest_suffix = key_suffix
+        for active_key in active_keys:
+            suffix = self._extract_window_suffix(active_key)
+            if suffix >= latest_suffix:
+                latest_suffix = suffix
+                latest_key = active_key
+
+        if await self.get_window_size(latest_key) >= self.window_threshold_requests:
+            return self._build_window_key(client_id, source_ip, latest_suffix + 1)
+        return latest_key
+
     @staticmethod
-    def _build_window_key(tenant_id: Optional[str], source_ip: str) -> str:
+    def _build_window_key(tenant_id: Optional[str], source_ip: str, suffix: Optional[int] = None) -> str:
         """
         Builds a unique key for identifying rate-limiting windows.
 
@@ -161,4 +220,26 @@ class TelemetryProcessingService:
             str: A unique string key for rate-limiting purposes.
         """
         safe_tenant = tenant_id or "default"
-        return f"window:{safe_tenant}:{source_ip}"
+        base_key = f"window:{safe_tenant}:{source_ip}"
+        if suffix and suffix > 1:
+            return f"{base_key}:{suffix}"
+        return base_key
+
+    @staticmethod
+    def _build_window_pattern(tenant_id: Optional[str], source_ip: str) -> str:
+        safe_tenant = tenant_id or "default"
+        return f"window:{safe_tenant}:{source_ip}*"
+
+    @staticmethod
+    def _build_window_regex(tenant_id: Optional[str], source_ip: str) -> re.Pattern[str]:
+        safe_tenant = re.escape(tenant_id or "default")
+        safe_source = re.escape(source_ip)
+        return re.compile(rf"^window:{safe_tenant}:{safe_source}(?::(\d+))?$")
+
+    @staticmethod
+    def _extract_window_suffix(key: str) -> int:
+        match = re.match(r"^window:[^:]+:[^:]+(?::(\d+))?$", key)
+        if not match:
+            return 1
+        suffix = match.group(1)
+        return int(suffix) if suffix else 1

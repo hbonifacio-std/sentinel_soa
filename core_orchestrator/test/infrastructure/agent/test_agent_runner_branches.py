@@ -15,8 +15,8 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import (
-    TelemetryProcessingWorker, _PendingAnalysis,
+from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestrator_service import (
+    TelemetryAnalysisOrchestratorService, _PendingAnalysis,
     _MCP_RETRY_INITIAL_DELAY_S
 )
 
@@ -25,7 +25,7 @@ from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_work
 # Shared factory
 # ---------------------------------------------------------------------------
 def make_runner():
-    return TelemetryProcessingWorker(
+    return TelemetryAnalysisOrchestratorService(
         telemetry_processing_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),
@@ -46,7 +46,7 @@ class TestWindowProcessorStopped:
         with patch("asyncio.sleep", AsyncMock()):
             task = asyncio.create_task(runner._window_processor_task())
             await asyncio.sleep(0)
-            runner._stop_event.set()
+            runner._stop_event.cache_tenant_provider_ai()
             await asyncio.sleep(0)
             # Task should finish on its own (not need cancel)
             await asyncio.wait_for(task, timeout=2)
@@ -91,7 +91,7 @@ class TestConsumerTimeoutContinue:
         async def counting_wait_for(coro, timeout):
             iteration_count[0] += 1
             if iteration_count[0] >= 2:
-                runner._stop_event.set()
+                runner._stop_event.cache_tenant_provider_ai()
             raise asyncio.TimeoutError()
 
         with patch("asyncio.wait_for", side_effect=counting_wait_for):
@@ -117,7 +117,7 @@ class TestConsumerAgentNoneRequeue:
         async def mock_sleep(t):
             calls[0] += 1
             if calls[0] >= 1:
-                runner._stop_event.set()
+                runner._stop_event.cache_tenant_provider_ai()
 
         with patch("asyncio.sleep", side_effect=mock_sleep):
             task = asyncio.create_task(runner._analysis_consumer_task())
@@ -150,7 +150,7 @@ class TestConsumerUnexpectedException:
             call_count[0] += 1
             if call_count[0] == 1:
                 raise RuntimeError("Unexpected boom!")
-            runner._stop_event.set()
+            runner._stop_event.cache_tenant_provider_ai()
 
         runner._run_and_handle_failure = exploding_run
 
@@ -162,7 +162,7 @@ class TestConsumerUnexpectedException:
             try:
                 await asyncio.wait_for(task, timeout=3)
             except asyncio.TimeoutError:
-                runner._stop_event.set()
+                runner._stop_event.cache_tenant_provider_ai()
                 task.cancel()
                 try:
                     await task
@@ -199,7 +199,7 @@ class TestConsumerShutdownInFlight:
             # Let consumer pick up items and launch in-flight tasks
             await asyncio.sleep(0.05)
             # Signal stop (in-flight tasks are still running)
-            runner._stop_event.set()
+            runner._stop_event.cache_tenant_provider_ai()
             # Resolve in-flight tasks
             slow_done.set()
             try:
@@ -219,7 +219,7 @@ class TestConsumerShutdownInFlight:
         runner.agent = AsyncMock()
 
         # Stop immediately without consuming
-        runner._stop_event.set()
+        runner._stop_event.cache_tenant_provider_ai()
 
         # Manually add items to queue (bypass enqueue to avoid consumer)
         await runner._analysis_queue.put(_PendingAnalysis(window_data={}, window_key="leftover"))
@@ -247,7 +247,7 @@ class TestMcpReconnectLoopDetailedBranches:
 
         async def fake_sleep(t):
             sleep_calls.append(t)
-            runner._stop_event.set()
+            runner._stop_event.cache_tenant_provider_ai()
 
         with patch("asyncio.sleep", side_effect=fake_sleep):
             await runner._mcp_reconnect_loop()
@@ -279,7 +279,7 @@ class TestMcpReconnectLoopDetailedBranches:
             mgr.close = AsyncMock()
 
             async def fake_wait_for(coro, timeout):
-                runner._stop_event.set()
+                runner._stop_event.cache_tenant_provider_ai()
                 return await coro
 
             sleep_calls = []
@@ -310,7 +310,7 @@ class TestMcpReconnectLoopDetailedBranches:
         async def fake_wait_for(coro, timeout):
             result = await coro
             reconnect_done.set()
-            runner._stop_event.set()
+            runner._stop_event.cache_tenant_provider_ai()
             return result
 
         with patch(

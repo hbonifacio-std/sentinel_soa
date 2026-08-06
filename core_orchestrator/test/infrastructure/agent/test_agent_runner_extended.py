@@ -16,7 +16,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_worker import TelemetryProcessingWorker, _PendingAnalysis
+from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestrator_service import TelemetryAnalysisOrchestratorService, _PendingAnalysis
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ from core_orchestrator.infrastructure.adapters.workers.telemetry_processing_work
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def runner():
-    return TelemetryProcessingWorker(
+    return TelemetryAnalysisOrchestratorService(
         telemetry_processing_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),
@@ -192,7 +192,7 @@ class TestWindowProcessorTaskBytesKey:
 
         task = asyncio.create_task(runner._window_processor_task())
         await asyncio.sleep(0.05)
-        runner._stop_event.set()
+        runner._stop_event.cache_tenant_provider_ai()
         await asyncio.sleep(0.02)
         try:
             task.cancel()
@@ -213,7 +213,7 @@ class TestWindowProcessorTaskBytesKey:
 
         task = asyncio.create_task(runner._window_processor_task())
         await asyncio.sleep(0.05)
-        runner._stop_event.set()
+        runner._stop_event.cache_tenant_provider_ai()
         await asyncio.sleep(0.02)
         try:
             task.cancel()

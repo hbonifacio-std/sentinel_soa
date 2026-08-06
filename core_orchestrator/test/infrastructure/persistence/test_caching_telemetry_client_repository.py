@@ -1,13 +1,9 @@
 """Tests for CachingTelemetryClientRepository."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timezone
 
-from core_orchestrator.infrastructure.persistence.caching_telemetry_client_repository import (
-    CachingTelemetryClientRepositoryPort,
-    CACHE_KEY_PREFIX_ID,
-    CACHE_KEY_PREFIX_PK,
-    CACHE_TTL_SECONDS,
+from core_orchestrator.infrastructure.adapters.redis.redis_telemetry_tenant_adapter import (
+    RedisTelemetryTenantRepositoryAdapter,
 )
 from core_orchestrator.domain.entities.auth.telemetry_client import (
     TelemetryClientInDB,
@@ -41,9 +37,9 @@ def mock_cache():
 
 @pytest.fixture
 def repo(mock_primary, mock_cache):
-    return CachingTelemetryClientRepositoryPort(
+    return RedisTelemetryTenantRepositoryAdapter(
         primary_repository=mock_primary,
-        cache=mock_cache,
+        redis_client=mock_cache,
     )
 
 

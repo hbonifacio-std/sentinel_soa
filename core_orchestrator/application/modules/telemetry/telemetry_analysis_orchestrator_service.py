@@ -18,12 +18,16 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Dict, Any, Optional
 
-from core_orchestrator.application.modules.analysis_reports.services.analytics_service import ReportTelemetryService
+from core_orchestrator.application.modules.telemetry.telemetry_report_service import TelemetryReportService
+from core_orchestrator.domain.exceptions.mcp_exceptions import MCPConnectionError
+from core_orchestrator.domain.entities.telemetry.telemetry_window import build_web_activity_window
+from core_orchestrator.domain.ports.mcp_server.mcp_client_port import MCPClientPort
 from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
-from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryProcessingService
+from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryManagerWindowService
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
-from core_orchestrator.infrastructure.cache.cache_service import CacheService
+from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
+
 
 logger = logging.getLogger("core_orchestrator.agent.runner")
 
@@ -58,22 +62,20 @@ class _PendingAnalysis:
         return self
 
 
-class TelemetryProcessingWorker:
+class TelemetryAnalysisOrchestratorService:
     def __init__(
         self,
-        telemetry_processing_service: TelemetryProcessingService,
-        cache_service: CacheService,
+        telemetry_processing_service: TelemetryManagerWindowService,
         telemetry_service: TelemetryService,
-        analytics_service: ReportTelemetryService,
-        agent_factory: Callable[[MCPClientManagerAdapter], TelemetryAnalysisService],
+        analytics_service: TelemetryReportService,
+        agent_factory: Callable[[MCPClientPort], TelemetryAnalysisService],
     ):
         self.telemetry_processing_service = telemetry_processing_service
-        self.cache_service = cache_service
         self.telemetry_service = telemetry_service
         self.analytics_service = analytics_service
         self._agent_factory = agent_factory
-        self.mcp_manager: Optional[MCPClientManagerAdapter] = None
-        self.agent: Optional[TelemetryAnalysisService] = None
+        self.mcp_manager: Optional[MCPClientPort] = None
+        self.agent: Optional[TelemetryAnalysisService]= None
 
         self._analysis_queue: asyncio.Queue[_PendingAnalysis] = asyncio.Queue(
             maxsize=_ANALYSIS_QUEUE_MAXSIZE
@@ -137,67 +139,21 @@ class TelemetryProcessingWorker:
 
         return await self.agent.process_telemetry_window(telemetry_window)
 
-
-    async def _window_processor_task(self) -> None:
+    async def process_telemetry_window(self, telemetry_payload: Dict[str, Any]) -> str:
         """
-        Handles window processing tasks within an asynchronous loop.
-
-        This method continuously retrieves active windows from the telemetry processing service,
-        processes each retrieved window, and handles any errors that occur during processing.
-        The loop runs until the stop event is triggered. A delay is introduced between iterations
-        for efficient resource utilization.
-
-        Raises:
-            asyncio.CancelledError: Raised when the task is canceled to handle cleanup.
-
+        Normalizes a raw Redis window payload or an already aggregated telemetry window
+        and forwards it to the analysis pipeline.
         """
-        logger.info("Window processor started.")
-        while not self._stop_event.is_set():
-            try:
-                keys = await self.telemetry_processing_service.get_active_windows()
-                for key in keys:
-                    decoded_key = key.decode("utf-8") if isinstance(key, bytes) else key
-                    await self._process_single_window(decoded_key)
-            except asyncio.CancelledError:
-                logger.info("Window processor cancelled.")
-                raise
-            except Exception as e:
-                logger.exception("Error in window processor: %s", e)
+        if "events" in telemetry_payload and isinstance(telemetry_payload.get("events"), list):
+            events = [
+                LogEventDTO.model_validate(event)
+                for event in telemetry_payload["events"]
+            ]
+            telemetry_window = build_web_activity_window(events).model_dump()
+            return await self.run_analysis(telemetry_window)
 
-            await asyncio.sleep(5)
+        return await self.run_analysis(telemetry_payload)
 
-        logger.info("Window processor stopped.")
-
-    async def _process_single_window(self, decoded_key: str) -> None:
-        """
-        Processes a single telemetry data window asynchronously.
-
-        The method checks whether the telemetry data window associated with
-        the given decoded key is full, or if its Time-To-Live (TTL) is within
-        a critical threshold. If either condition is true, it attempts to acquire
-        a lock to prevent concurrent processing. Once the lock is secured,
-        it processes the telemetry window and enqueues the extracted data
-        for further analysis. The lock is safely released after processing.
-
-        Parameters:
-        decoded_key: str
-            The decoded key identifying the telemetry data window to be processed.
-        """
-        is_full = await self.telemetry_processing_service.is_window_full(decoded_key)
-        ttl = await self.cache_service.get_ttl(decoded_key)
-
-        if is_full or (0 < ttl < 10):
-            lock = self.cache_service.lock(f"lock:{decoded_key}", timeout=10)
-            if await lock.acquire(blocking=False):
-                try:
-                    telemetry_window = await self.telemetry_processing_service.process_window(decoded_key)
-                    if telemetry_window:
-                        await self._enqueue_analysis(
-                            telemetry_window.model_dump(),
-                            window_key=decoded_key
-                        )
-                finally:
-                    await lock.release()
 
     async def _enqueue_analysis(self, window_data: Dict[str, Any], window_key: str = "") -> None:
         """
@@ -324,10 +280,11 @@ class TelemetryProcessingWorker:
         pending.increment()
         window_key = pending.window_key or "unknown"
         try:
+            if self.agent is None:
+                raise MCPConnectionError("MCP not ready. Skipping window analysis.")
             await self.agent.process_telemetry_window(pending.window_data)
             logger.info(f"Analysis completed for window '{window_key}' ...")
         except Exception as e:
-
             logger.warning(
                 f"Analysis failed for window '{window_key}' "
                 f"(attempt {pending.attempts}/{_ANALYSIS_MAX_RETRIES}): {e}"
@@ -462,9 +419,6 @@ class TelemetryProcessingWorker:
         if self._analysis_consumer_handle:
             self._analysis_consumer_handle.add_done_callback(self._on_background_task_done)
 
-        self._window_processor_handle = asyncio.create_task(
-            self._window_processor_task(), name="window-processor"
-        )
         if self._window_processor_handle:
             self._window_processor_handle.add_done_callback(self._on_background_task_done)
 

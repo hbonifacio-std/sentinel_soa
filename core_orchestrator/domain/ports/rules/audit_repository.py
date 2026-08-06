@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Dict, Any
 
-class AuditRepository(ABC):
+class AuditRulesRepositoryPort(ABC):
     @abstractmethod
     async def get_logs(
         self,
