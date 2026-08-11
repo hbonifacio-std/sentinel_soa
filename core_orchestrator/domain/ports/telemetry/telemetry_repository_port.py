@@ -9,7 +9,7 @@ from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEven
 
 class TelemetryRepositoryPort(ABC):
     @abstractmethod
-    async def insert_log_event(self, log_event: LogEventDTO) -> str:
+    async def insert_log_event(self, log_event: LogEvent) -> str:
         ...
 
     @abstractmethod

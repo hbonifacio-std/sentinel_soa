@@ -5,6 +5,7 @@ from typing import Optional
 logger = logging.getLogger("core_orchestrator.domain.ports.agent.ai_providers")
 
 class AiProvider(ABC):
+
     """
       Abstract interface defining the contract for all LLM providers.
 
@@ -12,7 +13,17 @@ class AiProvider(ABC):
       from this class and implement all abstract methods.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        model_name: str,
+        api_key: str,
+        max_output_tokens: Optional[int] = 12000,
+        base_url: Optional[str] = "",
+    ):
+        self._model_name = model_name
+        self._api_key = api_key
+        self._max_output_tokens = max_output_tokens
+        self._base_url = (base_url or "http://localhost:11434").rstrip("/")
         logger.debug(f"Initializing AI provider: {self.provider_name}")
 
     @abstractmethod
@@ -24,7 +35,7 @@ class AiProvider(ABC):
         by validate_response().
 
         Args:
-            prompt (str): Complete prompt with context, instructions and data to analyze
+            prompt (str): Complete prompt with context, instructions, and data to analyze
             max_tokens (Optional[int]): Response token limit (if applicable)
 
         Returns:
@@ -68,7 +79,7 @@ class AiProvider(ABC):
         Verify that the provider is available and functional.
 
         Must make a minimal call (without significant cost) to
-        verify connectivity, authentication and service availability.
+        verify connectivity, authentication, and service availability.
 
         Returns:
             bool: True if the provider is available, False otherwise

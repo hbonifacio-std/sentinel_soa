@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
-from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
+from core_orchestrator.infrastructure.adapters.ai_providers.llm_executer_analysis_adapter import LlmExecuterAnalysisAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.agent.mcp_threat_context_adapter import MCPThreatContextAdapter
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
@@ -13,7 +13,7 @@ def mock_mcp_manager():
 
 @pytest.mark.asyncio
 async def test_llm_analysis_adapter(mock_mcp_manager):
-    adapter = MCPLlmAnalysisAdapter(mock_mcp_manager)
+    adapter = LlmExecuterAnalysisAdapter(mock_mcp_manager)
     
     # Text content result case
     mock_content = MagicMock()
@@ -22,19 +22,19 @@ async def test_llm_analysis_adapter(mock_mcp_manager):
     mock_result.content = [mock_content]
     mock_mcp_manager.call_tool.return_value = mock_result
     
-    res = await adapter.analyze_web_activity({"ip": "1.2.3.4"})
+    res = await adapter.ask_llm({"ip": "1.2.3.4"})
     assert res["threat_detected"] is True
     assert res["threat_score"] == 85
     
     # Dict fallback case
     mock_mcp_manager.call_tool.return_value = {"threat_detected": False}
-    res = await adapter.analyze_web_activity({"ip": "1.2.3.4"})
+    res = await adapter.ask_llm({"ip": "1.2.3.4"})
     assert res["threat_detected"] is False
 
 
 @pytest.mark.asyncio
 async def test_llm_analysis_adapter_timeout_returns_fallback(mock_mcp_manager):
-    adapter = MCPLlmAnalysisAdapter(mock_mcp_manager)
+    adapter = LlmExecuterAnalysisAdapter(mock_mcp_manager)
 
     async def slow_call_tool(*args, **kwargs):
         await asyncio.sleep(0.05)
@@ -42,7 +42,7 @@ async def test_llm_analysis_adapter_timeout_returns_fallback(mock_mcp_manager):
     mock_mcp_manager.call_tool.side_effect = slow_call_tool
 
     with patch("core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter._MCP_TOOL_TIMEOUT_S", 0.01):
-        result = await adapter.analyze_web_activity({"source_ip": "1.2.3.4"})
+        result = await adapter.ask_llm({"source_ip": "1.2.3.4"})
 
     assert result["source_ip"] == "1.2.3.4"
     assert result["threat_detected"] is False

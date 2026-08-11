@@ -6,7 +6,7 @@ from functools import lru_cache
 from datetime import timedelta
 
 from core_orchestrator.domain.ports.mcp_server.mcp_client_port import MCPClientPort
-from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysis
+from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysisAdapter
 from core_orchestrator.application.modules.telemetry.telemetry_report_service import TelemetryReportService
 from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
 from core_orchestrator.application.modules.auth_clients.tenant_service import TenantService
@@ -15,6 +15,7 @@ from core_orchestrator.application.modules.rules_heuristics.rules_engine_service
 from core_orchestrator.application.modules.auth_clients.user_service import UserService
 from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryManagerWindowService
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
+from core_orchestrator.infrastructure.adapters.ai_providers.provider_factory import ProviderFactory
 from core_orchestrator.infrastructure.adapters.helper.default_rule_validator_adapter import DefaultRuleValidatorAdapter
 from core_orchestrator.application.modules.forensic.forensic_service import ForensicService
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_audit_repository import MongoAuditRepositoryAdapter
@@ -35,7 +36,7 @@ from core_orchestrator.infrastructure.adapters.mongodb.mongo_tenant_repository_a
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_forensic_analysis_repository_adapter import MongoForensicAnalysisRepositoryAdapter
 from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
-from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
+from core_orchestrator.infrastructure.adapters.ai_providers.llm_executer_analysis_adapter import LlmExecuterAnalysisAdapter
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestrator_service import TelemetryAnalysisOrchestratorService
 from core_orchestrator.infrastructure.adapters.redis.base_redis_adapter import RedisBaseCacheAdapter
@@ -81,6 +82,9 @@ class Container:
         self.mongo_user_repository_adapter = None
         self.mongo_tenant_repository_adapter = None
         self.mongo_forensic_repository_adapter = None
+
+        # AI provider
+        self.ia_provider_client = None
 
         # password hasher and token service
         self.password_hasher_adapter = None
@@ -198,10 +202,10 @@ class Container:
 
         # Agent Runner — agent_factory centralizes MCP wiring upon each reconnection.
         self.telemetry_analysis_orchestrator_service = TelemetryAnalysisOrchestratorService(
-            telemetry_processing_service=self.telemetry_manager_window_service,
+            telemetry_manager_window_service=self.telemetry_manager_window_service,
             telemetry_service=self.telemetry_service,
-            analytics_service=self.telemetry_reports_service,
-            agent_factory=self._telemetry_analysis_service,
+            telemetry_report_service=self.telemetry_reports_service,
+            telemetry_analysis_service=self._telemetry_analysis_service,
         )
         await self.telemetry_manager_window_service.start_listening()
         self.telemetry_window_analysis_worker = RedisTelemetryWindowAnalysisWorker(
@@ -230,22 +234,25 @@ class Container:
         TelemetryAnalysisService: A fully constructed service instance for
         telemetry analysis.
         """
-        llm_adapter = MCPLlmAnalysisAdapter(mcp_manager=mcp_manager)
 
-        analysis_svc = AiAnalysis(
-            llm_analysis_port=llm_adapter,
+        llm_adapter = LlmExecuterAnalysisAdapter(
+            mcp_manager=mcp_manager
+        )
+
+        analysis_svc = AiAnalysisAdapter(
+            llm_analysis=llm_adapter,
             rules_engine_service=self.rules_engine_service,
             tenant_provider_service=self.tenant_provider_ai_service,
+            provider_factory=ProviderFactory(cipher_adapter=self.api_key_cipher_adapter)
         )
 
         return TelemetryAnalysisService(
-            redis_base_cache_port=self.redis_base_telemetry_cache,
-            analytics_service=self.telemetry_reports_service,
-            analysis_service=analysis_svc,
+            analytics_report=self.telemetry_reports_service,
+            ia_analysis=analysis_svc,
         )
 
     async def shutdown(self):
-        """Cleans up resources, closing connections and stopping services."""
+        """Cleans up resources, closing connections, and stopping services."""
         if self.telemetry_window_analysis_worker:
             await self.telemetry_window_analysis_worker.stop()
         if self.telemetry_analysis_orchestrator_service:

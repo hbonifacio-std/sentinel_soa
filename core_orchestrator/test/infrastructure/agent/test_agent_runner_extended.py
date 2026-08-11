@@ -25,11 +25,11 @@ from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestr
 @pytest.fixture
 def runner():
     return TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=AsyncMock(),
+        telemetry_manager_window_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),
-        analytics_service=AsyncMock(),
-        agent_factory=MagicMock(),
+        telemetry_report_service=AsyncMock(),
+        telemetry_analysis_service=MagicMock(),
     )
 
 
@@ -64,20 +64,20 @@ class TestTeardownMcp:
     async def test_teardown_clears_manager_and_agent(self, runner):
         mock_mgr = AsyncMock()
         runner.mcp_manager = mock_mgr
-        runner.agent = MagicMock()
+        runner.telemetry_analysis_service = MagicMock()
 
         await runner._teardown_mcp()
 
         mock_mgr.close.assert_awaited_once()
         assert runner.mcp_manager is None
-        assert runner.agent is None
+        assert runner.telemetry_analysis_service is None
 
     @pytest.mark.asyncio
     async def test_teardown_suppresses_close_exception(self, runner):
         mock_mgr = AsyncMock()
         mock_mgr.close = AsyncMock(side_effect=RuntimeError("oops"))
         runner.mcp_manager = mock_mgr
-        runner.agent = MagicMock()
+        runner.telemetry_analysis_service = MagicMock()
 
         await runner._teardown_mcp()  # must not raise
         assert runner.mcp_manager is None
@@ -85,7 +85,7 @@ class TestTeardownMcp:
     @pytest.mark.asyncio
     async def test_teardown_no_manager_is_safe(self, runner):
         runner.mcp_manager = None
-        runner.agent = None
+        runner.telemetry_analysis_service = None
         await runner._teardown_mcp()  # must not raise
 
 
@@ -165,7 +165,7 @@ class TestRunAndHandleFailureSuccess:
     async def test_success_does_not_enqueue(self, runner):
         agent_mock = AsyncMock()
         agent_mock.process_telemetry_window = AsyncMock(return_value={"result": "ok"})
-        runner.agent = agent_mock
+        runner.telemetry_analysis_service = agent_mock
 
         pending = _PendingAnalysis(window_data={"ip": "1.2.3.4"}, window_key="win-ok")
         runner._enqueue_analysis = AsyncMock()

@@ -23,6 +23,22 @@ AuditAction = Literal["CREATE", "UPDATE", "DELETE", "ACTIVATE", "ROLLBACK"]
 
 
 @dataclass
+class RulesStatistics:
+    total_active_rules: int
+    version_hash: str
+    cached: bool
+    last_updated: Optional[datetime]
+
+
+@dataclass
+class HealthStatus:
+    status: str
+    cached: bool
+    version_hash: str
+    last_updated: Optional[datetime]
+    source: str
+
+@dataclass
 class RuleContent:
     type: RuleType
     data: Dict[str, Any]
@@ -178,3 +194,136 @@ class RuleTestResult:
     total: int
     passed_count: int
     failures: List[str] = field(default_factory=list)
+
+@dataclass
+class RuleMatch:
+    """
+    Represents a match found by applying detection rules.
+
+    This class holds information about a single match resulting
+    from the evaluation of detection rules. It is typically used
+    to classify and score a specific detection, providing details
+    such as the matched value, associated rule, and evidence
+    collected.
+
+    Attributes:
+        category: Category of detection, such as user agents, URIs,
+            or injections.
+        match_value: Exact string or pattern detected that caused
+            the match.
+        score: Assigned score based on the rule or dictionary
+            evaluation.
+        evidence: Additional details or context about the match.
+    """
+    category: RuleCategory        # Ej: "user_agent", "uri", "injection"
+    match_value: str     # Exact string or pattern detected (e.g., "sqlmap", "/.env")
+    score: int           # Score assigned according to the dictionary/rule
+    evidence: str
+    mitre: Optional[MitreMapping] = None
+
+
+    @staticmethod
+    def extract_primary_mitre(rule_matches: List[RuleMatch]) -> Optional[MitreMapping]:
+        """
+
+        """
+        matches_with_mitre = [m for m in rule_matches if m.mitre is not None]
+        if not matches_with_mitre:
+            return None
+
+        best_match = max(matches_with_mitre, key=lambda m: m.score)
+        return best_match.mitre
+
+@dataclass(frozen=True)
+class MitreMapping:
+    tactic: str
+    tactic_id: str
+    technique: str
+    technique_id: str
+    sub_technique: Optional[str] = None
+    sub_technique_id: Optional[str] = None
+
+MITRE_CATALOG: Dict[str, MitreMapping] = {
+
+    "user_agent": MitreMapping(
+        tactic="Reconnaissance",
+        tactic_id="TA0043",
+        technique="Active Scanning",
+        technique_id="T1595",
+        sub_technique="Wordlist Scanning",
+        sub_technique_id="T1595.003",
+    ),
+    "uri": MitreMapping(
+        tactic="Reconnaissance",
+        tactic_id="TA0043",
+        technique="Active Scanning",
+        technique_id="T1595",
+        sub_technique="Vulnerability Scanning",
+        sub_technique_id="T1595.002",
+    ),
+    "sql_injection": MitreMapping(
+        tactic="Initial Access",
+        tactic_id="TA0001",
+        technique="Exploit Public-Facing Application",
+        technique_id="T1190",
+    ),
+    "path_traversal": MitreMapping(
+        tactic="Discovery",
+        tactic_id="TA0007",
+        technique="File and Directory Discovery",
+        technique_id="T1083",
+    ),
+    "command_injection": MitreMapping(
+        tactic="Execution",
+        tactic_id="TA0002",
+        technique="Command and Scripting Interpreter",
+        technique_id="T1059",
+        sub_technique="Unix Shell",
+        sub_technique_id="T1059.004",
+    ),
+    "xss": MitreMapping(
+        tactic="Initial Access",
+        tactic_id="TA0001",
+        technique="Exploit Public-Facing Application",
+        technique_id="T1190",
+    ),
+    "ssrf": MitreMapping(
+        tactic="Initial Access",
+        tactic_id="TA0001",
+        technique="Exploit Public-Facing Application",
+        technique_id="T1190",
+    ),
+    "brute_force": MitreMapping(
+        tactic="Credential Access",
+        tactic_id="TA0006",
+        technique="Brute Force",
+        technique_id="T1110",
+        sub_technique="Password Guessing",
+        sub_technique_id="T1110.001",
+    ),
+    "dos": MitreMapping(
+        tactic="Impact",
+        tactic_id="TA0040",
+        technique="Endpoint Denial of Service",
+        technique_id="T1499",
+        sub_technique="Application Exhaustion",
+        sub_technique_id="T1499.003",
+    ),
+}
+# Mapeo de Tácticas de MITRE a Fases del Cyber Kill Chain de Lockheed Martin
+TACTIC_TO_KILL_CHAIN: Dict[str, str] = {
+    "Reconnaissance": "Reconnaissance",
+    "Resource Development": "Weaponization",
+    "Initial Access": "Delivery",
+    "Execution": "Exploitation",
+    "Persistence": "Installation",
+    "Privilege Escalation": "Privilege Escalation",
+    "Defense Evasion": "Exploitation",
+    "Credential Access": "Credential Access",
+    "Discovery": "Reconnaissance",
+    "Lateral Movement": "Lateral Movement",
+    "Collection": "Actions on Objectives",
+    "Command and Control": "Command & Control",
+    "Exfiltration": "Actions on Objectives",
+    "Impact": "Actions on Objectives",
+}

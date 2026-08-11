@@ -6,8 +6,7 @@ based on the source IP address, consolidating traffic distribution metrics.
 """
 import logging
 import re
-from dataclasses import asdict
-from typing import List, Optional, cast
+from typing import List, Optional
 
 from core_orchestrator.domain.entities.telemetry import telemetry_window
 from core_orchestrator.domain.entities.telemetry.logs_event import LogEvent
@@ -23,7 +22,7 @@ class TelemetryManagerWindowService:
     def __init__(self, window_cache: TelemetryWindowCachePort, window_duration_seconds: int, window_threshold_requests: int):
         self.window_duration = window_duration_seconds
         self.window_threshold_requests = window_threshold_requests
-        self._window_cache = window_cache
+        self._telemetry_window_cache = window_cache
 
     async def add_log_event(self, log_line: LogLine) -> None:
         """
@@ -77,14 +76,14 @@ class TelemetryManagerWindowService:
         """
         Asynchronously retrieves a list of active window keys.
 
-        This method interacts with an internal cache to obtain the active window
+        This method interacts with an internal cache to get the active window
         keys matching the specified pattern. It performs the retrieval
         operation asynchronously.
 
         Returns:
             List[str]: A list of active window keys as strings.
         """
-        return await self._window_cache.get_active_window_keys("window:*")
+        return await self._telemetry_window_cache.get_active_window_keys("window:*")
 
     async def get_window_size(self, key: str) -> int:
         """
@@ -102,7 +101,7 @@ class TelemetryManagerWindowService:
             The size of the window associated with the given key.
 
         """
-        return await self._window_cache.get_window_size(key)
+        return await self._telemetry_window_cache.get_window_size(key)
 
     async def process_window(self, key: str) -> Optional[TelemetryWindow]:
         """
@@ -122,7 +121,7 @@ class TelemetryManagerWindowService:
             A telemetry window object constructed from the validated events, or None if no events
             are found.
         """
-        events_json = await self._window_cache.get_and_clear_window(key)
+        events_json = await self._telemetry_window_cache.get_and_clear_window(key)
         if not events_json:
             return None
 
@@ -161,7 +160,7 @@ class TelemetryManagerWindowService:
         Returns:
             None
         """
-        await self._window_cache.start_listening()
+        await self._telemetry_window_cache.start_listening()
 
     async def _store_log_payloads(self, client_id: Optional[str], source_ip: str, payloads: List[str]) -> None:
         remaining_payloads = list(payloads)
@@ -170,20 +169,20 @@ class TelemetryManagerWindowService:
             current_size = await self.get_window_size(key)
             remaining_capacity = self.window_threshold_requests - current_size
             if remaining_capacity <= 0:
-                await self._window_cache.force_expire_window(key, 1)
+                await self._telemetry_window_cache.force_expire_window(key, 1)
                 continue
 
             chunk = remaining_payloads[:remaining_capacity]
-            await self._window_cache.add_multiple_to_window(key, chunk, self.window_duration)
+            await self._telemetry_window_cache.add_multiple_to_window(key, chunk, self.window_duration)
             remaining_payloads = remaining_payloads[len(chunk):]
 
             if current_size + len(chunk) >= self.window_threshold_requests:
-                await self._window_cache.force_expire_window(key, 1)
+                await self._telemetry_window_cache.force_expire_window(key, 1)
 
     async def _resolve_window_key(self, client_id: Optional[str], source_ip: str) -> str:
         base_key = self._build_window_key(client_id, source_ip)
         pattern = self._build_window_pattern(client_id, source_ip)
-        active_keys = await self._window_cache.get_active_window_keys(pattern)
+        active_keys = await self._telemetry_window_cache.get_active_window_keys(pattern)
         key_regex = self._build_window_regex(client_id, source_ip)
         active_keys = [key for key in active_keys if key_regex.match(key)]
         if not active_keys:
@@ -213,7 +212,7 @@ class TelemetryManagerWindowService:
 
         Args:
             tenant_id (Optional[str]): The identifier of the tenant. If None, the
-                default value "default" is used.
+                default value "default" is used
             source_ip (str): The source IP address for which the key is being built.
 
         Returns:

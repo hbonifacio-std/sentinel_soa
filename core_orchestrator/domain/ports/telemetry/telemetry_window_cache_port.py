@@ -56,6 +56,7 @@ class TelemetryWindowCachePort(ABC):
         """
         raise NotImplementedError
 
+
     @abstractmethod
     async def add_multiple_to_window(self, key: str, values: List[Any], expire_seconds: int):
         """

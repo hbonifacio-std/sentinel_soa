@@ -152,11 +152,21 @@ class TelemetryReportService:
         Creates a new analysis report in the database.
         """
         source_ip = getattr(report_data, "source_ip", "UNKNOWN")
-        logger.info(f"Creating analysis report for {source_ip}")
+        logger.info(
+            "Persisting analysis report for source_ip=%s window_id=%s threat_level=%s threat_detected=%s",
+            source_ip,
+            getattr(report_data, "window_id", None),
+            getattr(report_data, "threat_level", None),
+            getattr(report_data, "threat_detected", None),
+        )
         
         try:
             result = await self.analytics_repository.create_report(report_data)
-            logger.info(f"Analysis report created successfully with ID: {result} for {source_ip}")
+            logger.info(
+                "Analysis report persisted successfully with report_id=%s source_ip=%s",
+                result,
+                source_ip,
+            )
             return result
         except Exception as e:
             logger.exception(f"Failed to create analysis report for {source_ip}: {e}", exc_info=True)

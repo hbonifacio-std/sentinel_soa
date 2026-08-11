@@ -17,6 +17,9 @@ class RedisBaseTelemetryWindowAdapter(RedisBaseCacheAdapter, TelemetryWindowCach
     """
     A Redis implementation of the TelemetryWindowCachePort, using Redis lists.
     """
+
+
+
     def __init__(self, redis_client: Optional[Redis]):
         super().__init__(redis_client)
         self._pubsub = (
@@ -25,6 +28,7 @@ class RedisBaseTelemetryWindowAdapter(RedisBaseCacheAdapter, TelemetryWindowCach
             else None
         )
         self._listener_task: Optional[asyncio.Task] = None
+
 
     async def add_to_window(self, key: str, value: Any, expire_seconds: int):
         if not self._redis:

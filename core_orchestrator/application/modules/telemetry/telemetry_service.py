@@ -23,7 +23,7 @@ class TelemetryService:
     def __init__(self, repository: TelemetryRepositoryPort):
         self.repo = repository
 
-    async def ingest_log_event(self, log_event: LogEventDTO) -> str:
+    async def ingest_log_event(self, log_event: LogEvent) -> str:
         """
         Asynchronously ingests a log event by inserting it into the repository.
 
@@ -31,7 +31,7 @@ class TelemetryService:
         designated repository for storage and further processing.
 
         Parameters:
-        log_event (LogEventDTO): The data transfer object representing the log event
+        log_event (LogEvent): The data transfer object representing the log event
         to be ingested.
 
         Returns:

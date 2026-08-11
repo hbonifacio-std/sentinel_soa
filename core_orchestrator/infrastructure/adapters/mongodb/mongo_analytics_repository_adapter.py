@@ -24,7 +24,7 @@ class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsRepo
 
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager.get_telemetry_db()
-        super().__init__(self.db["rules_heuristics"], AnalysisReport)
+        super().__init__(self.db["reports"], AnalysisReport)
 
 
     async def get_summary_stats(self) -> ReportSummary:
@@ -176,9 +176,11 @@ class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsRepo
     def _build_report_id_query(report_id: str) -> Optional[Dict[str, Any]]:
         try:
             return {"_id": ObjectId(report_id)}
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Failed to parse ObjectId from report ID: {report_id}. Error: {e}")
             try:
                 uuid.UUID(str(report_id))
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Failed to parse UUID from report ID: {report_id}. Error: {e}")
                 return None
             return {"_id": report_id}

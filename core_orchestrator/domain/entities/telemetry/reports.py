@@ -3,6 +3,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
+from core_orchestrator.domain.entities.rule_engine.rules import RuleMatch
+from core_orchestrator.domain.entities.telemetry import TelemetryWindow
+from core_orchestrator.domain.object_value.telemetry import MitreAttackInfo, ThreatLevel
+
+
 @dataclass
 class ThreatLevelStat:
     level: str
@@ -102,6 +107,9 @@ class AnalysisReport:
         default_factory=lambda: datetime.now(timezone.utc)
     )
     resolved_at_utc: Optional[datetime] = None
+
+    def set_threat_detected(self):
+        self.threat_detected = self.threat_score is not None and self.threat_score > 20
 
     def resolve_report(self) -> None:
         """

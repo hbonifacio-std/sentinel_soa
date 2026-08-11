@@ -26,11 +26,11 @@ from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestr
 # ---------------------------------------------------------------------------
 def make_runner():
     return TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=AsyncMock(),
+        telemetry_manager_window_service=AsyncMock(),
         cache_service=AsyncMock(),
         telemetry_service=AsyncMock(),
-        analytics_service=AsyncMock(),
-        agent_factory=MagicMock(),
+        telemetry_report_service=AsyncMock(),
+        telemetry_analysis_service=MagicMock(),
     )
 
 
@@ -83,7 +83,7 @@ class TestConsumerTimeoutContinue:
     async def test_consumer_timeout_iterates_loop(self):
         """When queue is always empty, wait_for times out and continues."""
         runner = make_runner()
-        runner.agent = None
+        runner.telemetry_analysis_service = None
 
         iteration_count = [0]
         original_wait_for = asyncio.wait_for
@@ -108,7 +108,7 @@ class TestConsumerAgentNoneRequeue:
     @pytest.mark.asyncio
     async def test_consumer_requeues_when_agent_none(self):
         runner = make_runner()
-        runner.agent = None
+        runner.telemetry_analysis_service = None
 
         await runner._enqueue_analysis({"ip": "1.1.1.1"}, window_key="hold-win")
 
@@ -142,7 +142,7 @@ class TestConsumerUnexpectedException:
     async def test_consumer_swallows_unexpected_exception(self):
         runner = make_runner()
         agent_mock = AsyncMock()
-        runner.agent = agent_mock
+        runner.telemetry_analysis_service = agent_mock
 
         call_count = [0]
 
@@ -188,7 +188,7 @@ class TestConsumerShutdownInFlight:
             await slow_done.wait()
 
         agent_mock.process_telemetry_window = AsyncMock(side_effect=slow_analysis)
-        runner.agent = agent_mock
+        runner.telemetry_analysis_service = agent_mock
 
         # Pre-load two items
         await runner._enqueue_analysis({"d": 1}, window_key="w1")
@@ -216,7 +216,7 @@ class TestConsumerShutdownInFlight:
         """Stopping with items still in queue should log a warning."""
         import logging
         runner = make_runner()
-        runner.agent = AsyncMock()
+        runner.telemetry_analysis_service = AsyncMock()
 
         # Stop immediately without consuming
         runner._stop_event.cache_tenant_provider_ai()
@@ -241,7 +241,7 @@ class TestMcpReconnectLoopDetailedBranches:
         runner = make_runner()
         runner.mcp_manager = MagicMock()
         runner.mcp_manager._session = MagicMock()
-        runner.agent = MagicMock()
+        runner.telemetry_analysis_service = MagicMock()
 
         sleep_calls = []
 
@@ -260,7 +260,7 @@ class TestMcpReconnectLoopDetailedBranches:
     async def test_loop_tears_down_when_session_lost(self):
         """Agent is set but session is gone → teardown and reconnect attempt."""
         runner = make_runner()
-        runner.agent = MagicMock()
+        runner.telemetry_analysis_service = MagicMock()
 
         call_count = [0]
 
@@ -297,7 +297,7 @@ class TestMcpReconnectLoopDetailedBranches:
     async def test_loop_successful_reconnect_sets_agent(self):
         """Successful reconnect → mcp_manager and agent are set."""
         runner = make_runner()
-        runner.agent = None
+        runner.telemetry_analysis_service = None
         runner.mcp_manager = None
 
         new_manager = MagicMock()
@@ -326,5 +326,5 @@ class TestMcpReconnectLoopDetailedBranches:
                 with patch("asyncio.sleep", side_effect=fake_sleep):
                     await runner._mcp_reconnect_loop()
 
-        assert runner.agent is new_agent
+        assert runner.telemetry_analysis_service is new_agent
         assert runner.mcp_manager is new_manager

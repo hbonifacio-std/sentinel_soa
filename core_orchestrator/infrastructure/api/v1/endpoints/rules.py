@@ -90,10 +90,6 @@ async def _raise_if_cross_tenant_rule_mutation(
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rule not found: {rule_id}")
 
 
-# ============================================================================
-# Endpoints de la API
-# ============================================================================
-
 @router.get("/health", response_model=RulesHealthResponseDTO, tags=["Rules Health"])
 async def rules_health(
     rules_engine_service: Annotated[RulesEngineService, Depends(get_rules_engine_service)],
@@ -195,15 +191,13 @@ async def create_version(
 ):
     """Create new rule version (requires admin role)."""
     client_id = _require_client_scope(current_user)
-    try:
-        version = await rule_service.create_new_version(
+
+    version = await rule_service.create_new_version(
             rule_ids=body.rules_included,
             changelog=body.changelog,
             deployed_by=body.deployed_by,
             client_id=client_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    )
 
     await rule_service.log_rule_action(
         action="CREATE",
@@ -236,10 +230,9 @@ async def activate_version(
         raise HTTPException(status_code=404, detail=f"Version not found: {version_hash}")
 
     previous = await rule_service.get_active_version(client_id)
-    try:
-        bundle = await rule_service.deploy_version(version_hash, client_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    bundle = await rule_service.deploy_version(version_hash, client_id)
+
 
     await rule_service.log_rule_action(
         action="ACTIVATE",
@@ -287,8 +280,6 @@ async def get_rule(
 ):
     """Get specific rule (requires analyst/admin role)."""
     rule = await rule_service.fetch_rule_by_id(rule_id, _require_client_scope(current_user))
-    if not rule:
-        raise HTTPException(status_code=404, detail=f"Rule not found: {rule_id}")
     return rule_mapper.to_dto(rule)
 
 

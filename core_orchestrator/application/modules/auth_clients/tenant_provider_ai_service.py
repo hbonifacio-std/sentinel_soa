@@ -48,7 +48,7 @@ class TenantProviderAiService:
         self._cipher = cipher
         self._redis_auth_repository = redis_tenant
 
-    async def get_tenant_by_client_id(self, client_id: str) -> Optional[TenantResponseDTO]:
+    async def get_tenant_by_client_id(self, client_id: str) -> Optional[Tenant]:
         """
         Retrieves a tenant by its client ID, optionally using a cache for optimized retrieval.
 
@@ -71,7 +71,7 @@ class TenantProviderAiService:
             if cached:
                 tenant = string_to_dataclass(Tenant,cached)
                 if tenant:
-                    return TenantResponseDTO.model_validate(tenant)
+                    return tenant
 
         tenant = await self._tenant_repo.get_by_client_id(client_id)
         if not tenant:
@@ -81,7 +81,7 @@ class TenantProviderAiService:
             if json_data:
                 await self._redis_auth_repository.cache_tenant(client_id, json_data)
 
-        return TenantResponseDTO.model_validate(tenant)
+        return tenant
 
     async def get_tenant_models_by_client_id(self, client_id: str) -> Optional[Dict[str, TenantModelDefinitionRequestDTO]]:
         """
@@ -110,7 +110,7 @@ class TenantProviderAiService:
 
     async def get_default_provider_config(
             self, client_id: str
-    ) -> Optional[TenantResponseDTO]:
+    ) -> Optional[Tenant]:
         """
         Retrieve the default provider configuration for the specified client.
 
@@ -146,7 +146,7 @@ class TenantProviderAiService:
 
     async def get_mongo_translator_provider_config(
             self, client_id: str
-    ) -> Optional[TenantResponseDTO]:
+    ) -> Optional[Tenant]:
         """
         Retrieves the MongoDB translator provider configuration for a given client.
 
@@ -178,7 +178,7 @@ class TenantProviderAiService:
             model_id=tenant.default_mongo_translator_model_id
         )
 
-    async def get_provider_config_for_model(self, client_id: str, model_id: str) -> TenantResponseDTO:
+    async def get_provider_config_for_model(self, client_id: str, model_id: str) -> Tenant:
         """
         Retrieves the provider configuration for a specified model and tenant.
 
@@ -513,7 +513,7 @@ class TenantProviderAiService:
         return TenantResponseDTO.model_validate(updated)
 
     @staticmethod
-    def _resolve_provider_config(tenant: TenantResponseDTO, model_id: str) -> TenantResponseDTO:
+    def _resolve_provider_config(tenant: Tenant, model_id: str) -> Tenant:
         """
         Resolves the configuration for a specific AI provider for the given tenant and model ID.
 

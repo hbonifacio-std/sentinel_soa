@@ -41,11 +41,11 @@ async def test_agent_runner_lifecycle(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     assert runner.is_mcp_connected is False
@@ -67,7 +67,7 @@ async def test_agent_runner_lifecycle(
             await runner.shutdown_subsystem()
             
     assert runner.mcp_manager is None
-    assert runner.agent is None
+    assert runner.telemetry_analysis_service is None
 
 @pytest.mark.asyncio
 async def test_agent_runner_task_callbacks(
@@ -78,11 +78,11 @@ async def test_agent_runner_task_callbacks(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     # Test done callback when cancelled
@@ -105,16 +105,16 @@ async def test_run_analysis_executes_immediately_when_agent_is_ready(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
 
     agent_mock = AsyncMock()
     agent_mock.process_telemetry_window.return_value = '{"status":"ok"}'
-    runner.agent = agent_mock
+    runner.telemetry_analysis_service = agent_mock
 
     result = await runner.run_analysis({"window_id": "win-1"})
 
@@ -131,11 +131,11 @@ async def test_process_telemetry_window_builds_window_from_raw_events(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
 
     runner.run_analysis = AsyncMock(return_value='{"status":"ok"}')
@@ -175,11 +175,11 @@ async def test_agent_runner_enqueue_lifo_drop(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     # Redefine queue to size 5 to test LIFO dropping easily
@@ -213,11 +213,11 @@ async def test_process_single_window_not_full_no_ttl(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     mock_telemetry_processing_service.is_window_full.return_value = False
     mock_cache_service.get_ttl.return_value = -1  # no TTL
@@ -235,11 +235,11 @@ async def test_process_single_window_full_acquires_lock(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     mock_telemetry_processing_service.is_window_full.return_value = True
     mock_cache_service.get_ttl.return_value = 30
@@ -269,11 +269,11 @@ async def test_window_processor_task_loop(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     mock_telemetry_processing_service.get_active_windows.return_value = [b"win-bytes", "win-str"]
     mock_telemetry_processing_service.is_window_full.return_value = False
@@ -300,16 +300,16 @@ async def test_run_and_handle_failure_retries_and_discards(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     agent_mock = AsyncMock()
     agent_mock.process_telemetry_window.side_effect = Exception("MCP down")
-    runner.agent = agent_mock
+    runner.telemetry_analysis_service = agent_mock
     
     from core_orchestrator.application.modules.telemetry.telemetry_analysis_orchestrator_service import _PendingAnalysis
     pending = _PendingAnalysis(window_data={"data": "test"}, window_key="win-fail")
@@ -347,15 +347,15 @@ async def test_analysis_consumer_task_waits_for_agent(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     # Agent is None (MCP disconnected)
-    runner.agent = None
+    runner.telemetry_analysis_service = None
     
     await runner._enqueue_analysis({"data": "hold"}, window_key="win-hold")
     
@@ -381,15 +381,15 @@ async def test_mcp_reconnect_loop_success_and_failure(
     mock_agent_factory
 ):
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     
     # Case 1: Session is alive, do nothing
-    runner.agent = MagicMock()
+    runner.telemetry_analysis_service = MagicMock()
     runner.mcp_manager = MagicMock()
     runner._is_mcp_session_alive = MagicMock(return_value=True)
     
@@ -405,11 +405,11 @@ async def test_mcp_reconnect_loop_success_and_failure(
 
     # Case 2: MCP disconnected, triggers reconnect loop success
     runner = TelemetryAnalysisOrchestratorService(
-        telemetry_processing_service=mock_telemetry_processing_service,
+        telemetry_manager_window_service=mock_telemetry_processing_service,
         cache_service=mock_cache_service,
         telemetry_service=mock_telemetry_service,
-        analytics_service=mock_analytics_service,
-        agent_factory=mock_agent_factory
+        telemetry_report_service=mock_analytics_service,
+        telemetry_analysis_service=mock_agent_factory
     )
     runner._is_mcp_session_alive = MagicMock(return_value=False)
     

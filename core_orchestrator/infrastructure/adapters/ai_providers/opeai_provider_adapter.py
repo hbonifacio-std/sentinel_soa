@@ -12,7 +12,7 @@ from core_orchestrator.infrastructure.adapters.ai_providers.system_instructions 
 
 
 logger = logging.getLogger("core_orchestrator.adapters.ai_providers.opeai_provider_adapter")
-class OpeaiProviderAdapter(AiProvider):
+class OpenAiProviderAdapter(AiProvider):
     """
         OpenAI adapter for the generic LLM framework.
 
@@ -33,7 +33,8 @@ class OpeaiProviderAdapter(AiProvider):
             max_output_tokens: Optional maximum number of tokens for the response.
             timeout: Optional request timeout in seconds.
         """
-        super().__init__()
+
+        super().__init__(model_name, api_key, max_output_tokens)
         self._api_key = api_key
         self._model_name = model_name or "gpt-4o-mini"
         self._max_tokens = max_output_tokens or 4096

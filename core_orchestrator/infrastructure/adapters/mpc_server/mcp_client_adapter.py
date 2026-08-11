@@ -8,8 +8,9 @@ import asyncio
 from datetime import timedelta
 import logging
 import os
+from types import CoroutineType
 from typing import Any, Dict, Optional
-from mcp import ClientSession
+from mcp import ClientSession, ListToolsResult
 from mcp.client.sse import sse_client as _sse_client
 
 from core_orchestrator.domain.exceptions.mcp_exceptions import MCPConfigurationError, MCPConnectionError, \
@@ -267,6 +268,11 @@ class MCPClientManagerAdapter(MCPClientPort):
             attempts=self._max_retries,
             last_error=last_exc
         )
+    async def get_tool_list(self) -> ListToolsResult:
+        if self._session:
+            return await self._session.list_tools()
+        else:
+            return ListToolsResult(tools=[])
 
     async def is_session_healthy(self) -> bool:
         """

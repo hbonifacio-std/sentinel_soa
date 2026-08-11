@@ -5,7 +5,6 @@ Tests for MCP adapter _parse_result fallback paths (lines 28-30 / 47-50):
   - Non-dict raw_result without content attr → empty dict
 These are the lines NOT covered by the existing test_mcp_adapters.py.
 """
-import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 class TestMcpLlmAnalysisAdapterFallbacks:
     @pytest.fixture
     def adapter(self):
-        from core_orchestrator.infrastructure.agent.mcp_llm_analysis_adapter import MCPLlmAnalysisAdapter
-        return MCPLlmAnalysisAdapter(AsyncMock())
+        from core_orchestrator.infrastructure.adapters.ai_providers.llm_executer_analysis_adapter import LlmExecuterAnalysisAdapter
+        return LlmExecuterAnalysisAdapter(AsyncMock())
 
     def test_parse_invalid_json_returns_default(self, adapter):
         mock_content = MagicMock()
@@ -41,7 +40,31 @@ class TestMcpLlmAnalysisAdapterFallbacks:
 
     def test_parse_non_dict_no_content_returns_empty(self, adapter):
         result = adapter._parse_result("plain string")
-        assert result == {}
+        assert result == {"response": "plain string"}
+
+    def test_parse_json_code_fence_returns_dict(self, adapter):
+        mock_content = MagicMock()
+        mock_content.text = """```json
+{"threat_detected": true, "threat_score": 88, "reasoning_summary": "Detected SQLi pattern"}
+```"""
+        mock_result = MagicMock()
+        mock_result.content = [mock_content]
+        result = adapter._parse_result(mock_result)
+        assert result["threat_detected"] is True
+        assert result["threat_score"] == 88
+
+    def test_parse_wrapped_text_with_embedded_json(self, adapter):
+        mock_content = MagicMock()
+        mock_content.text = (
+            "Threat decision generated:\n"
+            '{"threat_detected": true, "threat_score": 72, "recommendation": "Enable WAF"}\n'
+            "End of decision"
+        )
+        mock_result = MagicMock()
+        mock_result.content = [mock_content]
+        result = adapter._parse_result(mock_result)
+        assert result["threat_detected"] is True
+        assert result["threat_score"] == 72
 
     @pytest.mark.asyncio
     async def test_analyze_web_activity_invalid_json_fallback(self, adapter):
@@ -49,9 +72,10 @@ class TestMcpLlmAnalysisAdapterFallbacks:
         mock_content.text = "{invalid}"
         mock_result = MagicMock()
         mock_result.content = [mock_content]
-        adapter.mcp_manager.call_tool = AsyncMock(return_value=mock_result)
+        provider = AsyncMock()
+        provider.call_model = AsyncMock(return_value=mock_result)
 
-        result = await adapter.analyze_web_activity({"ip": "1.2.3.4"})
+        result = await adapter.ask_llm(provider, "test prompt")
         assert result == {"threat_detected": False, "threat_score": 0}
 
 

@@ -25,15 +25,11 @@ class RuleService:
         rules_bundle_cache: RulesBundleCachePort,
         rule_validator: RuleValidatorPort,
     ):
-        # All collaborators arrive by dependency inversion (ports), never instantiated here.
         self.repo = rule_repository
         self.audit_repo = audit_repository
         self.cache = rules_bundle_cache
         self.validator = rule_validator
 
-    # ------------------------------------------------------------------ #
-    # Rule CRUD
-    # ------------------------------------------------------------------ #
     async def create_rule(self, rule: HeuristicRule) -> HeuristicRule:
         new_rule = await self.repo.create_rule(rule)
         await self.cache.invalidate_bundle()
@@ -63,9 +59,7 @@ class RuleService:
             await self.cache.invalidate_bundle()
         return success
 
-    # ------------------------------------------------------------------ #
-    # Audit log
-    # ------------------------------------------------------------------ #
+
     async def get_audit_logs(
         self,
         client_id: Optional[str],
@@ -100,9 +94,6 @@ class RuleService:
             client_id=client_id,
         )
 
-    # ------------------------------------------------------------------ #
-    # Versioning
-    # ------------------------------------------------------------------ #
     async def create_new_version(self, rule_ids: List[str], changelog: str, deployed_by: str, client_id: Optional[str]) -> RuleVersion:
         rules = await self.repo.get_by_ids(rule_ids, client_id)
         found_ids = {r.rule_id for r in rules}
@@ -169,13 +160,6 @@ class RuleService:
 
         return bundle
 
-    # ------------------------------------------------------------------ #
-    # Cache facade (delegates to the RulesBundleCachePort adapter)
-    #
-    # These thin wrappers preserve the public RuleService API consumed by
-    # RulesEngineService, so the cache implementation can change behind the
-    # port without touching the engine.
-    # ------------------------------------------------------------------ #
     async def cache_rules(self, bundle: RulesBundle, ttl_seconds: Optional[int] = None) -> None:
         await self.cache.store_bundle(bundle, ttl_seconds=ttl_seconds)
 
@@ -194,9 +178,7 @@ class RuleService:
     async def invalidate_rules_cache(self) -> None:
         await self.cache.invalidate_bundle()
 
-    # ------------------------------------------------------------------ #
-    # Internal, non-paginated reads (used by the in-memory rules engine)
-    # ------------------------------------------------------------------ #
+
     async def list_all_active_rules_internal(self) -> List[HeuristicRule]:
         """Trae absolutamente todas las reglas activas usando cursores (Sin paginación)."""
         return await self.repo.get_all(include_inactive=False, client_id=None)

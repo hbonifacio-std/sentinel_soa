@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysis
+from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysisAdapter
 from core_orchestrator.domain.entities.rule_engine.rules import RulesBundle
 
 
@@ -23,7 +23,7 @@ async def test_analysis_service_adds_rules_bundle_and_normalizes_result() -> Non
         "source_id": "N/A",
     }
 
-    service = AiAnalysis(llm_analysis_port=llm_analysis_port, rules_engine_service=rules_engine_service)
+    service = AiAnalysisAdapter(llm_analysis=llm_analysis_port, rules_engine_service=rules_engine_service)
 
     telemetry_payload = {
         "window_id": 123,

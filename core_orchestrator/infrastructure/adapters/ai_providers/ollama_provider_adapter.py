@@ -22,8 +22,9 @@ class OllamaProviderAdapter(AiProvider):
 
     _PROVIDER_NAME = "ollama"
     _TIMEOUT_SECONDS = 1800
+    _MAX_OUTPUT_TOKENS = 1000
 
-    def __init__(self, *, model_name: str, base_url: str, timeout: Optional[int] = None):
+    def __init__(self, api_key: str, *, model_name: str, base_url: str, timeout: Optional[int] = None, max_output_tokens: Optional[int] = None):
         """
         Initialize the Ollama provider with a specific configuration.
 
@@ -32,7 +33,8 @@ class OllamaProviderAdapter(AiProvider):
             base_url: The base URL of the Ollama server.
             timeout: Optional request timeout in seconds.
         """
-        super().__init__()
+
+        super().__init__(model_name, api_key,max_output_tokens=max_output_tokens)
         self._base_url = (base_url or "http://localhost:11434").rstrip("/")
         self._model_name = model_name or "mistral"
         self._timeout = timeout or self._TIMEOUT_SECONDS

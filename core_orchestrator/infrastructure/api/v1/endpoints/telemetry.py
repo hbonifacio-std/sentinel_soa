@@ -23,10 +23,8 @@ router = APIRouter()
 async def ingest_batch_events(
     request: Request,
     events: List[LogEventDTO],
-    background_tasks: BackgroundTasks,
     tenant_context: Annotated[TenantContext, Depends(get_tenant_context)],
     source_id: Annotated[str, Depends(get_source_id)],
-    telemetry_service: Annotated[TelemetryService, Depends(get_telemetry_service)] ,
     telemetry_processing_service: Annotated[TelemetryManagerWindowService, Depends(get_telemetry_processing_service)],
 ):
     """Batch ingest telemetry events with multitenant isolation and source tracking.
@@ -54,7 +52,6 @@ async def ingest_batch_events(
     )
 
     logs_events = log_event_mapper.to_dataclass_list(events)
-    background_tasks.add_task(telemetry_service.ingest_bulk_logs, logs_events)
     await telemetry_processing_service.add_multiple_logs_events(logs_events)
 
     return OperationResponseDTO(

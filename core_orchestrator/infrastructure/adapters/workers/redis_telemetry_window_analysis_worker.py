@@ -116,7 +116,7 @@ class RedisTelemetryWindowAnalysisWorker:
             decoded_payload = self._decode_payload(payload)
             logger.info(
                 f"[telemetry-window-worker:{worker_index}] queue={self._decode_text(queue_name)} "
-                f"window={decoded_payload.get('window_id', 'unknown')} "
+                f"redis_window_key={decoded_payload.get('window_key', decoded_payload.get('window_id', 'unknown'))} "
                 f"events={decoded_payload.get('event_count', 0)}"
             )
             await self._telemetry_analysis_orchestrator_service.process_telemetry_window(decoded_payload)

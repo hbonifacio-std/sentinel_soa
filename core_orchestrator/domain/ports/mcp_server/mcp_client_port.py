@@ -2,6 +2,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+from mcp import ListToolsResult
+
+
 class MCPClientPort(ABC):
     """Port (Outbound Interface) for interacting with MCP tools and sessions."""
 
@@ -11,6 +14,10 @@ class MCPClientPort(ABC):
 
     @abstractmethod
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+        pass
+
+    @abstractmethod
+    async def get_tool_list(self) -> ListToolsResult:
         pass
 
     @abstractmethod

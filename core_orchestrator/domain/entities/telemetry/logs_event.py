@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 import ipaddress
+from uuid import UUID
 
 from core_orchestrator.domain.exceptions.telemetry_exceptions import InvalidNetworkContextException, \
     InvalidHttpContextException, InvalidIPFormatException, InvalidLogTimestampException
@@ -189,6 +190,7 @@ class LogEvent:
     security: Optional[SecurityContext] = None
     host: Optional[HostContext] = None
     extra_fields: Dict[str, Any] = field(default_factory=dict)
+    window_id: Optional[str] = None
 
     def __post_init__(self):
         """
@@ -213,6 +215,55 @@ class LogEvent:
         if self.timestamp_utc > datetime.now(timezone.utc):
             raise InvalidLogTimestampException(str(self.timestamp_utc))
 
+    def set_window_id(self, window_id: str) -> None:
+        self.window_id = window_id
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], window_id: Optional[str] = None) -> "LogEvent":
+        """
+        Deserializa un diccionario directamente a una instancia de LogEvent sin usar inspección.
+        Maneja la conversión explícita de datetime, UUID y los contextos anidados.
+        """
+        # 1. Parseo de timestamp_utc
+        ts_raw = data.get("timestamp_utc")
+        if isinstance(ts_raw, str):
+            timestamp = datetime.fromisoformat(ts_raw)
+        elif isinstance(ts_raw, datetime):
+            timestamp = ts_raw
+        else:
+            raise ValueError("El campo 'timestamp_utc' es requerido y debe ser una cadena ISO o datetime.")
+
+        # 2. Parseo de window_id (prioriza el parámetro explícito sobre el contenido del dict)
+        effective_window_id = window_id or data.get("window_id")
+        if effective_window_id is not None:
+            effective_window_id = str(effective_window_id)
+
+        # 3. Conversión de sub-objetos anidados (si existen en el diccionario)
+        net_data = data.get("network")
+        network = NetworkContext(**net_data) if isinstance(net_data, dict) else net_data
+
+        http_data = data.get("http")
+        http = HttpContext(**http_data) if isinstance(http_data, dict) else http_data
+
+        sec_data = data.get("security")
+        security = SecurityContext(**sec_data) if isinstance(sec_data, dict) else sec_data
+
+        host_data = data.get("host")
+        host = HostContext(**host_data) if isinstance(host_data, dict) else host_data
+
+        # 4. Instanciación directa
+        return cls(
+            source_ip=data["source_ip"],
+            timestamp_utc=timestamp,
+            client_id=data.get("client_id"),
+            source_id=data.get("source_id"),
+            network=network,
+            http=http,
+            security=security,
+            host=host,
+            extra_fields=data.get("extra_fields") or {},
+            window_id=effective_window_id,
+        )
 
 
     @property
@@ -253,3 +304,23 @@ class LogEvent:
         if self.host and self.host.environment:
             return self.host.environment.lower() == env_name.lower()
         return False
+
+
+def assign_window_id_to_batch(
+            events: List[LogEvent], window_id: str
+    ) -> List[LogEvent]:
+        """
+        Assigns a specific window ID to all events in the provided batch.
+
+        Args:
+            events (List[LogEvent]): A list of LogEvent objects to which the window ID
+                will be assigned
+            window_id (str): The window ID to associate with each event.
+
+        Returns:
+            List[LogEvent]: The updated list of LogEvent objects with the assigned
+            window ID
+        """
+        for event in events:
+            event.set_window_id(window_id)
+        return events

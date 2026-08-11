@@ -26,14 +26,8 @@ class GeminiProviderAdapter(AiProvider):
 
     _PROVIDER_NAME = "gemini"
 
-    def __init__(
-            self,
-            *,
-            model_name: str,
-            api_key: str,
-            max_output_tokens: Optional[int] = None,
-            timeout: Optional[int] = None,
-    ):
+    def __init__(self, *, model_name: str, api_key: str, max_output_tokens: Optional[int] = None,
+                 timeout: Optional[int] = None):
         """
         Initializes the GeminiProvider class for interacting with the Gemini API via a specified
         generative model and configuration.
@@ -53,7 +47,8 @@ class GeminiProviderAdapter(AiProvider):
             LLMConfigurationException: Raised when no valid API key is provided during
                 initialization.
         """
-        super().__init__()
+
+        super().__init__(model_name, api_key, max_output_tokens)
         self._api_key = api_key
         self._model_name = model_name
         self._max_tokens = max_output_tokens or 4160
