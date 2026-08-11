@@ -34,30 +34,11 @@ class UserRole(str, Enum):
 # ============================================================================
 
 TOOL_PERMISSIONS: Dict[str, Set[UserRole]] = {
-    # Tool name: Set of allowed roles
-    "get_available_models": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    "generate_mongo_query_from_nl": {UserRole.ADMIN, UserRole.ANALYST},
-    "generate_forensic_report_from_logs": {UserRole.ADMIN, UserRole.ANALYST},
-    "get_threat_context": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    
-    # Read-only analysis tools (open to analyst and above)
-    "analyze_web_activity": {UserRole.ADMIN, UserRole.ANALYST},
-    "analyze_api_logs": {UserRole.ADMIN, UserRole.ANALYST},
-    "analyze_threat_patterns": {UserRole.ADMIN, UserRole.ANALYST},
-    "search_logs": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    
-    # Export tools (admin + analyst with restrictions)
-    "export_reports": {UserRole.ADMIN, UserRole.ANALYST},
-    "export_raw_data": {UserRole.ADMIN},  # Only admin can export raw
-    
-    # Administrative tools (admin only)
-    "configure_rules": {UserRole.ADMIN},
-    "manage_users": {UserRole.ADMIN},
-    "audit_log": {UserRole.ADMIN},
-    
-    # Viewer-safe tools
-    "list_reports": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    "view_report": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "get_mongo_access_scope": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "get_raw_telemetry_events": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "get_threat_reports": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "get_source_threat_timeline": {UserRole.ADMIN, UserRole.ANALYST},
+    "analyze_potential_threat": {UserRole.ADMIN, UserRole.ANALYST},
 }
 
 

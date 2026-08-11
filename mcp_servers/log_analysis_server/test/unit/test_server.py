@@ -1,38 +1,12 @@
-"""
-Unit tests for server.py — FastMCP tool handlers.
-Each tool function is tested by mocking its underlying implementation function,
-so no LLM, Mongo, or Redis connections are needed.
-"""
-import asyncio
-import pytest
-from datetime import datetime, timezone, timedelta
-from uuid import uuid4
-from unittest.mock import AsyncMock, patch, MagicMock
+"""Unit tests for Mongo-backed MCP tool handlers in server.py."""
+
 import os
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 import mcp_servers.log_analysis_server.server as srv
 from mcp_servers.log_analysis_server.security import set_user_role
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _base_analyze_payload(**overrides):
-    now = datetime.now(timezone.utc)
-    defaults = dict(
-        window_id=str(uuid4()),
-        source_id="victim-app-01",
-        source_ip="10.0.0.1",
-        window_start_utc=now.isoformat(),
-        window_end_utc=(now + timedelta(seconds=60)).isoformat(),
-        total_requests=10,
-        unique_uris_requested=["/api/products"],
-        user_agents_observed=["Mozilla/5.0"],
-        requests_per_second_avg=0.2,
-    )
-    defaults.update(overrides)
-    return defaults
 
 
 @pytest.fixture(autouse=True)
@@ -44,168 +18,53 @@ def _authenticated_role():
         set_user_role(None)
 
 
-# ---------------------------------------------------------------------------
-# get_available_models
-# ---------------------------------------------------------------------------
-
 @pytest.mark.asyncio
-async def test_get_available_models_returns_dict():
-    result = await srv.get_available_models()
-    assert "default_model_id" in result
-    assert "available_models" in result
-    assert isinstance(result["available_models"], dict)
-    assert len(result["available_models"]) > 0
+async def test_get_mongo_access_scope_returns_scope() -> None:
+    result = await srv.get_mongo_access_scope()
+    assert result["database"] == "sentinel_soa"
+    assert "raw_telemetry" in result["authorized_collections"]
+    assert "reports" in result["authorized_collections"]
 
 
 @pytest.mark.asyncio
-async def test_get_available_models_model_has_required_fields():
-    result = await srv.get_available_models()
-    for model_id, model_info in result["available_models"].items():
-        assert "provider" in model_info
-        assert "model_name" in model_info
-
-
-# ---------------------------------------------------------------------------
-# analyze_web_activity
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_analyze_web_activity_calls_execute():
-    mock_result = {
-        "window_id": "test",
-        "threat_detected": False,
-        "threat_level": "NONE",
-        "threat_score": 0,
-        "indicators_found": [],
-        "reasoning_summary": "Clean",
-        "recommendation": "None",
-        "targeted_asset": "victim-app",
-        "mitre_tactic": None,
-        "mitre_tactic_id": None,
-        "mitre_technique": None,
-        "mitre_technique_id": None,
-        "mitre_sub_technique": None,
-        "mitre_sub_technique_id": None,
-        "suggested_mitigations": [],
-    }
-
+async def test_get_raw_telemetry_events_calls_executor() -> None:
+    mock_result = {"collection": "raw_telemetry", "total_returned": 1, "rows": [{"source_ip": "10.0.0.1"}]}
     with patch(
-        "mcp_servers.log_analysis_server.server.execute_analyze_web_activity",
+        "mcp_servers.log_analysis_server.server.execute_get_raw_telemetry_events",
         new=AsyncMock(return_value=mock_result),
-    ):
-        payload = _base_analyze_payload()
-        result = await srv.analyze_web_activity(**payload)
+    ) as mock_exec:
+        result = await srv.get_raw_telemetry_events(source_ip="10.0.0.1", limit=50)
 
-    assert result["threat_detected"] is False
-    assert result["threat_level"] == "NONE"
+    assert result["collection"] == "raw_telemetry"
+    assert mock_exec.await_count == 1
+    assert mock_exec.await_args.args[0]["source_ip"] == "10.0.0.1"
 
 
 @pytest.mark.asyncio
-async def test_analyze_web_activity_returns_error_dict_on_exception():
+async def test_analyze_potential_threat_calls_executor() -> None:
+    mock_result = {"threat_detected": True, "threat_level": "HIGH", "threat_score": 82}
     with patch(
-        "mcp_servers.log_analysis_server.server.execute_analyze_web_activity",
-        new=AsyncMock(side_effect=RuntimeError("unexpected error")),
-    ):
-        payload = _base_analyze_payload()
-        result = await srv.analyze_web_activity(**payload)
-
-    assert "error" in result
-    assert result["threat_detected"] is False
-    assert result["threat_level"] == "NONE"
-
-
-# ---------------------------------------------------------------------------
-# generate_mongo_query_from_nl
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_generate_mongo_query_from_nl_returns_filter():
-    mock_result = {
-        "mongo_filter": {"source_ip": "10.0.0.1"},
-        "detected_ips": ["10.0.0.1"],
-        "detected_status_codes": [],
-        "detected_terms": [],
-    }
-    with patch(
-        "mcp_servers.log_analysis_server.server.build_forensic_mongo_query",
+        "mcp_servers.log_analysis_server.server.execute_analyze_potential_threat",
         new=AsyncMock(return_value=mock_result),
-    ):
-        result = await srv.generate_mongo_query_from_nl(
-            query="show logs from 10.0.0.1", source_id="victim-app"
-        )
+    ) as mock_exec:
+        result = await srv.analyze_potential_threat(source_ip="10.0.0.1", limit_raw_events=99999)
 
-    assert "mongo_filter" in result
-
-
-# ---------------------------------------------------------------------------
-# generate_forensic_report_from_logs
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_generate_forensic_report_calls_generate():
-    mock_result = {
-        "markdown_report": "# Forensic Report",
-        "highlights": ["highlight"],
-    }
-    log_rows = [{"source_ip": "10.0.0.1", "response_code": 404}] * 5
-
-    with patch(
-        "mcp_servers.log_analysis_server.server.generate_forensic_report",
-        new=AsyncMock(return_value=mock_result),
-    ):
-        result = await srv.generate_forensic_report_from_logs(
-            query="find attack attempts",
-            total_matches=5,
-            rows=log_rows,
-            source_id="victim-app",
-        )
-
-    assert result["markdown_report"] == "# Forensic Report"
-    assert "highlights" in result
-
-
-# ---------------------------------------------------------------------------
-# get_threat_context
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_get_threat_context_returns_history():
-    mock_result = {
-        "source_ip": "10.0.0.1",
-        "history": [],
-        "alerts_found": 0,
-    }
-    with patch(
-        "mcp_servers.log_analysis_server.server.execute_get_threat_context",
-        new=AsyncMock(return_value=mock_result),
-    ):
-        result = await srv.get_threat_context(source_ip="10.0.0.1", limit=5)
-
-    assert result["source_ip"] == "10.0.0.1"
-    assert "history" in result
+    assert result["threat_detected"] is True
+    assert mock_exec.await_count == 1
+    assert mock_exec.await_args.args[0]["limit_raw_events"] == srv.server_settings.max_query_limit
 
 
 @pytest.mark.asyncio
-async def test_get_threat_context_returns_error_dict_on_exception():
-    with patch(
-        "mcp_servers.log_analysis_server.server.execute_get_threat_context",
-        new=AsyncMock(side_effect=RuntimeError("redis down")),
+async def test_main_starts_sse_transport() -> None:
+    with patch.dict(
+        os.environ,
+        {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "0.0.0.0", "MCP_SERVER_PORT": "8080"},
     ):
-        result = await srv.get_threat_context(source_ip="10.0.0.1")
-
-    assert "error" in result
-    assert result["source_ip"] == "10.0.0.1"
-    assert result["history"] == []
-    assert result["alerts_found"] == 0
-
-
-@pytest.mark.asyncio
-async def test_main_starts_sse_transport():
-    with patch.dict(os.environ, {"MCP_TRANSPORT": "sse", "MCP_SERVER_HOST": "0.0.0.0", "MCP_SERVER_PORT": "8080"}):
         with patch("mcp_servers.log_analysis_server.server.get_internal_token", return_value="token"):
-            with patch("mcp_servers.log_analysis_server.server.server.run_http_async", new=AsyncMock()) as mock_run:
-                with patch("mcp_servers.log_analysis_server.llm_providers.close_all_providers", new=AsyncMock()):
-                    await srv.main()
+            with patch("mcp_servers.log_analysis_server.server.mongo_db_manager.connect", new=AsyncMock()):
+                with patch("mcp_servers.log_analysis_server.server.mongo_db_manager.disconnect", new=AsyncMock()):
+                    with patch("mcp_servers.log_analysis_server.server.server.run_http_async", new=AsyncMock()) as mock_run:
+                        await srv.main()
 
     mock_run.assert_awaited_once()
     assert mock_run.await_args.kwargs["transport"] == "sse"

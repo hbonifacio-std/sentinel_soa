@@ -41,7 +41,7 @@ def test_validate_bearer_token_fails_closed_without_config(monkeypatch):
     assert validate_bearer_token_with_role("Bearer any-token") is False
 
 
-@require_tool_permission("get_available_models")
+@require_tool_permission("get_mongo_access_scope")
 async def _secured_tool() -> str:
     return "ok"
 

@@ -1,283 +1,248 @@
-# mcp_servers/log_analysis_server/server.py
+"""FastMCP server exposing read-only MongoDB telemetry/threat tools."""
 
+from __future__ import annotations
+
+import asyncio
+import logging
 import os
 import sys
-import logging
-import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
 
 from fastmcp.server import FastMCP
 from starlette.middleware import Middleware
 
-# Import the real analysis functions with heuristics
 from mcp_servers.log_analysis_server.auth_middleware import InternalBearerAuthMiddleware
 from mcp_servers.log_analysis_server.config import server_settings
-from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
-from mcp_servers.log_analysis_server.tools.forensic_nlq import build_forensic_mongo_query, generate_forensic_report
-from mcp_servers.log_analysis_server.tools.threat_context import ThreatContextRequest, execute_get_threat_context
+from mcp_servers.log_analysis_server.security import get_internal_token
 from mcp_servers.log_analysis_server.tool_access_control import require_tool_permission
-from mcp_servers.log_analysis_server.tools.error_responses import (
-    build_analyze_web_activity_error,
-    build_threat_context_error,
-    sanitize_internal_error,
-)
-from mcp_servers.log_analysis_server.security import (
-    verify_rules_bundle_signature,
-    get_internal_token,
+from mcp_servers.log_analysis_server.tools.threat_intelligence import (
+    execute_analyze_potential_threat,
+    execute_get_mongo_access_scope,
+    execute_get_raw_telemetry_events,
+    execute_get_source_threat_timeline,
+    execute_get_threat_reports,
+    mongo_db_manager,
 )
 
-# --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(
     level=logging.INFO,
     stream=sys.stderr,
-    format=log_format,
-    force=True
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    force=True,
 )
 logger = logging.getLogger(__name__)
 
-# --- Initialize server ---
 server = FastMCP("log-analysis-server")
 
-# --- System Tools ---
 
 @server.tool()
-@require_tool_permission("get_available_models")
-async def get_available_models() -> Dict[str, Any]:
-    """Returns a dictionary of available entities from the server configuration."""
-    models = {
-        model_id: {
-            "provider": model_def.provider,
-            "model_name": model_def.model_name
-        }
-        for model_id, model_def in server_settings.available_models.items()
-    }
-    return {
-        "default_model_id": server_settings.default_model_id,
-        "available_models": models
-    }
+@require_tool_permission("get_mongo_access_scope")
+async def get_mongo_access_scope() -> Dict[str, Any]:
+    """
+    Return strict MongoDB access scope of this MCP server.
 
-# --- Register real tools with heuristics ---
-# pylint: disable=too-many-arguments
+    This tool is used for governance and transparency. It always returns
+    the exact database and collection whitelist enforced by the server:
+    database `sentinel_soa`, collections `raw_telemetry` and `reports`.
+    """
+    return execute_get_mongo_access_scope()
+
+
 @server.tool()
-@require_tool_permission("analyze_web_activity")
-async def analyze_web_activity(  # noqa: PLR0913
-        source_ip: str,
-        window_start_utc: str,
-        window_end_utc: str,
-        total_requests: int,
-        unique_uris_requested: List[str],
-        user_agents_observed: List[str],
-        requests_per_second_avg: float,
-        http_methods_distribution: Optional[Dict[str, int]] = None,
-        response_codes_distribution: Optional[Dict[str, int]] = None,
-        critical_payload_features: Optional[List[str]] = None,
-        attempted_usernames: Optional[List[str]] = None,
-        invalid_token_requests_count: int = 0,
-        max_response_size_bytes: int = 0,
-        suspicious_samples: Optional[List[Dict[str, Any]]] = None,
-        infra_context: Optional[Dict[str, Any]] = None,
-        security_state_features: Optional[Dict[str, Any]] = None,
-        rules_bundle: Optional[Dict[str, Any]] = None,
-        window_id: Optional[str] = None,
-        source_id: Optional[str] = None,
-        client_id: Optional[str] = None,
-        provider_override: Optional[Dict[str, Any]] = None,
+@require_tool_permission("get_raw_telemetry_events")
+async def get_raw_telemetry_events(
+    source_id: Optional[str] = None,
+    source_ip: Optional[str] = None,
+    window_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    from_utc: Optional[str] = None,
+    to_utc: Optional[str] = None,
+    status_code: Optional[int] = None,
+    http_method: Optional[str] = None,
+    path_contains: Optional[str] = None,
+    query_text: Optional[str] = None,
+    only_suspicious: bool = False,
+    limit: int = 100,
 ) -> Dict[str, Any]:
     """
-    Analyzes web telemetry to detect threats using heuristics + LLM.
+    Retrieve raw telemetry evidence from MongoDB (`sentinel_soa.raw_telemetry`).
 
-    Args:
-        source_ip: Source IP under analysis.
-        window_start_utc: Start timestamp.
-        window_end_utc: End timestamp.
-        total_requests: Total requests.
-        unique_uris_requested: List of requested URIs.
-        http_methods_distribution: HTTP method distribution.
-        response_codes_distribution: Response code distribution.
-        user_agents_observed: List of observed User-Agents.
-        requests_per_second_avg: Average requests per second.
-        critical_payload_features: Sanitized suspicious payload fragments extracted by the backend.
-        attempted_usernames: Distinct usernames observed in authentication attempts.
-        invalid_token_requests_count: Number of requests with invalid/expired authentication tokens.
-        max_response_size_bytes: Maximum response size observed in the window.
-        suspicious_samples: Sanitized suspicious request samples for context.
-        infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
-        security_state_features: Session/authentication state features for account-compromise correlation.
-        rules_bundle: Active rules bundle injected by core orchestrator (HMAC-signed).
-        window_id: Window identifier (for report tracking, not sent to LLM analysis).
-        source_id: Telemetry source ID (for report tracking, not sent to LLM analysis).
-        client_id: Client identifier that submitted the request (for report tracking).
-        provider_override: Optional decrypted provider config from tenant settings.
+    Use this for forensic evidence extraction during incident triage. Filters are
+    strictly validated and mapped to safe query keys to prevent operator injection.
     """
-    # Verify rules_bundle integrity if present
-    if rules_bundle and not verify_rules_bundle_signature(rules_bundle):
-        logger.error("rules_bundle signature verification failed")
-        return build_analyze_web_activity_error(
-            source_ip=source_ip,
-            unique_uris_requested=unique_uris_requested,
-            error="rules_bundle integrity check failed",
-        )
-    
-    # Rebuild the 'arguments' dictionary expected by execute_analyze_web_activity
-    # Note: window_id, source_id, and client_id are NOT sent to analysis, 
-    # they are preserved for the final report
-    payload = {
-        "source_ip": source_ip,
-        "window_start_utc": window_start_utc,
-        "window_end_utc": window_end_utc,
-        "total_requests": total_requests,
-        "unique_uris_requested": unique_uris_requested,
-        "http_methods_distribution": http_methods_distribution or {},
-        "response_codes_distribution": response_codes_distribution or {},
-        "user_agents_observed": user_agents_observed,
-        "requests_per_second_avg": requests_per_second_avg,
-        "critical_payload_features": critical_payload_features or [],
-        "attempted_usernames": attempted_usernames or [],
-        "invalid_token_requests_count": invalid_token_requests_count,
-        "max_response_size_bytes": max_response_size_bytes,
-        "suspicious_samples": suspicious_samples or [],
-        "infra_context": infra_context or {},
-        "security_state_features": security_state_features or {},
-        "rules_bundle": rules_bundle,
-        # Metadata for reporting (not sent to LLM analysis)
-        "window_id": window_id,
-        "source_id": source_id,
-        "client_id": client_id,
-        "provider_override": provider_override,
-    }
-
-    logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")
-
-    try:
-        # Send it cleanly to the internal function without touching any core code
-        return await execute_analyze_web_activity(payload)
-    except Exception as e:
-        logger.error(f"Error executing tool: {str(e)}", exc_info=True)
-        return build_analyze_web_activity_error(
-            source_ip=source_ip,
-            unique_uris_requested=unique_uris_requested,
-            error=sanitize_internal_error(e),
-        )
-
-@server.tool()
-@require_tool_permission("generate_mongo_query_from_nl")
-async def generate_mongo_query_from_nl(
-    query: str,
-    source_id: Optional[str] = None,
-    provider_override: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Translate a natural-language forensic question into a safe Mongo filter plan."""
-    return await build_forensic_mongo_query({
-        "query": query,
-        "source_id": source_id,
-        "provider_override": provider_override,
-    })
-
-
-@server.tool()
-@require_tool_permission("generate_forensic_report_from_logs")
-async def generate_forensic_report_from_logs(
-    query: str,
-    total_matches: int,
-    rows: List[Dict[str, Any]],
-    source_id: Optional[str] = None,
-    model_id: Optional[str] = None,
-    provider_override: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Generate structured forensic insights and markdown from queried telemetry rows."""
-    
-    logger.info(
-        "MCP tool 'generate_forensic_report_from_logs' invoked for source_id=%r query=%r total_matches=%s rows=%s",
-        source_id,
-        query,
-        total_matches,
-        len(rows),
-    )
-    return await generate_forensic_report(
+    return await execute_get_raw_telemetry_events(
         {
-            "query": query,
             "source_id": source_id,
-            "total_matches": total_matches,
-            "rows": rows,
-            "model_id": model_id,
-            "provider_override": provider_override,
+            "source_ip": source_ip,
+            "window_id": window_id,
+            "client_id": client_id,
+            "from_utc": from_utc,
+            "to_utc": to_utc,
+            "status_code": status_code,
+            "http_method": http_method,
+            "path_contains": path_contains,
+            "query_text": query_text,
+            "only_suspicious": only_suspicious,
+            "limit": min(limit, server_settings.max_query_limit),
         }
     )
 
 
 @server.tool()
-@require_tool_permission("get_threat_context")
-async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str, Any]:
+@require_tool_permission("get_threat_reports")
+async def get_threat_reports(
+    source_id: Optional[str] = None,
+    source_ip: Optional[str] = None,
+    window_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    threat_level: Optional[str] = None,
+    reviewed: Optional[bool] = None,
+    resolved: Optional[bool] = None,
+    threat_detected: Optional[bool] = None,
+    min_threat_score: Optional[int] = None,
+    max_threat_score: Optional[int] = None,
+    query_text: Optional[str] = None,
+    from_utc: Optional[str] = None,
+    to_utc: Optional[str] = None,
+    limit: int = 100,
+) -> Dict[str, Any]:
     """
-    Retrieves the threat history for a specific IP.
-    """
-    logger.info(f"MCP tool 'get_threat_context' invoked for IP: {source_ip}")
-    try:
-        request_payload = ThreatContextRequest(source_ip=source_ip, limit=limit)
-        return await execute_get_threat_context(request_payload)
-    except Exception as e:
-        logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
-        return build_threat_context_error(source_ip=source_ip, error=sanitize_internal_error(e))
+    Retrieve analytical reports from MongoDB (`sentinel_soa.reports`).
 
-# --- Server Startup Logic ---
-async def main():
+    Supports operational filters (severity, reviewed, resolved and score threshold)
+    to prioritize active or high-risk incidents without invoking any AI provider.
     """
-    Initializes and runs the MCP server, selecting the transport
-    based on the MCP_TRANSPORT environment variable.
-    """
-    transport_mode = os.getenv('MCP_TRANSPORT', 'sse').lower()
-    
-    logger.info("Tools 'analyze_web_activity' and 'get_threat_context' registered.")
+    return await execute_get_threat_reports(
+        {
+            "source_id": source_id,
+            "source_ip": source_ip,
+            "window_id": window_id,
+            "client_id": client_id,
+            "threat_level": threat_level,
+            "reviewed": reviewed,
+            "resolved": resolved,
+            "threat_detected": threat_detected,
+            "min_threat_score": min_threat_score,
+            "max_threat_score": max_threat_score,
+            "query_text": query_text,
+            "from_utc": from_utc,
+            "to_utc": to_utc,
+            "limit": min(limit, server_settings.max_query_limit),
+        }
+    )
 
+
+@server.tool()
+@require_tool_permission("get_source_threat_timeline")
+async def get_source_threat_timeline(
+    source_ip: str,
+    source_id: Optional[str] = None,
+    window_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    query_text: Optional[str] = None,
+    from_utc: Optional[str] = None,
+    to_utc: Optional[str] = None,
+    limit_raw_events: int = 120,
+    limit_reports: int = 60,
+) -> Dict[str, Any]:
+    """
+    Build a correlated timeline for one source IP using both raw telemetry and reports.
+
+    Designed for analysts who need immediate cross-collection context before deciding
+    containment or escalation actions.
+    """
+    return await execute_get_source_threat_timeline(
+        {
+            "source_ip": source_ip,
+            "source_id": source_id,
+            "window_id": window_id,
+            "client_id": client_id,
+            "query_text": query_text,
+            "from_utc": from_utc,
+            "to_utc": to_utc,
+            "limit_raw_events": min(limit_raw_events, server_settings.max_query_limit),
+            "limit_reports": min(limit_reports, server_settings.max_query_limit),
+        }
+    )
+
+
+@server.tool()
+@require_tool_permission("analyze_potential_threat")
+async def analyze_potential_threat(
+    source_ip: str,
+    source_id: Optional[str] = None,
+    window_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    query_text: Optional[str] = None,
+    from_utc: Optional[str] = None,
+    to_utc: Optional[str] = None,
+    limit_raw_events: int = 300,
+    limit_reports: int = 120,
+) -> Dict[str, Any]:
+    """
+    Produce a complete deterministic threat analysis when a potential threat is detected.
+
+    The result includes threat score, severity, indicators, recommendations, and full
+    evidence from both authorized Mongo collections. This analysis is rule-based and
+    does not use prompts, LLMs, or external AI providers.
+    """
+    return await execute_analyze_potential_threat(
+        {
+            "source_ip": source_ip,
+            "source_id": source_id,
+            "window_id": window_id,
+            "client_id": client_id,
+            "query_text": query_text,
+            "from_utc": from_utc,
+            "to_utc": to_utc,
+            "limit_raw_events": min(limit_raw_events, server_settings.max_query_limit),
+            "limit_reports": min(limit_reports, server_settings.max_query_limit),
+        }
+    )
+
+
+async def main() -> None:
+    """Initialize Mongo dependency and run FastMCP over selected transport."""
+    transport_mode = os.getenv("MCP_TRANSPORT", "sse").lower()
+
+    await mongo_db_manager.connect()
     try:
-        if transport_mode == 'stdio':
+        if transport_mode == "stdio":
             if not get_internal_token():
                 logger.error("MCP_INTERNAL_SIGNING_TOKEN/MCP_INTERNAL_TOKEN is required. Refusing to start.")
                 sys.exit(1)
-            logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
-            await server.run_async(transport='stdio')
+            await server.run_async(transport="stdio")
+            return
 
-        elif transport_mode == 'sse':
-            host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
-            port = int(os.getenv('MCP_SERVER_PORT', '8080'))
-            internal_token = get_internal_token()
-            if not internal_token:
+        if transport_mode == "sse":
+            host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+            port = int(os.getenv("MCP_SERVER_PORT", "8080"))
+            if not get_internal_token():
                 logger.error("MCP_INTERNAL_TOKEN is required for SSE transport. Refusing to start.")
                 sys.exit(1)
-            http_middleware = [Middleware(InternalBearerAuthMiddleware)]
-            logger.info(f"Starting FastMCP Log Analysis Server on SSE at {host}:{port}...")
-            logger.info("SSE endpoints exposed at /sse and /messages/")
+            middleware = [Middleware(InternalBearerAuthMiddleware)]
             await server.run_http_async(
-                transport='sse',
+                transport="sse",
                 host=host,
                 port=port,
-                middleware=http_middleware,
+                middleware=middleware,
             )
-            
-        else:
-            logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'sse'.")
-            sys.exit(1)
+            return
 
+        logger.error("Invalid MCP_TRANSPORT: '%s'. Use 'stdio' or 'sse'.", transport_mode)
+        sys.exit(1)
     finally:
-        # Ensure all LLM provider clients are closed on shutdown
-        try:
-            from mcp_servers.log_analysis_server.llm_providers import close_all_providers
-            logger.info("Shutting down: closing LLM providers...")
-            await close_all_providers()
-        except Exception:
-            logger.exception("Error while closing LLM providers during shutdown")
+        await mongo_db_manager.disconnect()
+
 
 if __name__ == "__main__":
     try:
-        # This initial log is safe because logging is already forced to stderr.
-        logger.info("MCP Server process starting.")
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("MCP Server shutting down.")
-    except Exception as e:
-        logger.error(f"MCP Server failed to start: {e}", exc_info=True)
+        logger.info("MCP Server interrupted and shutting down.")
+    except Exception as exc:
+        logger.error("MCP Server failed to start: %s", exc, exc_info=True)
