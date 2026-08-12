@@ -1,25 +1,44 @@
-"""Validated contracts for Mongo-backed MCP threat intelligence tools."""
+"""Validated contracts for forensic MCP threat tools."""
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
-class BaseWindowedQuery(BaseModel):
-    """Common optional filters for telemetry/report searches."""
+class ThreatDashboardSummaryInput(BaseModel):
+    """Input for threat dashboard summary (macro/triage view)."""
 
-    source_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    source_ip: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    window_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    client_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    from_utc: Optional[datetime] = Field(default=None)
-    to_utc: Optional[datetime] = Field(default=None)
-    query_text: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    client_id: str = Field(min_length=1, max_length=128, description="Tenant unique ID (REQUIRED)")
+    time_window_hours: int = Field(default=24, ge=1, le=720, description="Lookback period in hours")
+    min_threat_level: str = Field(
+        default="LOW",
+        pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$",
+        description="Minimum threat level filter",
+    )
 
-    @field_validator("source_id", "source_ip", "window_id", "client_id", "query_text", mode="before")
+
+class WindowTelemetrySummaryInput(BaseModel):
+    """Input for window telemetry statistical summary."""
+
+    client_id: str = Field(min_length=1, max_length=128, description="Tenant unique ID (REQUIRED)")
+    window_id: str = Field(min_length=1, max_length=128, description="UUID of telemetry window to summarize")
+
+
+class AttackerChronologicalTimelineInput(BaseModel):
+    """Input for attacker chronological timeline reconstruction."""
+
+    client_id: str = Field(min_length=1, max_length=128, description="Tenant unique ID (REQUIRED)")
+    source_ip: Optional[str] = Field(default=None, min_length=1, max_length=64, description="Attacker IP address")
+    window_id: Optional[str] = Field(default=None, min_length=1, max_length=128, description="Window ID constraint")
+    only_suspicious: bool = Field(
+        default=True,
+        description="If True, filters only flagged suspicious events",
+    )
+    limit: int = Field(default=30, ge=1, le=50, description="Event return cap (max 50)")
+
+    @field_validator("source_ip", "window_id", mode="before")
     @classmethod
     def normalize_optional_text(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
@@ -29,81 +48,17 @@ class BaseWindowedQuery(BaseModel):
             return None
         return normalized
 
-    @model_validator(mode="after")
-    def validate_range(self) -> "BaseWindowedQuery":
-        if self.from_utc and self.to_utc and self.from_utc > self.to_utc:
-            raise ValueError("'from_utc' must be less than or equal to 'to_utc'.")
-        return self
 
+class DataExfiltrationEvidenceInput(BaseModel):
+    """Input for data exfiltration evidence check."""
 
-class RawTelemetryQueryInput(BaseWindowedQuery):
-    """Input for retrieving raw telemetry events."""
+    client_id: str = Field(min_length=1, max_length=128, description="Tenant unique ID (REQUIRED)")
+    source_ip: str = Field(min_length=1, max_length=64, description="Suspect attacker IP (REQUIRED)")
+    window_id: Optional[str] = Field(default=None, min_length=1, max_length=128, description="Specific window constraint")
 
-    limit: int = Field(default=100, ge=1, le=5000)
-    status_code: Optional[int] = Field(default=None, ge=100, le=599)
-    http_method: Optional[str] = Field(default=None, min_length=1, max_length=16)
-    path_contains: Optional[str] = Field(default=None, min_length=1, max_length=256)
-    only_suspicious: bool = Field(default=False)
-
-    @field_validator("http_method", mode="before")
+    @field_validator("source_ip", "window_id", mode="before")
     @classmethod
-    def normalize_http_method(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        normalized = value.strip().upper()
-        if not normalized:
-            return None
-        return normalized
-
-
-class ThreatReportQueryInput(BaseWindowedQuery):
-    """Input for retrieving threat reports from reports collection."""
-
-    limit: int = Field(default=100, ge=1, le=5000)
-    threat_level: Optional[str] = Field(default=None, max_length=32)
-    reviewed: Optional[bool] = Field(default=None)
-    resolved: Optional[bool] = Field(default=None)
-    threat_detected: Optional[bool] = Field(default=None)
-    min_threat_score: Optional[int] = Field(default=None, ge=0, le=100)
-    max_threat_score: Optional[int] = Field(default=None, ge=0, le=100)
-
-    @field_validator("threat_level", mode="before")
-    @classmethod
-    def normalize_threat_level(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        normalized = value.strip().upper()
-        if not normalized:
-            return None
-        return normalized
-
-    @model_validator(mode="after")
-    def validate_score_range(self) -> "ThreatReportQueryInput":
-        if (
-            self.min_threat_score is not None
-            and self.max_threat_score is not None
-            and self.min_threat_score > self.max_threat_score
-        ):
-            raise ValueError("'min_threat_score' must be less than or equal to 'max_threat_score'.")
-        return self
-
-
-class SourceTimelineInput(BaseModel):
-    """Input for assembling a source-specific timeline from both collections."""
-
-    source_ip: str = Field(min_length=1, max_length=64)
-    source_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    window_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    client_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
-    query_text: Optional[str] = Field(default=None, min_length=1, max_length=256)
-    limit_raw_events: int = Field(default=120, ge=1, le=5000)
-    limit_reports: int = Field(default=60, ge=1, le=2000)
-    from_utc: Optional[datetime] = Field(default=None)
-    to_utc: Optional[datetime] = Field(default=None)
-
-    @field_validator("source_ip", "source_id", "window_id", "client_id", "query_text", mode="before")
-    @classmethod
-    def normalize_required_text(cls, value: Optional[str]) -> Optional[str]:
+    def normalize_text(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         normalized = value.strip()
@@ -111,12 +66,36 @@ class SourceTimelineInput(BaseModel):
             return None
         return normalized
 
-    @model_validator(mode="after")
-    def validate_range(self) -> "SourceTimelineInput":
-        if self.from_utc and self.to_utc and self.from_utc > self.to_utc:
-            raise ValueError("'from_utc' must be less than or equal to 'to_utc'.")
-        return self
+
+class PivotBlastRadiusInput(BaseModel):
+    """Input for pivot blast radius discovery."""
+
+    client_id: str = Field(min_length=1, max_length=128, description="Tenant unique ID (REQUIRED)")
+    source_ip: str = Field(min_length=1, max_length=64, description="IP to investigate (REQUIRED)")
+
+    @field_validator("source_ip", mode="before")
+    @classmethod
+    def normalize_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        return normalized
 
 
-class PotentialThreatAnalysisInput(SourceTimelineInput):
-    """Input for deep deterministic threat analysis based on Mongo evidence."""
+class TimelineEvent(BaseModel):
+    """Single event in attacker timeline."""
+
+    timestamp_utc: str = Field(description="Event timestamp in UTC")
+    method: Optional[str] = Field(default=None, description="HTTP method (GET, POST, etc)")
+    path: Optional[str] = Field(default=None, description="HTTP path/endpoint accessed")
+    status_code: Optional[int] = Field(default=None, description="HTTP response status code")
+    response_size_bytes: Optional[int] = Field(default=None, description="Response size in bytes")
+    user_agent: Optional[str] = Field(default=None, description="HTTP User-Agent header")
+
+
+class AttackerChronologicalTimelineOutput(BaseModel):
+    """Output for attacker chronological timeline."""
+
+    timeline_events: list[TimelineEvent] = Field(description="Chronologically ordered attack events")

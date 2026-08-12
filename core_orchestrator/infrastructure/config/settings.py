@@ -5,7 +5,7 @@ from typing import Self
 from pydantic import Field, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .database_settings import MongoSettings, RedisSettings
+from .database_settings import MongoSettings, RedisSettings, Neo4jSettings
 from .network_settings import NetworkSettings
 from .security_settings import SecuritySettings
 from .mcp_settings import MCPSettings
@@ -57,6 +57,7 @@ class OrchestratorSettings(BaseSettings):
     detection: DetectionSettings = Field(default_factory=DetectionSettings)
     database_mongodb: MongoSettings = Field(default_factory=MongoSettings)
     database_redis:RedisSettings = Field(default_factory=RedisSettings)
+    database_neo4j: Neo4jSettings = Field(default_factory=Neo4jSettings)
 
     @model_validator(mode="after")
     def validate_production_secret_policy(self) -> Self:

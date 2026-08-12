@@ -37,8 +37,8 @@ from core_orchestrator.domain.entities.telemetry import TelemetryWindow
 # --- Default Output Schemas ---
 DEFAULT_WEB_ACTIVITY_SCHEMA = {
     "threat_score": "integer (0 to 100)",
-    "reasoning_summary": "string (max 100 words)",
-    "recommendation": "string"
+    "reasoning_summary": "string (Detailed structured technical analysis containing: 1. Executive Summary, 2. Chronological Event Timeline with format [HH:MM:SS | Method | URI | Status | UA], 3. Technical Findings & Telemetry Evidence with exact Payloads and anomaly patterns, 4. Attack Vector & MITRE Tactic, 5. Concrete Mitigation Steps)",
+    "recommendation": "string (Single action statement summarizing the primary required step)"
 }
 DEFAULT_FORENSIC_SCHEMA = {
     "markdown_report": "string markdown",

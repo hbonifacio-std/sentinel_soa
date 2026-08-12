@@ -34,6 +34,9 @@ from core_orchestrator.infrastructure.adapters.mongodb.mongo_telemetry_repositor
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_user_repository_adapter import MongoUserRepositoryAdapter
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_tenant_repository_adapter import MongoTenantRepositoryAdapter
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_forensic_analysis_repository_adapter import MongoForensicAnalysisRepositoryAdapter
+from core_orchestrator.infrastructure.adapters.neo4j.neo4j_telemetry_graph_repository_adapter import (
+    Neo4jTelemetryGraphRepositoryAdapter,
+)
 from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
 from core_orchestrator.infrastructure.agent.mcp_forensic_intelligence_adapter import MCPForensicIntelligenceAdapter
 from core_orchestrator.infrastructure.adapters.ai_providers.llm_executer_analysis_adapter import LlmExecuterAnalysisAdapter
@@ -82,6 +85,7 @@ class Container:
         self.mongo_user_repository_adapter = None
         self.mongo_tenant_repository_adapter = None
         self.mongo_forensic_repository_adapter = None
+        self.neo4j_telemetry_graph_repository = None
 
         # AI provider
         self.ia_provider_client = None
@@ -131,13 +135,22 @@ class Container:
         self.telemetry_window_cache_adapter = RedisBaseTelemetryWindowAdapter(redis_client=redis_client_telemetry)
 
         # Repositories
-        self.mongo_analytics_report_adapter = MongoAnalyticsReportsAdapter(db_manager=self.db_manager)
+        self.neo4j_telemetry_graph_repository = Neo4jTelemetryGraphRepositoryAdapter(
+            db_manager=self.db_manager
+        )
+        self.mongo_analytics_report_adapter = MongoAnalyticsReportsAdapter(
+            db_manager=self.db_manager,
+            graph_repository=self.neo4j_telemetry_graph_repository,
+        )
 
         self.mongo_audit_rules_repository_adapter = MongoAuditRepositoryAdapter(db_manager=self.db_manager)
         self.mongo_rule_repository_adapter = MongoAuditRulesAdapter(db_manager=self.db_manager)
 
 
-        self.mongo_telemetry_adapter = MongoTelemetryAdapter(db_manager=self.db_manager)
+        self.mongo_telemetry_adapter = MongoTelemetryAdapter(
+            db_manager=self.db_manager,
+            graph_repository=self.neo4j_telemetry_graph_repository,
+        )
         self.token_blacklist_repository_adapter = RedisTokenBlacklistAdapter(redis_client=redis_client_auth)
         self.mongo_user_repository_adapter = MongoUserRepositoryAdapter(db_manager=self.db_manager)
         self.mongo_tenant_repository_adapter = MongoTenantRepositoryAdapter(db_manager=self.db_manager)
@@ -145,7 +158,9 @@ class Container:
 
 
         # Services
-        self.telemetry_reports_service = TelemetryReportService(analytics_repository=self.mongo_analytics_report_adapter)
+        self.telemetry_reports_service = TelemetryReportService(
+            analytics_repository=self.mongo_analytics_report_adapter
+        )
 
         self.jwt_token_provider_adapter = JwtTokenProviderAdapter()
 
@@ -204,7 +219,6 @@ class Container:
         self.telemetry_analysis_orchestrator_service = TelemetryAnalysisOrchestratorService(
             telemetry_manager_window_service=self.telemetry_manager_window_service,
             telemetry_service=self.telemetry_service,
-            telemetry_report_service=self.telemetry_reports_service,
             telemetry_analysis_service=self._telemetry_analysis_service,
         )
         await self.telemetry_manager_window_service.start_listening()
@@ -259,6 +273,8 @@ class Container:
             await self.telemetry_analysis_orchestrator_service.shutdown_subsystem()
         if self.db_manager.mongo_client:
             await self.db_manager.mongo_client.close()
+        if self.db_manager.neo4j_driver:
+            await self.db_manager.neo4j_driver.close()
         if self.db_manager.redis_client_window_telemetry:
             await self.db_manager.redis_client_window_telemetry.close()
 

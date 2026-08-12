@@ -66,9 +66,14 @@ services:
       - sentinel_net
       - log_net
     depends_on:
-      - mongo
-      - redis
-      - mcp_server
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      mcp_server:
+        condition: service_started
     volumes:
       # Mapea tu carpeta local con los seeds hacia la ruta interna /data del contenedor
       - core_data:/data
@@ -112,7 +117,10 @@ services:
     networks:
       - sentinel_net
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
 
 
   ollama:

@@ -20,6 +20,7 @@ from core_orchestrator.domain.ports.rules import (
 from core_orchestrator.domain.ports.shared import AuditRulesRepositoryPort
 from core_orchestrator.domain.ports.shared.llm_analysis_port import LlmAnalysisPort
 from core_orchestrator.domain.ports.telemetry import (
+    TelemetryGraphRepositoryPort,
     TelemetryTenantCachePort,
     TelemetryRepositoryPort,
     TelemetryWindowCachePort,
@@ -38,6 +39,7 @@ __all__ = [
     "RulesBundleCachePort",
     "TelemetryTenantCachePort",
     "TelemetryRepositoryPort",
+    "TelemetryGraphRepositoryPort",
     "TelemetryWindowCachePort",
     "TokenBlacklistRepositoryPort",
     "TokenProviderPort",

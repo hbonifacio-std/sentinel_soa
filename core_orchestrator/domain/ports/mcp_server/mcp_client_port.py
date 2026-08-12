@@ -13,7 +13,7 @@ class MCPClientPort(ABC):
         pass
 
     @abstractmethod
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> dict[str, Any]:
         pass
 
     @abstractmethod

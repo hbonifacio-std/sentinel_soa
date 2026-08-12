@@ -34,11 +34,11 @@ class UserRole(str, Enum):
 # ============================================================================
 
 TOOL_PERMISSIONS: Dict[str, Set[UserRole]] = {
-    "get_mongo_access_scope": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    "get_raw_telemetry_events": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    "get_threat_reports": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
-    "get_source_threat_timeline": {UserRole.ADMIN, UserRole.ANALYST},
-    "analyze_potential_threat": {UserRole.ADMIN, UserRole.ANALYST},
+    "get_threat_dashboard_summary": {UserRole.ADMIN, UserRole.ANALYST},
+    "summarize_window_telemetry": {UserRole.ADMIN, UserRole.ANALYST, UserRole.VIEWER},
+    "get_attacker_chronological_timeline": {UserRole.ADMIN, UserRole.ANALYST},
+    "check_data_exfiltration_evidence": {UserRole.ADMIN, UserRole.ANALYST},
+    "find_pivot_blast_radius": {UserRole.ADMIN, UserRole.ANALYST},
 }
 
 

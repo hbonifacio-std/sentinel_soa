@@ -1,12 +1,15 @@
 from typing import Optional, List, Dict, Any
 
 from core_orchestrator.domain.entities.telemetry.logs_event import LogEvent
+from core_orchestrator.domain.entities.telemetry.reports import AnalysisReport
+from core_orchestrator.domain.ports.telemetry.telemetry_graph_repository_port import (
+    TelemetryGraphRepositoryPort,
+)
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.telemetry.telemetry_repository_port import TelemetryRepositoryPort as TelemetryRepositoryPort
 from core_orchestrator.infrastructure.dto.telemetry.analysis_report_dto import AnalysisReportResponseDTO
 
-from core_orchestrator.infrastructure.dto.telemetry.log_event_dto import LogEventDTO
 from core_orchestrator.infrastructure.adapters.mongodb.base_mongo_adapter import BaseRepository
 
 
@@ -25,9 +28,14 @@ class MongoTelemetryAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
 
 
     """
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(
+            self,
+            db_manager: DatabaseManager,
+            graph_repository: Optional[TelemetryGraphRepositoryPort] = None
+    ):
         db = db_manager.get_telemetry_db()
         super().__init__(db["raw_telemetry"], LogEvent)
+        self._graph_repository = graph_repository
 
     async def insert_log_event(self, log_event: LogEvent) -> str:
         """
@@ -45,7 +53,10 @@ class MongoTelemetryAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
         str
             The ID of the inserted log event as a string.
         """
-        return await self.insert(log_event)
+        inserted_id = await self.insert(log_event)
+        if self._graph_repository is not None:
+            await self._graph_repository.upsert_log_event(log_event=log_event, event_id=inserted_id)
+        return inserted_id
 
     async def bulk_insert_log_events(self, log_events: List[LogEvent]) -> int:
         """
@@ -66,7 +77,10 @@ class MongoTelemetryAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
         Raises:
             Any exception encountered during the database insertion operation.
         """
-        return await self.bulk_insert(log_events)
+        inserted_count = await self.bulk_insert(log_events)
+        if self._graph_repository is not None:
+            await self._graph_repository.upsert_bulk_log_events(log_events)
+        return inserted_count
 
     async def get_logs_paginated(
             self, query: Optional[Dict[str, Any]] = None, page: int = 1, limit: int = 10
@@ -112,7 +126,13 @@ class MongoTelemetryAdapter(BaseRepository[LogEvent], TelemetryRepositoryPort):
         """
 
         doc = report_model.model_dump(mode="json")
-        result = await self.insert(doc)
+        insert_result = await self.collection.insert_one(doc)
+        result = str(insert_result.inserted_id)
+        if self._graph_repository is not None:
+            await self._graph_repository.upsert_analysis_report(
+                report=AnalysisReport(**doc),
+                report_id=result
+            )
         return result
 
     async def get_analysis_reports_paginated(

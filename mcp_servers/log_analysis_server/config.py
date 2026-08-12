@@ -43,6 +43,12 @@ class LogAnalysisServerSettings(BaseSettings):
     mongo_connect_timeout_ms: int = Field(default=5000, validation_alias="MONGO_CONNECT_TIMEOUT_MS", gt=0)
     mongo_socket_timeout_ms: int = Field(default=15000, validation_alias="MONGO_SOCKET_TIMEOUT_MS", gt=0)
 
+    neo4j_uri: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
+    neo4j_user: Optional[str] = Field(default="neo4j", validation_alias="NEO4J_USER")
+    neo4j_password: Optional[SecretStr] = Field(default=None, validation_alias="NEO4J_PASSWORD")
+    neo4j_database: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")
+    neo4j_connection_timeout_s: int = Field(default=5, validation_alias="NEO4J_CONNECTION_TIMEOUT_S", gt=0)
+
     model_config = SettingsConfigDict(extra="ignore")
 
     @field_validator("app_env")
@@ -86,6 +92,11 @@ class LogAnalysisServerSettings(BaseSettings):
                 f"{self.mongo_db_name}?authSource={self.mongo_auth_source}"
             )
         return f"mongodb://{self.mongo_host}:{self.mongo_port}/{self.mongo_db_name}"
+
+    def build_neo4j_auth(self) -> tuple[str, str] | None:
+        if self.neo4j_user and self.neo4j_password:
+            return self.neo4j_user, self.neo4j_password.get_secret_value()
+        return None
 
 
 try:

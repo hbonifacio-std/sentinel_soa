@@ -70,12 +70,10 @@ class TelemetryAnalysisOrchestratorService:
         self,
         telemetry_manager_window_service: TelemetryManagerWindowService,
         telemetry_service: TelemetryService,
-        telemetry_report_service: TelemetryReportService,
         telemetry_analysis_service: Callable[[MCPClientPort], TelemetryAnalysisService],
     ):
         self.telemetry_processing_service = telemetry_manager_window_service
         self.telemetry_service = telemetry_service
-        self.analytics_service = telemetry_report_service
         self._agent_factory = telemetry_analysis_service
         self.mcp_manager: Optional[MCPClientPort] = None
         self.telemetry_analysis_service: Optional[TelemetryAnalysisService]= None
@@ -169,7 +167,7 @@ class TelemetryAnalysisOrchestratorService:
             ]
 
             await self.telemetry_service.ingest_bulk_logs(events)
-
+            logger.info("Ingested %s events into telemetry service for redis_window_key=%s.", len(events), window_key or telemetry_payload.get("window_id", "unknown"))
             telemetry_window = build_web_activity_window(events, window_id=window_id)
             logger.info(
                 "Aggregated telemetry window built for redis_window_key=%s analysis_window_id=%s source_ip=%s total_requests=%s",

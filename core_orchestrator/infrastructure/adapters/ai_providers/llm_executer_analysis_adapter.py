@@ -29,50 +29,90 @@ class LlmExecuterAnalysisAdapter(LlmAnalysisPort):
     def __init__(self, mcp_manager: MCPClientPort):
         self.mcp_manager = mcp_manager
 
-    async def ask_llm(self,ia_provider_client: AiProvider, prompt: str) -> Dict[str, Any] | str:
+    async def ask_llm(
+            self,
+            ia_provider_client: AiProvider,
+            prompt: str,
+            allow_mcp: bool = True,
+            max_steps: int = 5,
+    ) -> Dict[str, Any]:
         """
-        Asynchronously interacts with a large language model (LLM) provider, sending a prompt and processing
-        the result. Handles timeouts and exceptions during the interaction.
-
-        Args:
-            ia_provider_client (AiProvider): The client interface that communicates with the
-            LLM provider
-
-            prompt (str): The input prompt to be sent to the LLM provider
-
-        Returns:
-            Dict[str, Any] | str: Either the processed result from the LLM or an error response in
-            case of timeout or exception.
+        Asynchronously interacts with an LLM provider, execution loop for MCP tools,
+        handling timeouts and exceptions cleanly.
         """
         try:
-            mcp_tools = await self.mcp_manager.get_tool_list()
-            messages: List[Dict[str, Any]] = [
-                {"role": "user", "content": prompt}
-            ]
+            # 1. Obtener herramientas de forma segura
+            mcp_tools = await self.mcp_manager.get_tool_list() if allow_mcp else None
+            tools_payload = mcp_tools.tools if mcp_tools else None
 
-            logger.info("mcp_tools: %s", mcp_tools.tools)
-            raw_result = await asyncio.wait_for(
-                ia_provider_client.call_model(prompt=prompt),
-                timeout=_MCP_TOOL_TIMEOUT_S
-            )
+            messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
+            raw_result = None
+
+            for _ in range(max_steps):
+                raw_result = await asyncio.wait_for(
+                    ia_provider_client.call_model(
+                        prompt=prompt,
+                        messages=messages,
+                        tools=tools_payload,
+                    ),
+                    timeout=_MCP_TOOL_TIMEOUT_S
+                )
+
+                # Verificar si el modelo solicitó llamar a alguna herramienta
+                has_tool_calls = getattr(raw_result, "tool_calls", None) or (
+                    raw_result.get("tool_calls") if isinstance(raw_result, dict) else None
+                )
+
+                if not allow_mcp or not has_tool_calls:
+                    return self._parse_result(raw_result)
+
+                # Agregar la respuesta del asistente al historial
+                messages.append({
+                    "role": "assistant",
+                    "content": raw_result.get("content", ""),
+                    "tool_calls": has_tool_calls
+                })
+
+                # Ejecutar cada llamada a herramienta indicada por el modelo
+                for tool_call in has_tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    tool_args = tool_call["function"]["arguments"]
+
+                    tool_result = await self.mcp_manager.call_tool(
+                        tool_name=tool_name,
+                        arguments=tool_args
+                    )
+
+                    # Formatear la respuesta a cadena de texto (string)
+                    if hasattr(tool_result, "structuredContent") and tool_result.structuredContent:
+                        content_str = json.dumps(tool_result.structuredContent)
+                    elif isinstance(tool_result, dict) and "structuredContent" in tool_result:
+                        content_str = json.dumps(tool_result["structuredContent"])
+                    else:
+                        content_str = str(tool_result)
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id"),
+                        "name": tool_name,
+                        "content": content_str
+                    })
 
             return self._parse_result(raw_result)
-        except asyncio.TimeoutError:
-            logger.error(
-                "error time out calling llm provider"
 
-            )
+        except asyncio.TimeoutError:
+            logger.error("Timeout calling LLM provider")
             return {
-                "response": "error time out calling llm provider"
+                "analysis": "Error: Timeout calling LLM provider.",
+                "threat_level": "UNKNOWN",
+                "summary": "LLM query timed out."
             }
         except Exception as exc:
-            logger.exception(
-                "error calling llm provider:",
-                exc,
-                exc_info=True,
-            )
+            logger.exception("Error calling LLM provider: %s", exc)
             return {
-                "response": "error calling llm provider:"
+                "analysis": f"Error calling LLM provider: {str(exc)}",
+                "threat_level": "UNKNOWN",
+                "summary": "LLM execution failed."
             }
 
     @staticmethod

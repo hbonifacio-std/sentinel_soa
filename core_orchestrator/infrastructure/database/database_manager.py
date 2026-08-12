@@ -2,6 +2,7 @@ import logging
 from typing import Optional
 from pymongo import  AsyncMongoClient
 from redis.asyncio import Redis
+from neo4j import AsyncDriver, AsyncGraphDatabase
 
 from core_orchestrator.domain.exceptions.database_exceptions import DatabaseConnectionFailedError, \
     DatabaseNotConnectedError
@@ -14,8 +15,10 @@ class DatabaseManager:
     def __init__(self):
         self._mongo_settings = orchestrator_settings.database_mongodb
         self._redis_settings = orchestrator_settings.database_redis
+        self._neo4j_settings = orchestrator_settings.database_neo4j
 
         self.mongo_client: Optional[AsyncMongoClient] = None
+        self.neo4j_driver: Optional[AsyncDriver] = None
 
         self.redis_client_window_telemetry: Optional[Redis] = None
         self.redis_client_auth: Optional[Redis] = None
@@ -26,11 +29,18 @@ class DatabaseManager:
         """Initializes all application connections."""
         self._connect_mongo()
         self._connect_redis()
+        self._connect_neo4j()
 
     def disconnect(self):
         """Close all connections cleanly."""
         if self.mongo_client:
              self.mongo_client.close()
+
+        if self.neo4j_driver:
+            try:
+                self.neo4j_driver.close()
+            except Exception as e:
+                logger.warning(f"Error closing Neo4j driver: {e}")
 
         if self.redis_client_window_telemetry:
              self.redis_client_window_telemetry.close()
@@ -85,6 +95,18 @@ class DatabaseManager:
         except Exception as e:
             raise DatabaseConnectionFailedError(service_name="Redis", details=str(e)) from e
 
+    def _connect_neo4j(self):
+        try:
+            auth = None
+            if self._neo4j_settings.user and self._neo4j_settings.password.get_secret_value():
+                auth = (
+                    self._neo4j_settings.user,
+                    self._neo4j_settings.password.get_secret_value(),
+                )
+            self.neo4j_driver = AsyncGraphDatabase.driver(self._neo4j_settings.uri, auth=auth)
+        except Exception as e:
+            raise DatabaseConnectionFailedError(service_name="Neo4j", details=str(e)) from e
+
     def _ensure_mongo_client(self) -> AsyncMongoClient:
         if not self.mongo_client:
             raise DatabaseNotConnectedError(client_name="MongoDB")
@@ -101,3 +123,11 @@ class DatabaseManager:
     def get_auth_db(self):
         client = self._ensure_mongo_client()
         return client[self._mongo_settings.auth_db_name]
+
+    def get_neo4j_driver(self) -> AsyncDriver:
+        if not self.neo4j_driver:
+            raise DatabaseNotConnectedError(client_name="Neo4j")
+        return self.neo4j_driver
+
+    def get_neo4j_database_name(self) -> str:
+        return self._neo4j_settings.database

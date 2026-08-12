@@ -1,6 +1,7 @@
 # Protocolo de comunicación y cliente HTTP
 fastmcp==3.4.2
 pymongo==4.14.1
+neo4j==5.28.1
 
 # Validación de datos
 pydantic==2.11.7

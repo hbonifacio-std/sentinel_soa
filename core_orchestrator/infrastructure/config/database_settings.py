@@ -29,3 +29,10 @@ class RedisSettings(BaseSettings):
     telemetry_db: int = Field(default=0, validation_alias="REDIS_TELEMETRY_DB")
     auth_db: int = Field(default=1, validation_alias="REDIS_AUTH_DB")
     rules_db: int = Field(default=3, validation_alias="REDIS_RULES_DB")
+
+
+class Neo4jSettings(BaseSettings):
+    uri: str = Field(default="bolt://localhost:7687", validation_alias="NEO4J_URI")
+    user: str = Field(default="neo4j", validation_alias="NEO4J_USER")
+    password: SecretStr = Field(default=SecretStr(""), validation_alias="NEO4J_PASSWORD")
+    database: str = Field(default="neo4j", validation_alias="NEO4J_DATABASE")

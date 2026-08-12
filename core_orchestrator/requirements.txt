@@ -5,6 +5,7 @@ python-multipart==0.0.31
 slowapi==0.1.9
 
 pymongo==4.17.0
+neo4j==5.28.1
 redis==5.2.1
 
 mcp==1.28.0

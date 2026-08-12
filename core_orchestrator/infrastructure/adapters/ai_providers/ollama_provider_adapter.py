@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import httpx
 from httpx import Timeout
@@ -66,48 +66,81 @@ class OllamaProviderAdapter(AiProvider):
             self._client = httpx.AsyncClient(timeout=structured_timeout)
         return self._client
 
-    async def call_model(self, prompt: str, max_tokens: Optional[int] = 12000) -> str:
+    async def call_model(self,
+                         prompt: str,
+                         messages: Optional[List[Dict[str, Any]]] = None,
+                         tools: Optional[List[Dict[str, Any]]] = None,
+                         max_tokens: Optional[int] = 12000) -> Dict[str, Any]:
         """
-               Invoke Ollama with the provided prompt.
+        Asynchronously sends a request to a language model to process the provided prompt
+        and optional context, while supporting configurable behavior such as token limits
+        and integration with external tools.
 
-               Makes an HTTP request to the Ollama API (/api/generate endpoint) and
-               returns the response as a string.
+        Parameters:
+            prompt: str
+                A string input provided as the main prompt to the language model.
+            messages: Optional[List[Dict[str, Any]]]
+                A list of dictionaries representing prior conversation messages. Each
+                dictionary typically includes keys such as "role" and "content".
+                If not provided, and a prompt is specified, a default single-user message
+                is crafted based on the prompt.
+            tools: Optional[List[Dict[str, Any]]]
+                An optional list of dictionaries representing external tools to be
+                incorporated during the operation.
+            max_tokens: Optional[int]
+                The maximum number of tokens to be considered for the response.
 
-               Args:
-                   prompt (str): Structured prompt for analysis
-                   max_tokens (Optional[int]): Maximum number of tokens (ignored by Ollama in this endpoint)
+        Returns:
+            str
+                The textual message returned by the language model after processing the
+                request.
 
-               Returns:
-                   str: Model response as string
-
-               Raises:
-                   LLMException: If there is an error communicating with Ollama
-               """
+        Raises:
+            LLMException
+                Raised when the response is empty or any other issue occurs during
+                the interaction with the language model.
+        """
         client = self._get_client()
-        url = f"{self._base_url}/api/generate"
+        url = f"{self._base_url}/api/chat"
+        formatted_messages = messages or []
+        if not formatted_messages and prompt:
+            formatted_messages = [{"role": "user", "content": prompt}]
 
-        payload = {
+        payload: Dict[str, Any] = {
             "model": self._model_name,
-            "prompt": prompt,
-            "stream": False,  # Do not use streaming for structured responses
-            "format": "json",  # Request JSON format
+            "messages": formatted_messages,
+            "stream": False,
         }
+        if tools:
+            formatted_tools = []
+            raw_tools = getattr(tools, "tools", tools) if not isinstance(tools, list) else tools
+
+            for tool in raw_tools:
+                if isinstance(tool, dict):
+                    formatted_tools.append(tool)
+                else:  # Objeto Tool de MCP SDK
+                    formatted_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": getattr(tool, "name", ""),
+                            "description": getattr(tool, "description", ""),
+                            "parameters": getattr(tool, "inputSchema", {}),
+                        }
+                    })
+            payload["tools"] = formatted_tools
 
         try:
             logger.debug(f"Sending request to Ollama: {url}")
-            response = await client.post(url, json=payload)
+            response = await client.post(url, json=payload, timeout=self._timeout)
             response.raise_for_status()
 
             result = response.json()
-
-            generated_text = result.get("response", "")
-            logger.debug("Raw Ollama response (first 500 chars): %s", generated_text[:500])
-            if not generated_text:
-                logger.error("Ollama returned empty response")
+            message = result.get("message", {})
+            if not message:
+                logger.error("Ollama returned empty message response")
                 raise LLMException("Empty response from Ollama")
 
-            logger.debug("Response received from Ollama successfully")
-            return generated_text.strip()
+            return message
 
         except httpx.HTTPError as http_err:
             logger.exception(f"HTTP error in Ollama: {str(http_err)}")

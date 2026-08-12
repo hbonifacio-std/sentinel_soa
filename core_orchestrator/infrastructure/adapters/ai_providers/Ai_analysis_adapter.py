@@ -1,5 +1,5 @@
 """Service responsible for analyzing telemetry data."""
-
+import json
 import logging
 from typing import Any, Dict, List
 from core_orchestrator.application.modules.auth_clients.tenant_provider_ai_service import TenantProviderAiService
@@ -107,8 +107,8 @@ class AiAnalysisAdapter(AiAnalysisPort):
         )
 
         analysis_result = await self.llm_analysis.ask_llm(ia_provider_client=provider, prompt=prompt)
-
         report = self._build_safe_analysis_result(analysis_result, telemetry_window, source_ip,deterministic_matches)
+
         if report is None:
             logger.info(
                 "LLM returned an unsupported payload for source_ip=%s window_id=%s; telemetry report will not be persisted.",
@@ -161,13 +161,21 @@ class AiAnalysisAdapter(AiAnalysisPort):
                 threat assessment, associated indicators, and recommendations.
         """
         # 1. Normalize LLM input response
-        if isinstance(analysis_result, str):
-            logger.warning("The LLM result came as a string for %s: %s", source_ip, analysis_result)
-            safe: Dict[str, Any] = {"reasoning_summary": analysis_result, "error": True}
-        elif isinstance(analysis_result, dict):
-            safe = analysis_result.copy()
-        else:
-            safe = {"reasoning_summary": "Invalid result format", "error": True}
+        payload = analysis_result.copy()
+        if "content" in payload and isinstance(payload["content"], str):
+            try:
+                parsed_content = json.loads(payload["content"])
+                if isinstance(parsed_content, dict):
+                    payload = parsed_content
+            except (json.JSONDecodeError, TypeError):
+                payload = {"reasoning_summary": payload["content"]}
+
+        safe = {
+            "threat_score": payload.get("threat_score", 0),
+            "reasoning_summary": payload.get("reasoning_summary") or payload.get(
+                "analysis") or "No explicit analysis available.",
+            "recommendation": payload.get("recommendation", "Continue standard telemetry monitoring.")
+        }
 
         # 2. Calculate Score (Prioritize LLM, fallback to a sum of rule_matches)
         raw_score = safe.get("threat_score",0)

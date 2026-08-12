@@ -11,6 +11,9 @@ from core_orchestrator.domain.entities.telemetry.reports import (
     TopAttackerStat,
     MitreTacticStat, AnalysisReport,
 )
+from core_orchestrator.domain.ports.telemetry.telemetry_graph_repository_port import (
+    TelemetryGraphRepositoryPort,
+)
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult
 from core_orchestrator.infrastructure.database.database_manager import DatabaseManager
 from core_orchestrator.domain.ports.telemetry.telemetry_reports_port import AnalyticsReportsPort
@@ -22,9 +25,14 @@ GROUP_STAGE = "$group"
 class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsReportsPort):
 
 
-    def __init__(self, db_manager: DatabaseManager):
+    def __init__(
+            self,
+            db_manager: DatabaseManager,
+            graph_repository: Optional[TelemetryGraphRepositoryPort] = None
+    ):
         self.db = db_manager.get_telemetry_db()
         super().__init__(self.db["reports"], AnalysisReport)
+        self._graph_repository = graph_repository
 
 
     async def get_summary_stats(self) -> ReportSummary:
@@ -142,7 +150,19 @@ class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsRepo
 
         logger.debug(f"Attempting to insert analysis report: {report}")
         result = await self.insert(report)
-        logger.info(f"Analysis report successfully inserted with ID: {result}")
+        logger.info(f"Analysis report successfully inserted to MongoDB with ID: {result}")
+        
+        # Also persist to Neo4j
+        if self._graph_repository is not None:
+            try:
+                logger.debug(f"Upserting analysis report to Neo4j with report_id={result}")
+                await self._graph_repository.upsert_analysis_report(report=report, report_id=result)
+                logger.info(f"Analysis report successfully synced to Neo4j with ID: {result}")
+            except Exception as e:
+                logger.warning(f"Failed to sync analysis report to Neo4j (report_id={result}): {e}", exc_info=True)
+        else:
+            logger.warning("Graph repository not initialized - Neo4j sync skipped")
+        
         return result
 
 

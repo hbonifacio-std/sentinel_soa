@@ -39,6 +39,12 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+# Suppress verbose logs from third-party libraries
+logging.getLogger("neo4j.bolt").setLevel(logging.WARNING)
+logging.getLogger("neo4j.io").setLevel(logging.WARNING)
+logging.getLogger("neo4j").setLevel(logging.WARNING)
+logging.getLogger("neo4j.api_core").setLevel(logging.ERROR)
+
 logger = logging.getLogger("core_orchestrator.main")
 
 

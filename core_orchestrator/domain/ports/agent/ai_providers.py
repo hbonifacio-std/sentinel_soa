@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Any, List, Dict
 
 logger = logging.getLogger("core_orchestrator.domain.ports.agent.ai_providers")
 
@@ -27,22 +27,36 @@ class AiProvider(ABC):
         logger.debug(f"Initializing AI provider: {self.provider_name}")
 
     @abstractmethod
-    async def call_model(self, prompt: str, max_tokens: Optional[int] = 12000)-> str:
+    async def call_model(self, prompt: str,
+                         messages: Optional[List[Dict[str, Any]]] = None,
+                         tools: Optional[List[Dict[str, Any]]] = None,
+                         max_tokens: Optional[int] = 12000)->dict[str, Any]:
         """
-        Invoke the LLM model with the provided prompt.
-
-        Must return the response as a valid JSON string that can be parsed
-        by validate_response().
+        This abstract method is designed to call an underlying model with a given
+        prompt and optional additional inputs such as messages and tools. The method
+        provides flexibility to specify the maximum number of tokens expected in the
+        response. It must be implemented by subclasses and is intended to support
+        asynchronous execution.
 
         Args:
-            prompt (str): Complete prompt with context, instructions, and data to analyze
-            max_tokens (Optional[int]): Response token limit (if applicable)
+            prompt: A string representing the prompt or input query for the model.
+            messages: An optional list of dictionaries where each dictionary
+                represents a message. This can be used to include prior context or
+                messages for the model.
+            tools: An optional list of dictionaries where each dictionary
+                represents a tool or capability that may augment the model's
+                functionality.
+            max_tokens: An optional integer specifying the maximum number of tokens
+                that the model should include in its output.
 
         Returns:
-            str: Response JSON as string
+            A dictionary containing the output from the model. The structure and
+            content of this dictionary depend on the specific model implementation and
+            should be well-defined in the subclass.
 
         Raises:
-            LLMException: If there is an error in the model call (timeout, auth, etc.)
+            NotImplementedError: If the method is called directly from the base class
+                without a subclass implementation.
         """
         pass
 
