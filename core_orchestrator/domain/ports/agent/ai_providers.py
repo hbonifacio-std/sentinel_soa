@@ -1,6 +1,10 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional, Any, List, Dict
+from typing import Optional, Any, List, Dict, Union, Type
+
+from pydantic import BaseModel
+
+from core_orchestrator.domain.entities.agent.agents import LLMResponse
 
 logger = logging.getLogger("core_orchestrator.domain.ports.agent.ai_providers")
 
@@ -27,10 +31,11 @@ class AiProvider(ABC):
         logger.debug(f"Initializing AI provider: {self.provider_name}")
 
     @abstractmethod
-    async def call_model(self, prompt: str,
+    async def call_model(self,
                          messages: Optional[List[Dict[str, Any]]] = None,
                          tools: Optional[List[Dict[str, Any]]] = None,
-                         max_tokens: Optional[int] = 12000)->dict[str, Any]:
+                         max_tokens: Optional[int] = 12000,
+                         response_format: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None)->LLMResponse:
         """
         This abstract method is designed to call an underlying model with a given
         prompt and optional additional inputs such as messages and tools. The method

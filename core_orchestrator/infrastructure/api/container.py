@@ -5,7 +5,6 @@ Centralized dependency injection container for the Core Orchestrator.
 from functools import lru_cache
 from datetime import timedelta
 
-from core_orchestrator.domain.ports.mcp_server.mcp_client_port import MCPClientPort
 from core_orchestrator.infrastructure.adapters.ai_providers.Ai_analysis_adapter import AiAnalysisAdapter
 from core_orchestrator.application.modules.telemetry.telemetry_report_service import TelemetryReportService
 from core_orchestrator.application.modules.auth_clients.auth_service import AuthService
@@ -89,6 +88,8 @@ class Container:
 
         # AI provider
         self.ia_provider_client = None
+        self.llm_adapter = None
+        self.analysis_svc = None
 
         # password hasher and token service
         self.password_hasher_adapter = None
@@ -123,6 +124,9 @@ class Container:
         self.db_manager.connect()
         if self.db_manager.redis_client_window_telemetry is None:
             raise RuntimeError("Redis client is not connected")
+
+        if self.mcp_client_manager:
+            await  self.mcp_client_manager.start_server_session()
 
         redis_client_telemetry = self.db_manager.redis_client_window_telemetry
         redis_client_auth = self.db_manager.redis_client_auth
@@ -209,17 +213,34 @@ class Container:
 
 
         self.forensic_intelligence_adapter = MCPForensicIntelligenceAdapter(mcp_manager=self.mcp_client_manager)
+
+
+        self.llm_adapter = LlmExecuterAnalysisAdapter(
+            mcp_manager=self.mcp_client_manager
+        )
+
+        self.analysis_svc = AiAnalysisAdapter(
+            llm_analysis=self.llm_adapter,
+            rules_engine_service=self.rules_engine_service,
+            tenant_provider_service=self.tenant_provider_ai_service,
+            provider_factory=ProviderFactory(cipher_adapter=self.api_key_cipher_adapter)
+        )
+
         self.forensic_service = ForensicService(
             forensic_repository=self.mongo_forensic_repository_adapter,
-            forensic_intelligence_port=self.forensic_intelligence_adapter,
+            provider_ai_factory=ProviderFactory(self.api_key_cipher_adapter),
             tenant_provider_service=self.tenant_provider_ai_service,
+            llm_analysis=self.llm_adapter
         )
 
         # Agent Runner — agent_factory centralizes MCP wiring upon each reconnection.
         self.telemetry_analysis_orchestrator_service = TelemetryAnalysisOrchestratorService(
             telemetry_manager_window_service=self.telemetry_manager_window_service,
             telemetry_service=self.telemetry_service,
-            telemetry_analysis_service=self._telemetry_analysis_service,
+            telemetry_analysis_service=TelemetryAnalysisService(
+                    analytics_report=self.mongo_analytics_report_adapter,
+                    ia_analysis=self.analysis_svc,
+            )
         )
         await self.telemetry_manager_window_service.start_listening()
         self.telemetry_window_analysis_worker = RedisTelemetryWindowAnalysisWorker(
@@ -231,39 +252,6 @@ class Container:
         await self.rules_engine_service.initialize()
         self.telemetry_analysis_orchestrator_service.initialize_subsystem()
 
-    def _telemetry_analysis_service(self, mcp_manager: MCPClientPort) -> TelemetryAnalysisService:
-        """
-        Performs the creation and initialization of a telemetry analysis service.
-
-        This method configures the necessary adapters and services, combining
-        dependencies to produce a fully initialized instance of
-        TelemetryAnalysisService. The result is a robust analysis mechanism
-        that integrates with telemetry caching, LLM-based analysis, rules engines,
-        and telemetry reporting.
-
-        Parameters:
-        mcp_manager (MCPClientPort): The manager responsible for MCP interactions.
-
-        Returns:
-        TelemetryAnalysisService: A fully constructed service instance for
-        telemetry analysis.
-        """
-
-        llm_adapter = LlmExecuterAnalysisAdapter(
-            mcp_manager=mcp_manager
-        )
-
-        analysis_svc = AiAnalysisAdapter(
-            llm_analysis=llm_adapter,
-            rules_engine_service=self.rules_engine_service,
-            tenant_provider_service=self.tenant_provider_ai_service,
-            provider_factory=ProviderFactory(cipher_adapter=self.api_key_cipher_adapter)
-        )
-
-        return TelemetryAnalysisService(
-            analytics_report=self.telemetry_reports_service,
-            ia_analysis=analysis_svc,
-        )
 
     async def shutdown(self):
         """Cleans up resources, closing connections, and stopping services."""
@@ -277,6 +265,8 @@ class Container:
             await self.db_manager.neo4j_driver.close()
         if self.db_manager.redis_client_window_telemetry:
             await self.db_manager.redis_client_window_telemetry.close()
+        if self.mcp_client_manager:
+            await self.mcp_client_manager.close()
 
 
 # Use lru_cache to ensure the container is a singleton

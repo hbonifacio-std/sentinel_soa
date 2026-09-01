@@ -1,5 +1,23 @@
-from pydantic import BaseModel
-from typing import Dict, Any
+from pydantic import BaseModel, Field
+from typing import Dict, Any, Optional, List
+
+
+class ToolCall(BaseModel):
+    """Invocación unificada de una herramienta."""
+    id: str
+    name: str
+    arguments: Dict[str, Any]
+
+
+class LLMResponse(BaseModel):
+    """Respuesta estandarizada que devuelve CUALQUIER adaptador de LLM."""
+    content: Optional[str] = None
+    tool_calls: List[ToolCall] = Field(default_factory=list)
+    raw_response: Any = None  # Objeto original opcional para debugging
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return len(self.tool_calls) > 0
 
 class LLMResponseAnalyzer(BaseModel):
     """

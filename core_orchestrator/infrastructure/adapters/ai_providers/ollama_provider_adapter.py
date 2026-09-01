@@ -1,9 +1,12 @@
+import json
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union, Type
 
 import httpx
 from httpx import Timeout
+from pydantic import BaseModel
 
+from core_orchestrator.domain.entities.agent.agents import LLMResponse
 from core_orchestrator.domain.exceptions.llm_exceptions import LLMException, LLMConfigurationException
 from core_orchestrator.domain.ports.agent.ai_providers import AiProvider
 
@@ -66,11 +69,61 @@ class OllamaProviderAdapter(AiProvider):
             self._client = httpx.AsyncClient(timeout=structured_timeout)
         return self._client
 
+    def _validate_and_format_tools(self, tools: Any) -> List[Dict[str, Any]]:
+        """
+        Garantiza que cualquier formato de tools (MCP SDK, dicts simples, etc.)
+        sea convertido a un JSON Schema compatible con la API de Ollama.
+        """
+        if not tools:
+            return []
+
+        raw_tools = getattr(tools, "tools", tools)
+        if not isinstance(raw_tools, list):
+            raw_tools = [raw_tools]
+
+        formatted_tools = []
+        for tool in raw_tools:
+            if isinstance(tool, dict) and "function" in tool:
+                formatted_tools.append(tool)
+            elif isinstance(tool, dict):
+                formatted_tools.append({
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name", ""),
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("parameters") or tool.get("inputSchema") or {"type": "object",
+                                                                                            "properties": {}}
+                    }
+                })
+            else:
+                # Objeto Tool nativo de MCP SDK
+                name = getattr(tool, "name", "")
+                description = getattr(tool, "description", "")
+                input_schema = getattr(tool, "inputSchema", {})
+
+                if hasattr(input_schema, "model_dump"):
+                    input_schema = input_schema.model_dump()
+                elif hasattr(input_schema, "dict"):
+                    input_schema = input_schema.dict()
+
+                if name:
+                    formatted_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": description,
+                            "parameters": input_schema or {"type": "object", "properties": {}}
+                        }
+                    })
+        return formatted_tools
+
     async def call_model(self,
                          prompt: str,
                          messages: Optional[List[Dict[str, Any]]] = None,
                          tools: Optional[List[Dict[str, Any]]] = None,
-                         max_tokens: Optional[int] = 12000) -> Dict[str, Any]:
+                         max_tokens: Optional[int] = 12000,
+                         response_format: Optional[Union[Type[BaseModel], Dict[str, Any]]] = None
+                         ) -> LLMResponse:
         """
         Asynchronously sends a request to a language model to process the provided prompt
         and optional context, while supporting configurable behavior such as token limits
@@ -106,31 +159,39 @@ class OllamaProviderAdapter(AiProvider):
         if not formatted_messages and prompt:
             formatted_messages = [{"role": "user", "content": prompt}]
 
+        formatted_tools = self._validate_and_format_tools(tools)
+        if formatted_tools:
+            system_instruction = (
+                "SYSTEM INSTRUCTION: You have access to external tools. "
+                "If you need more information to answer, you MUST invoke a tool using the native tool_calls structure. "
+                "If you already have enough information or no further tool execution is required, respond directly with text."
+            )
+
+            if formatted_messages and formatted_messages[0].get("role") == "system":
+                formatted_messages[0]["content"] += f"\n\n{system_instruction}"
+            else:
+                formatted_messages.insert(0, {"role": "system", "content": system_instruction})
+
         payload: Dict[str, Any] = {
             "model": self._model_name,
             "messages": formatted_messages,
             "stream": False,
         }
-        if tools:
-            formatted_tools = []
-            raw_tools = getattr(tools, "tools", tools) if not isinstance(tools, list) else tools
 
-            for tool in raw_tools:
-                if isinstance(tool, dict):
-                    formatted_tools.append(tool)
-                else:  # Objeto Tool de MCP SDK
-                    formatted_tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": getattr(tool, "name", ""),
-                            "description": getattr(tool, "description", ""),
-                            "parameters": getattr(tool, "inputSchema", {}),
-                        }
-                    })
+        # Si hay tools y no estamos en la llamada forzada de JSON final
+        if formatted_tools:
+            payload["tools"] = formatted_tools
+
+            # Solo forzamos format json en la primera llamada si NO hay tools
+        if not formatted_tools and response_format:
+            payload["format"] = "json"
+
+        if formatted_tools:
             payload["tools"] = formatted_tools
 
         try:
             logger.debug(f"Sending request to Ollama: {url}")
+            logger.info(payload)
             response = await client.post(url, json=payload, timeout=self._timeout)
             response.raise_for_status()
 
@@ -139,6 +200,57 @@ class OllamaProviderAdapter(AiProvider):
             if not message:
                 logger.error("Ollama returned empty message response")
                 raise LLMException("Empty response from Ollama")
+
+            has_tool_calls = message.get("tool_calls")
+
+            if not has_tool_calls and message.get("content"):
+                try:
+                    content_json = json.loads(message["content"].strip())
+                    # Verificamos si el contenido de texto tiene forma de tool call
+                    if isinstance(content_json, dict) and "name" in content_json and "arguments" in content_json:
+                        message["tool_calls"] = [{
+                            "function": {
+                                "name": content_json["name"],
+                                "arguments": content_json["arguments"]
+                            }
+                        }]
+                        has_tool_calls = message["tool_calls"]
+                        logger.info(f"[OllamaAdapter] Extraído tool_call desde 'content': {content_json['name']}")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if not has_tool_calls and response_format:
+                logger.info("[OllamaAdapter] No tool_calls detected. Executing internal format request call...")
+
+                schema_str = ""
+                if isinstance(response_format, type) and issubclass(response_format, BaseModel):
+                    schema_str = json.dumps(response_format.model_json_schema(), indent=2)
+
+                if message.get("content"):
+                    formatted_messages.append({"role": "assistant", "content": message.get("content")})
+
+                format_prompt = (
+                    "Now, consolidate all findings and conversation context. "
+                    "Provide your final output STRICTLY as a JSON object matching this schema:\n"
+                    f"{schema_str if schema_str else 'Valid JSON object'}"
+                )
+                formatted_messages.append({"role": "user", "content": format_prompt})
+
+                final_payload: Dict[str, Any] = {
+                    "model": self._model_name,
+                    "messages": formatted_messages,
+                    "format": "json",
+                    "stream": False,
+                }
+
+                logger.debug(f"[Ollama] Sending secondary JSON format request to {url}")
+                format_response = await client.post(url, json=final_payload, timeout=self._timeout)
+                format_response.raise_for_status()
+
+                format_result = format_response.json()
+                final_message = format_result.get("message", {})
+                if final_message:
+                    return final_message
 
             return message
 

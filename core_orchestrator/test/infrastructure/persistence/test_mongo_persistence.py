@@ -11,8 +11,8 @@ from core_orchestrator.infrastructure.adapters.mongodb.mongo_rule_repository imp
 from core_orchestrator.infrastructure.adapters.mongodb.mongo_forensic_analysis_repository_adapter import MongoForensicAnalysisRepositoryAdapter
 from core_orchestrator.domain.entities.rule_engine.rules import HeuristicRule, RuleVersion, RuleContent, RuleMetadata
 from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import (
-    ForensicAnalyzeRequestDTO,
-    ForensicAnalysisRecordDTO,
+    ChatForensicQuestionDTO,
+    ForensicChatSessionDTO,
     ForensicHistoryQueryDTO,
 )
 
@@ -408,7 +408,7 @@ async def test_mongo_forensic_repository_query_telemetry(mock_db_manager):
 
     repo = MongoForensicAnalysisRepositoryAdapter(manager)
 
-    request = ForensicAnalyzeRequestDTO(
+    request = ChatForensicQuestionDTO(
         query="curl",
         source_id="src-1",
         limit=10,
@@ -431,7 +431,7 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
     # Save
     doc_id = ObjectId()
     analysis_collection.insert_one.return_value = MagicMock(inserted_id=doc_id)
-    record = ForensicAnalysisRecordDTO(
+    record = ForensicChatSessionDTO(
         analysis_id="any-id",
         query="test",
         source_id="src-1",
@@ -446,7 +446,7 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
     analysis_collection.find_one.side_effect = [
         record.model_dump(mode="json"),  # first call in _find_analysis_document
     ]
-    res = await repo.get_analysis_by_id(analysis_id, "client-1")
+    res = await repo.get_by_id(analysis_id, "client-1")
     assert res is not None
     assert res.source_id == "src-1"
 
@@ -455,16 +455,16 @@ async def test_mongo_forensic_repository_save_and_get_analysis(mock_db_manager):
         None,  # not found by analysis_id
         {"_id": doc_id, "analysis_id": str(doc_id), "source_id": "src-1", "query": "test", "total_matches": 10, "markdown_report": "some report"},
     ]
-    res = await repo.get_analysis_by_id(analysis_id, "client-1")
+    res = await repo.get_by_id(analysis_id, "client-1")
     assert res is not None
 
     # Get by ID not found at all
     analysis_collection.find_one.side_effect = [None, None]
-    assert await repo.get_analysis_by_id(analysis_id, "client-1") is None
+    assert await repo.get_by_id(analysis_id, "client-1") is None
 
     # Get by ID invalid ObjectId fallback
     analysis_collection.find_one.side_effect = [None]
-    assert await repo.get_analysis_by_id("invalid-obj-id", "client-1") is None
+    assert await repo.get_by_id("invalid-obj-id", "client-1") is None
 
 
 @pytest.mark.asyncio

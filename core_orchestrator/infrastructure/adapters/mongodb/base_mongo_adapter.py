@@ -1,15 +1,16 @@
-from dataclasses import asdict
-from typing import TypeVar, Generic, List, Optional, Dict, Any, Mapping
+from dataclasses import asdict, is_dataclass, replace
+from typing import TypeVar, Generic, List, Optional, Dict, Any, Mapping, Type
 from pymongo import InsertOne
 from pymongo.asynchronous.collection import AsyncCollection
 import asyncio
 
+from core_orchestrator.domain.object_value.object_id import ObjectId
 from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult, PaginationMeta
 
-ModelType = TypeVar("ModelType")
+T = TypeVar("T")
 
-class BaseRepository(Generic[ModelType]):
+class BaseRepository(Generic[T]):
     """
     BaseRepository provides a generic implementation for common database operations.
 
@@ -17,11 +18,44 @@ class BaseRepository(Generic[ModelType]):
     for a MongoDB collection. It leverages an abstraction layer to work with multiple
     models, leveraging Python's type system and MongoDB's asynchronous API.
     """
-    def __init__(self, collection: AsyncCollection, model: ModelType):
+    def __init__(self, collection: AsyncCollection, model:type[T]):
         self.collection = collection
         self.model = model
 
-    def _document_to_dataclass(self, doc: Optional[Mapping[str, Any]]) -> Optional[ModelType]:
+    @staticmethod
+    def _to_db_document(model_instance: T) -> Dict[str, Any]:
+        """
+        Converts a model instance of type ModelType into a dictionary suitable for storage
+        in a database, while handling specific transformations like removing primary ID fields
+        and converting ObjectId types into strings.
+
+        Parameters:
+        model_instance (ModelType): An instance of the model to be converted into a database
+            document.
+
+        Returns:
+        Dict[str, Any]: The transformed dictionary representation of the model, with primary
+            ID fields removed and ObjectId attributes converted to strings.
+        """
+        document = asdict(model_instance)
+
+        # 1. Remove primary ID attributes before inserting so that Mongo generates the _id
+        document.pop("id", None)
+        document.pop("_id", None)
+
+        # 2. Recursively convert any attribute of type ObjectId to str
+        for key, value in document.items():
+            if isinstance(value, ObjectId):
+                document[key] = value.value
+            elif (
+                    isinstance(value, dict) and "value" in value and len(value) == 1
+            ):
+                # If asdict converted the ObjectId into {'value': 'uuid...'}
+                document[key] = value["value"]
+
+        return document
+
+    def _document_to_dataclass(self, doc: Optional[Mapping[str, Any]]) -> Optional[T]:
         """
         Transforms a dictionary document into a dataclass instance of the specified model.
 
@@ -47,25 +81,33 @@ class BaseRepository(Generic[ModelType]):
             return None
 
         data = dict(doc)
-        if "_id" in data:
-            data["id"] = str(data.pop("_id"))
 
+        #1. Map MongoDB _id to 'id' attribute
+        id_field = self.model.get_id_field_name() if hasattr(self.model, "get_id_field_name") else "id"
+        if "_id" in data:
+            data[id_field] = str(data.pop("_id"))
+
+        # 3. Transform and map fields
         return map_to_dataclass(self.model, data)
 
-    async def insert(self, model_instance: ModelType) -> str:
-        document = asdict(model_instance)
+    async def insert(self, model_instance: T) -> Optional[T]:
+        id_field_name = model_instance.get_id_field_name() or None
 
-        document.pop("id", None)
-        document.pop("_id", None)
+        document = self._to_db_document(model_instance)
+        if id_field_name is not None:
+            document.pop(str(id_field_name))
 
         result = await self.collection.insert_one(document)
+        inserted_id_str = str(result.inserted_id)
 
-        if hasattr(model_instance, "id"):
-            model_instance.id = str(result.inserted_id)
 
-        return str(result.inserted_id)
+        if is_dataclass(model_instance):
+            return replace(model_instance, **{id_field_name: inserted_id_str})
 
-    async def find_one(self, query: Dict[str, Any]) -> Optional[ModelType]:
+        setattr(model_instance, id_field_name, inserted_id_str)
+        return model_instance
+
+    async def find_one(self, query: Dict[str, Any]) -> Optional[T]:
         """
         Finds a single document in the collection based on the provided query and returns it as a model instance.
 
@@ -97,22 +139,21 @@ class BaseRepository(Generic[ModelType]):
         count = await self.collection.count_documents(query, limit=1)
         return count > 0
 
-    async def find_many(self, query: Dict[str, Any]) -> List[ModelType]:
+    async def find_many(self, query: Dict[str, Any]) -> List[T]:
         cursor = self.collection.find(query)
         docs = await cursor.to_list(length=None)
 
         results = []
-
         for doc in docs:
-            if "_id" in doc:
-                doc["id"] = str(doc.pop("_id"))
-            results.append(map_to_dataclass(self.model, doc))
+            dataclass_inst = self._document_to_dataclass(doc)
+            if dataclass_inst:
+                results.append(dataclass_inst)
         return results
 
 
     async def find_paginated(
             self, query: Optional[Dict[str, Any]] = None, page: Optional[int] = 1, limit: Optional[int] = 10,
-            sort_by: Optional[str] = None, descending: bool = True) -> PaginatedResult[ModelType]:
+            sort_by: Optional[str] = None, descending: bool = True) -> PaginatedResult[T]:
         """
         Asynchronously retrieves paginated results from a MongoDB collection based on the provided query,
         pagination parameters, and sorting options. The method calculates pagination metadata, such as the total
@@ -259,7 +300,7 @@ class BaseRepository(Generic[ModelType]):
         return await self.update_partial(query, soft_updates)
 
 
-    async def bulk_insert(self, model_instances: List[ModelType]) -> int:
+    async def bulk_insert(self, model_instances: List[T]) -> int:
         """
         Performs a bulk insertion of model instances into the database collection.
 
@@ -280,6 +321,9 @@ class BaseRepository(Generic[ModelType]):
         """
         if not model_instances:
             return 0
-        operations = [InsertOne(asdict(model)) for model in model_instances]
+
+        operations = [
+            InsertOne(self._to_db_document(model)) for model in model_instances
+        ]
         result = await self.collection.bulk_write(operations)
         return result.inserted_count

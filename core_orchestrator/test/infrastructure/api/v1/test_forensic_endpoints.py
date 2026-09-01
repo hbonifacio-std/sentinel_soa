@@ -6,7 +6,7 @@ from core_orchestrator.infrastructure.api.v1.endpoints.forensic import router
 from core_orchestrator.infrastructure.api.dependencies import get_forensic_service
 from core_orchestrator.infrastructure.api.dependencies.user_auth import get_analyst_user_with_client
 from core_orchestrator.domain.entities.auth.user import UserInDB
-from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import ForensicAnalysisRecordDTO, ForensicHistoryResponseDTO
+from core_orchestrator.infrastructure.dto.telemetry.forensic_analysis_dto import ForensicChatSessionDTO, ForensicHistoryResponseDTO
 
 dummy_analyst = UserInDB(
     user_id="u-analyst",
@@ -18,7 +18,7 @@ dummy_analyst = UserInDB(
     hashed_password="hashed_pwd"
 )
 
-dummy_record = ForensicAnalysisRecordDTO(
+dummy_record = ForensicChatSessionDTO(
     analysis_id="an-1",
     query="SELECT foo",
     source_id="src-1",

@@ -110,7 +110,7 @@ class TenantProviderAiService:
 
     async def get_default_provider_config(
             self, client_id: str
-    ) -> Optional[Tenant]:
+    ) -> ProviderAIConfig | None:
         """
         Retrieve the default provider configuration for the specified client.
 
@@ -146,7 +146,7 @@ class TenantProviderAiService:
 
     async def get_mongo_translator_provider_config(
             self, client_id: str
-    ) -> Optional[Tenant]:
+    ) -> ProviderAIConfig:
         """
         Retrieves the MongoDB translator provider configuration for a given client.
 
@@ -178,7 +178,7 @@ class TenantProviderAiService:
             model_id=tenant.default_mongo_translator_model_id
         )
 
-    async def get_provider_config_for_model(self, client_id: str, model_id: str) -> Tenant:
+    async def get_provider_config_for_model(self, client_id: str, model_id: str) -> ProviderAIConfig:
         """
         Retrieves the provider configuration for a specified model and tenant.
 
@@ -512,8 +512,17 @@ class TenantProviderAiService:
             await self._redis_auth_repository.invalidate(client_id)
         return TenantResponseDTO.model_validate(updated)
 
+    async def get_model_ai_by_id(self,tenant_id:str,model_id:str)-> TenantModelAIDefinition:
+        tenant = await self.get_tenant_by_client_id(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundException(f"Tenant '{tenant_id}' not found.")
+        model = tenant.available_models.get(model_id) if tenant else None
+        if model is None:
+            raise ModelNotFoundError(f"Model '{model_id}' not found for tenant '{tenant_id}'.")
+        return model
+
     @staticmethod
-    def _resolve_provider_config(tenant: Tenant, model_id: str) -> Tenant:
+    def _resolve_provider_config(tenant: Tenant, model_id: str) -> ProviderAIConfig:
         """
         Resolves the configuration for a specific AI provider for the given tenant and model ID.
 
@@ -542,4 +551,4 @@ class TenantProviderAiService:
         if not provider_conf or not provider_conf.enabled:
             raise ModelNotFoundError(f"Provider '{available_models.provider}' is not enabled or configured for tenant '{tenant.client_id}'.")
 
-        return tenant
+        return provider_conf

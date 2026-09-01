@@ -28,6 +28,7 @@ class AiAnalysisAdapter(AiAnalysisPort):
         rules_engine_service: RulesEngineService,
         tenant_provider_service: TenantProviderAiService,
     ):
+
         self.llm_analysis = llm_analysis
         self.provider_factory = provider_factory
         self.rules_engine_service = rules_engine_service

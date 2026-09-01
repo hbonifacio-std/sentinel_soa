@@ -17,15 +17,14 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Callable, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
-from core_orchestrator.application.modules.telemetry.telemetry_report_service import TelemetryReportService
+
 from core_orchestrator.domain.entities.telemetry.logs_event import LogEvent
 from core_orchestrator.domain.exceptions.mcp_exceptions import MCPConnectionError
 from core_orchestrator.domain.entities.telemetry.telemetry_window import build_web_activity_window, TelemetryWindow
 from core_orchestrator.domain.ports.mcp_server.mcp_client_port import MCPClientPort
-from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
-from core_orchestrator.infrastructure.adapters.mpc_server.mcp_client_adapter import MCPClientManagerAdapter
+
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
 from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryManagerWindowService
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
@@ -70,7 +69,7 @@ class TelemetryAnalysisOrchestratorService:
         self,
         telemetry_manager_window_service: TelemetryManagerWindowService,
         telemetry_service: TelemetryService,
-        telemetry_analysis_service: Callable[[MCPClientPort], TelemetryAnalysisService],
+        telemetry_analysis_service: TelemetryAnalysisService,
     ):
         self.telemetry_processing_service = telemetry_manager_window_service
         self.telemetry_service = telemetry_service
@@ -344,77 +343,6 @@ class TelemetryAnalysisOrchestratorService:
                     "Discarding to prevent queue starvation."
                 )
 
-    async def _mcp_reconnect_loop(self) -> None:
-        """
-        Handles the MCP reconnection loop to ensure a persistent connection with
-        the MCP (Message Client Protocol) server. The method continuously checks
-        the status of the active agent, attempts to reconnect upon session loss,
-        and reinitialize the necessary parts.
-
-        The reconnection attempts to involve creating a new MCP client manager,
-        establishing a new server session, and resetting the backoff delay.
-        Upon successful reconnection, pending tasks in the analysis queue
-        are processed. On failure, the method increases the delay between
-        reconnection attempts exponentially within a defined limit.
-
-        This method operates asynchronously and is designed to run until stopped.
-
-        Raises:
-            asyncio.TimeoutError: Raised when the attempt to start a new MCP server
-                session exceeds the specified timeout duration.
-            Exception: Any general exception that occurs during the connection
-                process.
-
-        Returns:
-            None
-        """
-        delay = _MCP_RETRY_INITIAL_DELAY_S
-
-        while not self._stop_event.is_set():
-
-            if self.telemetry_analysis_service is not None and self._is_mcp_session_alive():
-                await asyncio.sleep(delay)
-                delay = _MCP_RETRY_INITIAL_DELAY_S  # reset backoff
-                continue
-
-            if self.telemetry_analysis_service is not None:
-                logger.warning("MCP session lost. Tearing down and reconnecting...")
-                await self._teardown_mcp()
-
-            logger.info("MCP Reconnect Loop: attempting connection...")
-            try:
-                new_manager = MCPClientManagerAdapter()
-                await asyncio.wait_for(
-                    new_manager.start_server_session(),
-                    timeout=_MCP_CONNECT_TIMEOUT_S
-                )
-                self.mcp_manager = new_manager
-
-                self.telemetry_analysis_service = self._agent_factory(new_manager)
-                queue_size = self._analysis_queue.qsize()
-                logger.info(
-                    f"✅ MCP connected. AI Agent ACTIVE. "
-                    f"{queue_size} window(s) waiting in queue will now be processed."
-                )
-                delay = _MCP_RETRY_INITIAL_DELAY_S  # reset backoff
-
-            except asyncio.TimeoutError:
-                logger.warning(
-                    f"MCP connect timed out ({_MCP_CONNECT_TIMEOUT_S}s). "
-                    f"Retry in {delay}s..."
-                )
-                await self._teardown_mcp()
-                await asyncio.sleep(delay)
-                delay = min(delay * _MCP_RETRY_BACKOFF_FACTOR, _MCP_RETRY_MAX_DELAY_S)
-
-            except Exception as e:
-                logger.warning(
-                    "MCP connect failed: %s: %s. Retry in %ss...",
-                    type(e).__name__, e, delay,
-                )
-                await self._teardown_mcp()
-                await asyncio.sleep(delay)
-                delay = min(delay * _MCP_RETRY_BACKOFF_FACTOR, _MCP_RETRY_MAX_DELAY_S)
 
     def _is_mcp_session_alive(self) -> bool:
         if self.mcp_manager is None:
@@ -448,9 +376,6 @@ class TelemetryAnalysisOrchestratorService:
         logger.info("Initializing Agent subsystem...")
         self._stop_event.clear()
 
-        self._mcp_reconnect_handle = asyncio.create_task(
-            self._mcp_reconnect_loop(), name="mcp-reconnect"
-        )
         if self._mcp_reconnect_handle:
             self._mcp_reconnect_handle.add_done_callback(self._on_background_task_done)
 
