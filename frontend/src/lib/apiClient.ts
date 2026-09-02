@@ -23,6 +23,7 @@ interface ApiClientConfig {
 export interface ApiFetchOptions extends RequestInit {
   skipAuth?: boolean;
   skipJsonContentType?: boolean;
+  skipTenantAuth?: boolean;
   skipUnauthorizedHandler?: boolean;
   skipAuthRefresh?: boolean;
 }

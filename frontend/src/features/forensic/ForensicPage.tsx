@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useForensicAnalysis } from '@/features/forensic/hooks/useForensicAnalysis';
 import { useForensicHistory, useForensicReport } from '@/features/forensic/hooks/useForensicHistory';
 import { useForensicModels } from '@/features/forensic/hooks/useForensicModels';
@@ -29,19 +29,111 @@ export default function ForensicPage() {
     return historyQuery.data?.results.find((item) => item.session_id === selectedReportId) ?? null;
   }, [historyQuery.data?.results, reportQuery.data, selectedReportId]);
 
+  const [currentMessages, setCurrentMessages] = useState<any[]>([]);
+  const [pendingUserMessage, setPendingUserMessage] = useState<any | null>(null);
+
+  useEffect(() => {
+    // Keep a local copy of messages so we can optimistically append user messages
+    setCurrentMessages(selectedReport?.messages ?? []);
+    // clear pending message if switching sessions
+    setPendingUserMessage(null);
+  }, [selectedReport?.messages, selectedReport?.session_id]);
+
+  // helper to generate an idempotency key for retries
+  function makeIdempotencyKey() {
+    return `msg-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+  }
+
+  // Toast state for service errors
+  const [toast, setToast] = useState<{ id?: string; title: string; message: string } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  function closeToast() {
+    setToast(null);
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = null;
+    }
+  }
+
+  function showToastFromErrorInfo(errorInfo: any) {
+    const title = errorInfo?.error_code ?? 'Error';
+    const message = errorInfo?.detail ?? (typeof errorInfo === 'string' ? errorInfo : 'Error desconocido');
+    setToast({ id: `t-${Date.now()}`, title, message });
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    // auto-dismiss after 10 seconds
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 10000);
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedQuery = query.trim();
-    if (normalizedQuery.length < 3) {
-      return;
-    }
+    if (normalizedQuery.length < 1) return;
 
-    const session = await analyzeMutation.mutateAsync({
+    // build payload
+    const idempotencyKey = makeIdempotencyKey();
+    const payload: any = {
       query: normalizedQuery,
       source_id: sourceId,
       model_id: selectedModelId || undefined,
-    });
-    setSelectedReportId(session.session_id ?? null);
+      idempotency_key: idempotencyKey,
+    };
+
+    // is follow-up
+    const isFollowUp = Boolean(selectedReportId);
+    if (isFollowUp) payload.session_id = selectedReportId;
+
+    // Optimistic UX: append user's message locally and keep a pending object with metadata
+    const now = new Date().toISOString();
+    const userMsg = { role: 'user', content: normalizedQuery, timestamp: now } as any;
+    const pending = { ...userMsg, idempotencyKey, attempts: 0, error: false };
+
+    setPendingUserMessage(pending);
+    setCurrentMessages((prev) => [...prev, userMsg]);
+    setQuery('');
+
+    try {
+      const session = await analyzeMutation.mutateAsync(payload);
+      if (session?.messages) {
+        setCurrentMessages(session.messages);
+      }
+      setPendingUserMessage(null);
+      setSelectedReportId(session.session_id ?? null);
+    } catch (err) {
+      // extract service error body if present and attach to pending message for display
+      const e = err as any;
+      const errorInfo = e?.response?.data ?? e?.data ?? (e?.message ? { detail: e.message } : { detail: 'Error desconocido' });
+      setPendingUserMessage((prev: any) => ({ ...(prev ?? pending), error: true, attempts: (prev?.attempts ?? 0) + 1, errorInfo }));
+      showToastFromErrorInfo(errorInfo);
+    }
+  }
+
+  async function retryPendingMessage() {
+    const pending = pendingUserMessage;
+    if (!pending) return;
+
+    const payload: any = {
+      query: pending.content,
+      source_id: sourceId,
+      model_id: selectedModelId || undefined,
+      idempotency_key: pending.idempotencyKey || makeIdempotencyKey(),
+    };
+    if (selectedReportId) payload.session_id = selectedReportId;
+
+    // mark retrying
+    setPendingUserMessage((prev: any) => ({ ...(prev ?? pending), error: false }));
+
+    try {
+      const session = await analyzeMutation.mutateAsync(payload);
+      if (session?.messages) setCurrentMessages(session.messages);
+      setPendingUserMessage(null);
+      setSelectedReportId(session.session_id ?? null);
+    } catch (err) {
+      const e = err as any;
+      const errorInfo = e?.response?.data ?? e?.data ?? (e?.message ? { detail: e.message } : { detail: 'Error desconocido' });
+      setPendingUserMessage((prev: any) => ({ ...(prev ?? pending), error: true, attempts: (prev?.attempts ?? 0) + 1, errorInfo }));
+      showToastFromErrorInfo(errorInfo);
+    }
   }
 
   const history = historyQuery.data?.results ?? [];
@@ -132,10 +224,38 @@ export default function ForensicPage() {
           </div>
         </header>
 
+        {toast ? (
+          <div className="absolute top-4 right-6 z-50">
+            <div className="max-w-sm rounded border border-rose-600 bg-rose-900/80 p-3 shadow-lg text-rose-100">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-sm">{toast.title}</div>
+                  <div className="text-xs mt-1">{toast.message}</div>
+                </div>
+                <button onClick={closeToast} className="ml-2 text-xs px-2 py-1 rounded bg-rose-700/60">Cerrar</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <main className="mt-3 flex-1 overflow-hidden">
           {!selectedReport ? (
-            <div className="h-full rounded border border-dashed border-surface-border p-6 text-sm text-slate-400">
-              Inicia la conversación escribiendo tu mensaje en el campo inferior. Verás visualizaciones del análisis cuando la respuesta llegue (spinners, tarjetas destacadas y timeline).
+            // Render ChatView for a NEW conversation (no sessionId) so the input is visible
+            <div className="h-full flex flex-col">
+              <ChatView
+                messages={currentMessages}
+                query={query}
+                setQuery={setQuery}
+                selectedModelId={selectedModelId}
+                setSelectedModelId={setSelectedModelId}
+                analyzeMutation={analyzeMutation}
+                availableModels={availableModels}
+                defaultModelId={defaultModelId}
+                handleSubmit={handleSubmit}
+                sessionId={null}
+                pendingUserMessage={pendingUserMessage}
+                onRetry={retryPendingMessage}
+              />
             </div>
           ) : (
             <>
@@ -164,7 +284,7 @@ export default function ForensicPage() {
                 {/* Chat area: ChatView contains the single scrollable messages region and the floating input */}
                 <div className="flex-1 relative">
                   <ChatView
-                    messages={selectedReport.messages}
+                    messages={currentMessages}
                     query={query}
                     setQuery={setQuery}
                     selectedModelId={selectedModelId}
@@ -173,6 +293,9 @@ export default function ForensicPage() {
                     availableModels={availableModels}
                     defaultModelId={defaultModelId}
                     handleSubmit={handleSubmit}
+                    sessionId={selectedReport?.session_id ?? null}
+                    pendingUserMessage={pendingUserMessage}
+                    onRetry={retryPendingMessage}
                   />
                 </div>
               </div>
