@@ -8,7 +8,7 @@ export type HttpMethod =
   | 'PATCH';
 
 export interface LogEntry {
-  _id: string;
+  id: string;
   source_id: string;
   source_ip: string;
   http_method: HttpMethod;

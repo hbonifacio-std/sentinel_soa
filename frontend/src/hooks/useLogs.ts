@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/apiClient';
 import { parseTelemetryPage } from '@/lib/analyticsParsers';
 import { mockLogs } from '@/data/mockLogs';
-import type { PageInfo } from '@/types/api';
+import { logKeys } from '@/lib/queryKeys';
+import type { PageInfo, PaginatedResponse } from '@/types/api';
 import type { LogEntry } from '@/types/logEntry';
 
 const useMockData = String(import.meta.env.VITE_MOCK_DATA ?? 'false').toLowerCase() === 'true';
@@ -10,6 +11,7 @@ const useMockData = String(import.meta.env.VITE_MOCK_DATA ?? 'false').toLowerCas
 interface UseLogsOptions {
   page?: number;
   limit?: number;
+  sourceId?: string;
 }
 
 const defaultPageInfo: PageInfo = {
@@ -23,47 +25,43 @@ const defaultPageInfo: PageInfo = {
 export function useLogs(sourceId: string | null, options: UseLogsOptions = {}) {
   const page = options.page ?? 1;
   const limit = options.limit ?? 25;
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [pageInfo, setPageInfo] = useState<PageInfo>(defaultPageInfo);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const query = useQuery({
+    queryKey: logKeys.list(sourceId, page, limit),
+    queryFn: async () => {
+      if (useMockData) {
+        const filtered = mockLogs.filter((log) => !sourceId || log.source_id === sourceId);
+        const start = (page - 1) * limit;
+        const rows = filtered.slice(start, start + limit);
+        return {
+          results: rows,
+          info: {
+            total_records: filtered.length,
+            page,
+            limit,
+            next_page: start + limit < filtered.length ? `?page=${page + 1}&limit=${limit}` : null,
+            prev_page: page > 1 ? `?page=${page - 1}&limit=${limit}` : null,
+          },
+        };
+      }
 
-  const fetchLogs = useCallback(async () => {
-    if (useMockData) {
-      const filtered = mockLogs.filter((log) => !sourceId || log.source_id === sourceId);
-      const start = (page - 1) * limit;
-      const rows = filtered.slice(start, start + limit);
-      setLogs(rows);
-      setPageInfo({
-        total_records: filtered.length,
-        page,
-        limit,
-        next_page: start + limit < filtered.length ? `?page=${page + 1}&limit=${limit}` : null,
-        prev_page: page > 1 ? `?page=${page - 1}&limit=${limit}` : null,
-      });
-      return;
-    }
+      const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+      if (sourceId) {
+        params.set('source_id', sourceId);
+      }
 
-    setLoading(true);
-    setError(null);
-
-    try {
-      const query = new URLSearchParams({ page: String(page), limit: String(limit) }).toString();
-      const payload = await apiFetch<unknown>(`/api/v1/analytics/logs_row_telemetry?${query}`);
+      const payload = await apiFetch<PaginatedResponse<LogEntry> | LogEntry[]>(`/api/v1/analytics/logs_row_telemetry?${params.toString()}`);
       const parsed = parseTelemetryPage(payload, page, limit);
-      const filteredRows = parsed.results.filter((log) => !sourceId || log.source_id === sourceId);
-      setLogs(filteredRows);
-      setPageInfo(parsed.info);
-    } catch (e) {
-      setError(e as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [limit, page, sourceId]);
+      return {
+        results: parsed.results.filter((log) => !sourceId || log.source_id === sourceId),
+        info: parsed.info,
+      };
+    },
+  });
 
-  useEffect(() => {
-    void fetchLogs();
-  }, [fetchLogs]);
-
-  return { logs, pageInfo, loading, error, refetch: fetchLogs };
+  return {
+    logs: query.data?.results ?? [],
+    pageInfo: query.data?.info ?? { ...defaultPageInfo, page, limit },
+    loading: query.isLoading || query.isFetching,
+    error: query.error instanceof Error ? query.error : null,
+  };
 }

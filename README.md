@@ -1,70 +1,62 @@
 # Sentinel SOA
 
-**Sentinel SOA** es un sistema de análisis de telemetría basado en una arquitectura orientada a servicios (SOA), diseñado para detectar patrones de ataque y comportamientos anómalos en tiempo real. Utiliza modelos de lenguaje avanzados (LLMs) para realizar un análisis profundo de los logs, proporcionando una capa de inteligencia de seguridad proactiva.
+**Sentinel SOA** is an academic cybersecurity platform that demonstrates AI-driven threat detection in a fully isolated, service-oriented environment. It ingests HTTP telemetry from a monitored "victim" application, correlates it against deterministic heuristics and Large Language Model (LLM) reasoning, and surfaces the results through a React-based Security Operations Center (SOC) dashboard with an AI-assisted forensic investigation workspace.
 
-## Tabla de Contenidos
+The project's academic purpose is to provide a hands-on, reproducible lab for studying:
+- Real-time telemetry ingestion and windowing.
+- Hybrid detection (heuristic rules + LLM analysis) against OWASP Top 10 style attacks.
+- Agentic orchestration between a core API and a dedicated analysis microservice via the **Model Context Protocol (MCP)**.
+- Hexagonal / Clean Architecture applied to a production-grade FastAPI codebase.
+- Safe, contained offensive-security experimentation (attacker vs. victim containers on isolated Docker networks).
 
--   [Visión General](#visión-general)
--   [Tecnologías](#tecnologías)
--   [Arquitectura](#arquitectura)
--   [Componentes](#componentes)
--   [Flujo de Información](#flujo-de-información)
--   [Reglas Heurísticas](#reglas-heurísticas)
--   [Guía de Implementación](#guía-de-implementación)
+## Core Value Proposition
 
-## Visión General
+Instead of relying purely on static, signature-based detection, Sentinel SOA groups incoming logs into contextual time/session windows and asks an LLM-backed analysis agent to reason about the *behavior* of a source IP — cross-referencing it with deterministic heuristics (SQLi/path traversal patterns, malicious User-Agents, sensitive URIs) and historical threat context stored in MongoDB. Analysts can then interrogate the data further through a natural-language forensic chat that translates questions into safe, bounded MongoDB queries and produces a structured markdown report.
 
-El objetivo principal de Sentinel SOA es procesar flujos de datos de telemetría (logs de aplicaciones, eventos del sistema, etc.) para identificar actividades sospechosas que podrían pasar desapercibidas para los sistemas de detección basados en firmas tradicionales. Al agrupar los eventos en ventanas de tiempo y analizarlos en su contexto, el sistema puede descubrir ataques complejos de varios pasos.
+## High-Level Architecture
 
-## Tecnologías
+```
+Attacker (sim.) ──▶ Victim App ──▶ Vector (log shipper) ──▶ Core Orchestrator ──▶ MCP Log Analysis Server ──▶ LLM Provider
+                                                               │      ▲                                        (Gemini / OpenAI /
+                                                               ▼      │                                         Groq / Ollama)
+                                                          MongoDB   Redis
+                                                               ▲
+                                                               │
+                                                     React SOC Frontend (Dashboard, Alerts, Forensic Chat, Rules)
+```
 
-El proyecto está construido sobre un stack de tecnologías modernas de Python y contenedores:
+- **Victim App**: a deliberately vulnerable FastAPI service acting as the monitored asset.
+- **Attacker / Traffic Simulator**: generates a mix of benign and OWASP-style malicious traffic against the victim, exclusively within an isolated Docker network (`dmz_net`).
+- **Core Orchestrator**: hexagonal-architecture FastAPI service that authenticates telemetry clients, manages time windows, drives the AI analysis agent, persists reports, and exposes the REST API consumed by the frontend.
+- **MCP Log Analysis Server**: a FastMCP-based microservice exposing analysis tools (`analyze_web_activity`, `get_threat_context`, forensic NL→Mongo translation) backed by a heuristics engine and pluggable LLM providers.
+- **MongoDB / Redis**: persistent storage for telemetry, analysis reports, users, heuristic rules and versioning (MongoDB); caching, telemetry windows, rules bundle and JWT blacklist (Redis).
+- **React Frontend**: threat dashboard, alert center, rules management, and an AI-powered forensic investigation chat.
 
--   **Backend**: FastAPI
--   **Servidor ASGI**: Uvicorn
--   **Comunicación entre servicios**: `fastmcp` (RPC)
--   **Análisis IA**: Google Gemini y/o modelos locales con Ollama
--   **Contenerización**: Docker y Docker Compose
--   **Validación de datos**: Pydantic
--   **Testing**: Pytest
+See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the full data-flow description.
 
-## Arquitectura
+## Documentation Map
 
-La arquitectura del sistema está diseñada para ser modular y escalable, con componentes bien definidos que se comunican a través de la red.
+| Document | Description |
+|---|---|
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System architecture, component responsibilities, attacker/victim isolation model, and end-to-end data flow. |
+| [`docs/REQUIREMENTS.md`](./docs/REQUIREMENTS.md) | Functional and non-functional requirements, and critical use cases (Given actor/preconditions/flow/postconditions). |
+| [`docs/TECHNICAL_SPECIFICATIONS.md`](./docs/TECHNICAL_SPECIFICATIONS.md) | Dependency tables (frontend, core, MCP server), code architecture (Hexagonal/DDD), and component-level security controls. |
+| [`docs/QA_TEST_PLAN.md`](./docs/QA_TEST_PLAN.md) | Gherkin/BDD test scenarios covering detection, AI chat, and resilience. |
+| [`docs/AI_AGENTS.md`](./docs/AI_AGENTS.md) | AI agent architecture, agent/tool catalog, and configuration guide for models and providers. |
+| [`docs/rules/README.md`](./docs/rules/README.md) | Deep-dive on the heuristic rules subsystem (MongoDB + Redis, versioning, CRUD). |
 
-Para una explicación detallada y un diagrama visual, consulta el documento de arquitectura:
--   **[📄 Ver Documento de Arquitectura](./docs/architecture.md)**
+> **Note on legacy documentation:** `docs/architecture.md`, `docs/components.md` and `docs/information_flow.md` described an earlier version of the system (no MongoDB/Redis, no frontend, no attacker/victim simulation, no hexagonal layering). Their content has been investigated, superseded, and consolidated into `docs/ARCHITECTURE.md`, `docs/TECHNICAL_SPECIFICATIONS.md`, and `docs/AI_AGENTS.md`. They can be safely removed once this rewrite is merged.
 
-## Componentes
+## Quick Start
 
-El sistema se divide en varios microservicios, cada uno con una responsabilidad clara. Los componentes principales son el `Core Orchestrator`, el `Log Analysis Server` y el servicio `Ollama` para la ejecución de modelos locales.
+```bash
+cp .env.example .env
+docker-compose up --build
+```
 
-Para una descripción en profundidad de cada componente, consulta el siguiente documento:
--   **[📄 Ver Documento de Componentes](./docs/components.md)**
-
-## Flujo de Información
-
-El procesamiento de datos sigue un flujo lógico, desde la ingesta de telemetría hasta la generación del análisis final.
-
-Para entender cómo viajan los datos a través del sistema, consulta el documento sobre el flujo de información:
--   **[📄 Ver Documento de Flujo de Información](./docs/information_flow.md)**
-
-## Reglas Heurísticas
-
-El sistema de detección determinística de Sentinel SOA utiliza reglas heurísticas administrables desde MongoDB/Redis, con versionado, auditoría y activación controlada.
-
-Para entender cómo funcionan las reglas, cómo crear nuevas, cómo versionarlas, activarlas, desactivarlas y cómo extender el sistema con nuevas categorías, consulta:
--   **[📄 Ver Guía Completa de Reglas Heurísticas](./docs/rules/README.md)**
-
-## Guía de Implementación
-
-Para poner en marcha el proyecto, necesitarás configurar las variables de entorno y ejecutar los servicios con Docker Compose.
-
-La guía completa de instalación y configuración se encuentra aquí:
--   **[📄 Ver Guía de Implementación y Configuración](./docs/setup.md)**
+Further setup instructions and data-seeding scripts can be found by exploring the `scripts` directory.
 
 ---
 *Este README fue generado para proporcionar una visión completa y detallada del proyecto Sentinel SOA.*
 
-docker exec -it sentinel_attacker python3 /app/traffic_simulator.py
-FROM qwen2.5-coder:7b
+

@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { mockThreats } from '@/data/mockThreats';
 import { apiFetch } from '@/lib/apiClient';
 import { parseReportsPage } from '@/lib/analyticsParsers';
-import type { PageInfo } from '@/types/api';
-import type { AlertStatus, Threat } from '@/types/threat';
+import type { PageInfo, PaginatedResponse } from '@/types/api';
+import { threatKeys } from '@/lib/queryKeys';
+import type { Threat } from '@/types/threat';
 
-const pollingMs = Number(import.meta.env.VITE_POLLING_INTERVAL_MS ?? 30000);
 const useMockData = String(import.meta.env.VITE_MOCK_DATA ?? 'false').toLowerCase() === 'true';
-const enablePolling = String(import.meta.env.VITE_ENABLE_POLLING ?? 'false').toLowerCase() === 'true';
 
 interface UseThreatsOptions {
   page?: number;
@@ -22,83 +22,71 @@ const defaultPageInfo: PageInfo = {
   prev_page: null,
 };
 
+function normalizeThreatStatus(reviewed: boolean, resolved: boolean): Threat['status'] {
+  if (resolved) {
+    return 'resolved';
+  }
+  if (reviewed) {
+    return 'reviewing';
+  }
+  return 'pending';
+}
+
 export function useThreats(sourceId: string | null, options: UseThreatsOptions = {}) {
   const page = options.page ?? 1;
   const limit = options.limit ?? 10;
-  const [threats, setThreats] = useState<Threat[]>([]);
-  const [pageInfo, setPageInfo] = useState<PageInfo>(defaultPageInfo);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
+  const query = useQuery({
+    queryKey: threatKeys.list(sourceId, page, limit),
+    queryFn: async () => {
+      if (!sourceId) {
+        return {
+          results: [] as Threat[],
+          info: { ...defaultPageInfo, page, limit },
+        };
+      }
 
-  const fetchThreats = useCallback(async () => {
-    if (!sourceId) {
-      setThreats([]);
-      setPageInfo({ ...defaultPageInfo, page, limit });
-      return;
-    }
+      if (useMockData) {
+        const filtered = mockThreats.filter((threat) => !sourceId || threat.source_id === sourceId);
+        const start = (page - 1) * limit;
+        const rows = filtered.slice(start, start + limit);
+        return {
+          results: rows,
+          info: {
+            total_records: filtered.length,
+            page,
+            limit,
+            next_page: start + limit < filtered.length ? `?page=${page + 1}&limit=${limit}` : null,
+            prev_page: page > 1 ? `?page=${page - 1}&limit=${limit}` : null,
+          },
+        };
+      }
 
-    if (useMockData) {
-      const filtered = mockThreats.filter((threat) => !sourceId || threat.source_id === sourceId);
-      const start = (page - 1) * limit;
-      const rows = filtered.slice(start, start + limit);
-      setThreats(rows);
-      setPageInfo({
-        total_records: filtered.length,
-        page,
-        limit,
-        next_page: start + limit < filtered.length ? `?page=${page + 1}&limit=${limit}` : null,
-        prev_page: page > 1 ? `?page=${page - 1}&limit=${limit}` : null,
-      });
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const query = new URLSearchParams({
+      const queryString = new URLSearchParams({
         source_id: sourceId,
         page: String(page),
         limit: String(limit),
       }).toString();
-      const payload = await apiFetch<unknown>(`/api/v1/analytics/reports?${query}`);
-      const parsed = parseReportsPage(payload, page, limit);
-      setThreats(parsed.results);
-      setPageInfo(parsed.info);
-    } catch (e) {
-      setError(e as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [limit, page, sourceId]);
+      const payload = await apiFetch<PaginatedResponse<Threat> | Threat[]>(`/api/v1/analytics/reports?${queryString}`);
+      return parseReportsPage(payload, page, limit);
+    },
+  });
 
-  useEffect(() => {
-    void fetchThreats();
-
-    if (!enablePolling || pollingMs <= 0) {
-      return;
-    }
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchThreats();
-      }
-    }, pollingMs);
-
-    return () => clearInterval(interval);
-  }, [fetchThreats]);
-
-  const mergedThreats = useMemo(
+  const normalizedThreats = useMemo(
     () =>
-      threats.map((threat) => ({
+      (query.data?.results ?? []).map((threat) => ({
         ...threat,
         reviewed: Boolean(threat.reviewed),
         resolved: Boolean(threat.resolved),
         actions: threat.actions ?? [],
-        status: (threat.resolved ? 'resolved' : threat.reviewed ? 'reviewing' : 'pending') as AlertStatus,
+        status: normalizeThreatStatus(Boolean(threat.reviewed), Boolean(threat.resolved)),
       })),
-    [threats],
+    [query.data?.results],
   );
 
-  return { threats: mergedThreats, pageInfo, loading, error, refetch: fetchThreats };
+  return {
+    threats: normalizedThreats,
+    pageInfo: query.data?.info ?? { ...defaultPageInfo, page, limit },
+    loading: query.isLoading || query.isFetching,
+    error: query.error instanceof Error ? query.error : null,
+  };
 }

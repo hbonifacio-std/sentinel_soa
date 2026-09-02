@@ -1,0 +1,10 @@
+[
+  {
+    "client_id": "acme-corp",
+    "display_name": "acme-corp",
+    "description": "Cliente inicial autorizado para enviar lotes de logs desde Vector al core local.",
+    "is_active": true,
+    "api_key": "sentinel_sk_live_v1_KLPLxqIZWPaelBI66EUVQKv6xHAMFqP9n"
+  }
+]
+

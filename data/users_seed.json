@@ -1,0 +1,19 @@
+[
+  {
+    "username": "admin",
+    "email": "admin@example.com",
+    "password": "AdminPassword123!",
+    "role": "admin",
+    "client_id": "acme-corp",
+    "is_active": true
+  },
+  {
+    "username": "analyst",
+    "email": "analyst@example.com",
+    "password": "AnalystPassword123!",
+    "role": "analyst",
+    "client_id": "acme-corp",
+    "is_active": true
+  }
+]
+

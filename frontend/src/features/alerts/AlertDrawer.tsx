@@ -31,7 +31,7 @@ export function AlertDrawer({ threat, isOpen, onClose, onReview, onAddAction, on
   async function handleReview() {
     setIsSubmitting(true);
     try {
-      await onReview(currentThreat._id);
+      await onReview(currentThreat.id);
     } finally {
       setIsSubmitting(false);
     }
@@ -45,7 +45,7 @@ export function AlertDrawer({ threat, isOpen, onClose, onReview, onAddAction, on
 
     setIsSubmitting(true);
     try {
-      await onAddAction(currentThreat._id, comment);
+      await onAddAction(currentThreat.id, comment);
       setActionComment('');
     } finally {
       setIsSubmitting(false);
@@ -55,7 +55,7 @@ export function AlertDrawer({ threat, isOpen, onClose, onReview, onAddAction, on
   async function handleResolve() {
     setIsSubmitting(true);
     try {
-      await onResolve(currentThreat._id);
+      await onResolve(currentThreat.id);
     } finally {
       setIsSubmitting(false);
     }

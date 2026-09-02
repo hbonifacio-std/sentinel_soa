@@ -1,7 +1,9 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { startOfHour } from 'date-fns';
 import { mockStats } from '@/data/mockStats';
 import { apiFetch } from '@/lib/apiClient';
+import { statsKeys } from '@/lib/queryKeys';
 import type { LogEntry } from '@/types/logEntry';
 import type { MitreTacticRow, StatsResponse, ThreatLevelRow, TimelineRow } from '@/types/api';
 import type {KillChainPhase, Threat} from '@/types/threat';
@@ -48,9 +50,10 @@ function getRequestPath(threat: Threat, log?: LogEntry) {
     return log.request_uri;
   }
 
-  const details = threat.details as Record<string, unknown> | undefined;
-  if (typeof details?.request_uri === 'string' && details.request_uri.trim().length > 0) {
-    return details.request_uri;
+  const detailsRecord: Record<string, unknown> | undefined = threat.details ?? undefined;
+  const detailsRequestUri = detailsRecord?.request_uri;
+  if (typeof detailsRequestUri === 'string' && detailsRequestUri.trim().length > 0) {
+    return detailsRequestUri;
   }
 
   const rawTelemetry = (threat as Threat & { raw_telemetry?: Record<string, unknown> }).raw_telemetry;
@@ -62,37 +65,38 @@ function getRequestPath(threat: Threat, log?: LogEntry) {
 }
 
 export function useStats(sourceId: string | null, threats: Threat[], logs: LogEntry[]) {
-  const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-
-  useEffect(() => {
-    async function load() {
-      if (!sourceId) {
-        setStats(null);
-        return;
-      }
-
+  const statsQuery = useQuery({
+    queryKey: statsKeys.detail(sourceId),
+    enabled: Boolean(sourceId),
+    queryFn: async () => {
       if (useMockData) {
-        setStats(mockStats);
+        return mockStats;
+      }
+
+      const query = new URLSearchParams({ source_id: sourceId as string }).toString();
+      return apiFetch<StatsResponse>(`/api/v1/analytics/stats?${query}`);
+    },
+  });
+
+  const stats = statsQuery.data ?? null;
+
+  const logsByBucket = useMemo(() => {
+    const map = new Map<string, LogEntry[]>();
+    logs.forEach((log) => {
+      const key = getBucketKey(log.timestamp);
+      if (!key) {
         return;
       }
+      const rows = map.get(key) ?? [];
+      rows.push(log);
+      map.set(key, rows);
+    });
+    return map;
+  }, [logs]);
 
-      setLoading(true);
-      setError(null);
-      try {
-        const query = new URLSearchParams({ source_id: sourceId }).toString();
-        const data = await apiFetch<StatsResponse>(`/api/v1/analytics/stats?${query}`);
-        setStats(data);
-      } catch (e) {
-        setError(e as Error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    void load();
-  }, [sourceId]);
+  const logsByThreatId = useMemo(() => {
+    return new Map(logs.map((log) => [log.id, log] as const));
+  }, [logs]);
 
   const timelineData = useMemo((): TimelineRow[] => {
     const bucket = new Map<
@@ -125,18 +129,6 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
       bucket.set(key, existing);
     });
 
-    const logsByBucket = new Map<string, LogEntry[]>();
-    logs.forEach((log) => {
-      const key = getBucketKey(log.timestamp);
-      if (!key) {
-        return;
-      }
-
-      const rows = logsByBucket.get(key) ?? [];
-      rows.push(log);
-      logsByBucket.set(key, rows);
-    });
-
     return Array.from(bucket.values())
       .map((entry) => {
         const dominantIp = getTopKey(entry.ipCounts);
@@ -163,7 +155,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
         };
       })
       .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  }, [logs, threats]);
+  }, [logsByBucket, threats]);
 
   const mitreTactics = useMemo((): MitreTacticRow[] => {
     if (!useMockData && stats?.mitre_tactics?.length) {
@@ -176,7 +168,6 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
       }));
     }
 
-    const logsByThreatId = new Map(logs.map((log) => [log._id, log]));
     const counts = new Map<
       string,
       {
@@ -206,7 +197,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
         entry.techniques.set(techniqueId, { name: techniqueName, id: techniqueId });
       }
 
-      const path = getRequestPath(threat, logsByThreatId.get(threat._id));
+      const path = getRequestPath(threat, logsByThreatId.get(threat.id));
       if (path) {
         entry.pathCounts.set(path, (entry.pathCounts.get(path) ?? 0) + 1);
       }
@@ -226,7 +217,7 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
           .map(([path]) => path),
       }))
       .sort((a, b) => b.count - a.count || a._id.localeCompare(b._id));
-  }, [logs, stats, threats]);
+  }, [logsByThreatId, stats, threats]);
 
   const threatLevelData = useMemo((): ThreatLevelRow[] => {
     const map = new Map<string, { count: number; activeCount: number; mitigatedCount: number }>();
@@ -274,5 +265,13 @@ export function useStats(sourceId: string | null, threats: Threat[], logs: LogEn
   }));
 }, [threats]);
 
-  return { stats, timelineData, mitreTactics, threatLevelData,killChainPhaseData, loading, error };
+  return {
+    stats,
+    timelineData,
+    mitreTactics,
+    threatLevelData,
+    killChainPhaseData,
+    loading: statsQuery.isLoading || statsQuery.isFetching,
+    error: statsQuery.error instanceof Error ? statsQuery.error : null,
+  };
 }

@@ -17,7 +17,10 @@ def load_rules_seed_payload(path: Optional[Path] = None) -> Dict[str, Any]:
 
 def get_active_seed_rules(payload: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     seed = payload or load_rules_seed_payload()
-    return [rule for rule in seed.get("heuristic_rules", []) if rule.get("is_active", True)]
+    return [
+        rule for rule in seed.get("heuristic_rules", [])
+        if rule.get("is_active", True)
+    ]
 
 
 def get_seed_version_hash(payload: Optional[Dict[str, Any]] = None) -> str:

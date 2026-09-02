@@ -179,7 +179,7 @@ export function mapTelemetryRow(rawRow: unknown, index: number): LogEntry {
   const query = asString(http.query, '');
   const requestUri = query ? `${path}?${query}` : path;
   return {
-    _id: asString(row._id, `${sourceId}-${index}-${Date.now()}`),
+    id: asString(row.id, `${sourceId}-${index}-${Date.now()}`),
     source_id: sourceId,
     source_ip: asString(row.source_ip, asString(network.client_ip ?? row.client_ip, 'N/A')),
     http_method: normalizeMethod(row.http_method ?? row.method ?? http.method),
@@ -206,7 +206,7 @@ export function mapReportRow(rawRow: unknown, index: number): Threat {
   const resolvedAt = row.resolved_at_utc;
 
   return {
-    _id: asString(row._id, `report-${index}-${Date.now()}`),
+    id: asString(row.id),
     source_id: asString(row.source_id, '') || undefined,
     source_ip: asString(row.source_ip, asString(threatActor?.ip_address, asString(details?.source_ip, 'N/A'))),
     threat_level: normalizeThreatLevel(row.threat_level),

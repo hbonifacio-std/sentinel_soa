@@ -23,6 +23,7 @@ export interface ValidationRules {
 
 export interface HeuristicRule {
   rule_id: string;
+  tenant_id?: string | null;
   rule_type: RuleType;
   category: RuleCategory;
   version: number;
@@ -116,4 +117,3 @@ export interface AuditLogResponse {
   limit: number;
   entries: Array<Record<string, unknown>>;
 }
-

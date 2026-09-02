@@ -2,7 +2,7 @@ import type { Threat } from '@/types/threat';
 
 export const mockThreats: Threat[] = [
   {
-    _id: 'mock-1',
+    id: 'mock-1',
     source_id: 'sensor-alpha',
     source_ip: '10.10.20.5',
     threat_level: 'HIGH',
@@ -38,7 +38,7 @@ export const mockThreats: Threat[] = [
     status: 'pending',
   },
   {
-    _id: 'mock-2',
+    id: 'mock-2',
     source_id: 'sensor-alpha',
     source_ip: '172.16.0.8',
     threat_level: 'CRITICAL',
@@ -74,7 +74,7 @@ export const mockThreats: Threat[] = [
     status: 'resolved',
   },
   {
-    _id: 'mock-3',
+    id: 'mock-3',
     source_id: 'sensor-alpha',
     source_ip: '172.16.0.8',
     threat_level: 'MEDIUM',
@@ -103,7 +103,7 @@ export const mockThreats: Threat[] = [
     status: 'reviewing',
   },
   {
-    _id: 'mock-4',
+    id: 'mock-4',
     source_id: 'sensor-alpha',
     source_ip: '192.168.50.44',
     threat_level: 'LOW',

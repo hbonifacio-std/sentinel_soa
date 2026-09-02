@@ -1,182 +1,248 @@
-# mcp_servers/log_analysis_server/server.py
+"""FastMCP server exposing read-only MongoDB + Neo4j telemetry/threat tools."""
 
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+import logging
 import os
 import sys
-import logging
-import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, Optional
 
 from fastmcp.server import FastMCP
+from starlette.middleware import Middleware
 
-# Import the real analysis functions with heuristics
-from mcp_servers.log_analysis_server.tools.analyze_activity import execute_analyze_web_activity
-from mcp_servers.log_analysis_server.tools.threat_context import execute_get_threat_context
+from mcp_servers.log_analysis_server.auth_middleware import InternalBearerAuthMiddleware
+from mcp_servers.log_analysis_server.config import server_settings
+from mcp_servers.log_analysis_server.security import get_internal_token
+from mcp_servers.log_analysis_server.tool_access_control import require_tool_permission
+from mcp_servers.log_analysis_server.tools.forensic_tools import (
+    execute_check_data_exfiltration_evidence,
+    execute_find_pivot_blast_radius,
+    execute_get_attacker_chronological_timeline,
+    execute_get_threat_dashboard_summary,
+    execute_summarize_window_telemetry,
+    mongo_db_manager,
+    neo4j_db_manager,
+)
+from mcp_servers.log_analysis_server.models.threat_tools import (
+    AttackerChronologicalTimelineOutput,
+)
 
-# --- Production-Grade Logging Configuration ---
 if logging.root.handlers:
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
-log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logging.basicConfig(
     level=logging.INFO,
     stream=sys.stderr,
-    format=log_format,
-    force=True
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    force=True,
 )
+
+# Suppress verbose logs from Neo4j
+logging.getLogger("neo4j.bolt").setLevel(logging.WARNING)
+logging.getLogger("neo4j.io").setLevel(logging.WARNING)
+logging.getLogger("neo4j").setLevel(logging.WARNING)
+logging.getLogger("neo4j.api_core").setLevel(logging.ERROR)
+
 logger = logging.getLogger(__name__)
 
-# --- Initialize server ---
 server = FastMCP("log-analysis-server")
 
-# --- Register real tools with heuristics ---
-# pylint: disable=too-many-arguments
+
 @server.tool()
-async def analyze_web_activity(  # noqa: PLR0913
-        window_id: str,
-        source_id: str,
-        source_ip: str,
-        window_start_utc: str,
-        window_end_utc: str,
-        total_requests: int,
-        unique_uris_requested: List[str],
-        user_agents_observed: List[str],
-        requests_per_second_avg: float,
-        http_methods_distribution: Optional[Dict[str, int]] = None,
-        response_codes_distribution: Optional[Dict[str, int]] = None,
-        critical_payload_features: Optional[List[str]] = None,
-        attempted_usernames: Optional[List[str]] = None,
-        invalid_token_requests_count: int = 0,
-        max_response_size_bytes: int = 0,
-        suspicious_samples: Optional[List[Dict[str, Any]]] = None,
-        infra_context: Optional[Dict[str, Any]] = None,
-        security_state_features: Optional[Dict[str, Any]] = None,
-        rules_bundle: Optional[Dict[str, Any]] = None,
+@require_tool_permission("get_threat_dashboard_summary")
+async def get_threat_dashboard_summary(
+    client_id: str,
+    time_window_hours: int = 24,
+    min_threat_level: str = "LOW",
 ) -> Dict[str, Any]:
     """
-    Analyzes web telemetry to detect threats using heuristics + LLM.
+    Get a high-level overview of the security posture, global alert metrics, and top attacking IPs.
 
-    Args:
-        window_id: Window identifier.
-        source_id: Telemetry source ID.
-        source_ip: Source IP under analysis.
-        window_start_utc: Start timestamp.
-        window_end_utc: End timestamp.
-        total_requests: Total requests.
-        unique_uris_requested: List of requested URIs.
-        http_methods_distribution: HTTP method distribution.
-        response_codes_distribution: Response code distribution.
-        user_agents_observed: List of observed User-Agents.
-        requests_per_second_avg: Average requests per second.
-        critical_payload_features: Sanitized suspicious payload fragments extracted by the backend.
-        attempted_usernames: Distinct usernames observed in authentication attempts.
-        invalid_token_requests_count: Number of requests with invalid/expired authentication tokens.
-        max_response_size_bytes: Maximum response size observed in the window.
-        suspicious_samples: Sanitized suspicious request samples for context.
-        infra_context: Compact infrastructure summary (environment, process, ports, proxy metadata).
-        security_state_features: Session/authentication state features for account-compromise correlation.
-        rules_bundle: Active rules bundle injected by core orchestrator.
+    Use this tool to get macro/triage context. DO NOT use this for step-by-step investigation or raw log inspection.
+
+    Inputs:
+    - client_id (str, REQUIRED): Tenant unique ID
+    - time_window_hours (int, OPTIONAL, default=24): Lookback period in hours
+    - min_threat_level (str, OPTIONAL, default="LOW"): Minimum threat filter ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+    Output includes:
+    - total_alerts (int)
+    - latest_alert_timestamp_utc (str | None): Timestamp of the most recent alert in UTC
+    - severity_counts (dict[str, int])
+    - top_threat_types (list[str]): Top 5 alert categories or threat types detected
+    - top_attacking_ips (list[dict]: {"ip": str, "reports_count": int})
+    - affected_sources (list[str])
+    - active_windows (list[str])
     """
-    # Rebuild the 'arguments' dictionary expected by execute_analyze_web_activity
-    payload = {
-        "window_id": window_id,
-        "source_id": source_id,
-        "source_ip": source_ip,
-        "window_start_utc": window_start_utc,
-        "window_end_utc": window_end_utc,
-        "total_requests": total_requests,
-        "unique_uris_requested": unique_uris_requested,
-        "http_methods_distribution": http_methods_distribution or {},
-        "response_codes_distribution": response_codes_distribution or {},
-        "user_agents_observed": user_agents_observed,
-        "requests_per_second_avg": requests_per_second_avg,
-        "critical_payload_features": critical_payload_features or [],
-        "attempted_usernames": attempted_usernames or [],
-        "invalid_token_requests_count": invalid_token_requests_count,
-        "max_response_size_bytes": max_response_size_bytes,
-        "suspicious_samples": suspicious_samples or [],
-        "infra_context": infra_context or {},
-        "security_state_features": security_state_features or {},
-        "rules_bundle": rules_bundle,
-    }
+    return await execute_get_threat_dashboard_summary(client_id, time_window_hours, min_threat_level)
 
-    logger.info(f"MCP tool 'analyze_web_activity' invoked successfully for IP: {source_ip}")
-
-    try:
-        # Send it cleanly to the internal function without touching any core code
-        return await execute_analyze_web_activity(payload)
-    except Exception as e:
-        logger.error(f"Error executing tool: {str(e)}", exc_info=True)
-        return {
-            "window_id": window_id,
-            "source_id": source_id,
-            "source_ip": source_ip,
-            "threat_detected": False,
-            "threat_level": "NONE",
-            "threat_score": 0,
-            "indicators_found": ["analysis_execution_error"],
-            "reasoning_summary": "MCP tool execution failed before producing a valid analytical verdict.",
-            "recommendation": "Review MCP server logs, validate telemetry window payload, and rerun analysis.",
-            "targeted_asset": f"victim-app [simulation_dmz] paths: {unique_uris_requested[:5]}",
-            "mitre_tactic": None,
-            "mitre_tactic_id": None,
-            "mitre_technique": None,
-            "mitre_technique_id": None,
-            "mitre_sub_technique": None,
-            "mitre_sub_technique_id": None,
-            "suggested_mitigations": [],
-            "error": str(e)
-        }
 
 @server.tool()
-async def get_threat_context(source_ip: str = "N/A", limit: int = 5) -> Dict[str, Any]:
+@require_tool_permission("summarize_window_telemetry")
+async def summarize_window_telemetry(
+    client_id: str,
+    window_id: str,
+) -> Dict[str, Any]:
     """
-    Retrieves the threat history for a specific IP.
+    Statistically analyze a batch/window of telemetry logs without retrieving individual events.
+
+    Returns HTTP status code distributions, top User-Agents, and traffic summaries for a window_id.
+
+    Inputs:
+    - client_id (str, REQUIRED): Tenant unique ID
+    - window_id (str, REQUIRED): UUID of the telemetry window to summarize
+
+    Output includes:
+    - window_id (str)
+    - total_events (int)
+    - unique_ips (int)
+    - status_code_distribution (dict[str, int])
+    - top_user_agents (list[str])
     """
-    logger.info(f"MCP tool 'get_threat_context' invoked for IP: {source_ip}")
+    return await execute_summarize_window_telemetry(client_id, window_id)
+
+
+@server.tool()
+@require_tool_permission("get_attacker_chronological_timeline")
+async def get_attacker_chronological_timeline(
+    client_id: str,
+    source_ip: Optional[str] = None,
+    window_id: Optional[str] = None,
+    only_suspicious: bool = True,
+    limit: int = 30,
+) -> AttackerChronologicalTimelineOutput:
+    """
+    reconstruct_attack_timeline
+    Reconstruct the exact step-by-step chronological sequence of an attacker or specific IP address.
+
+    Returns event logs ordered by timestamp for forensic analysis, including targeted microservices, query parameters, and detection reasons.
+
+    Inputs:
+    - client_id (str, REQUIRED): Tenant unique ID
+    - source_ip (str, OPTIONAL): Attacker IP address to filter
+    - window_id (str, OPTIONAL): Window ID constraint
+    - only_suspicious (bool, OPTIONAL, default=True): If True, filters only flagged suspicious events
+    - limit (int, OPTIONAL, default=30, max=50): Event return cap
+
+    Output includes:
+    - timeline_events (list[dict]): List of chronological forensic events:
+        - timestamp_utc (str): Event timestamp in UTC ISO format
+        - source_ip (str): Origin IP address
+        - target_service (str): Targeted microservice or host ID (e.g., "api-core-005")
+        - method (str): HTTP method (e.g., "GET", "POST")
+        - path (str): Target URI path
+        - query_params (str | None): Request query string parameters, if present
+        - status_code (int | None): HTTP response status code (e.g., 200, 404)
+        - response_size_bytes (int): HTTP response body payload size in bytes
+        - user_agent (str): User-Agent header string (e.g., "gobuster/3.1.0")
+        - suspicious_reason (str | None): Flag or explanation of why the event was flagged as suspicious
+    """
+    limit = min(limit, 50)
+    result = await execute_get_attacker_chronological_timeline(
+        client_id, source_ip, window_id, only_suspicious, limit
+    )
+    return AttackerChronologicalTimelineOutput(**result)
+
+
+@server.tool()
+@require_tool_permission("check_data_exfiltration_evidence")
+async def check_data_exfiltration_evidence(
+    client_id: str,
+    source_ip: str,
+    window_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    check_data_exfiltration_evidence
+Determine whether an IP address successfully extracted sensitive information or attempted unauthorized downloads.
+
+Analyzes successful HTTP requests (200/206), failed download attempts (401/403/404), total byte volume transferred, access to sensitive file paths, and sampled endpoints.
+
+Inputs:
+- client_id (str, REQUIRED): Tenant unique ID
+- source_ip (str, REQUIRED): Suspect attacker IP address to investigate
+- window_id (str, OPTIONAL): Specific telemetry window constraint
+
+Output includes:
+- source_ip (str): Investigated IP address
+- evaluated_window_id (str | None): Window ID evaluated, if provided
+- total_bytes_downloaded (int): Total volume of data transferred in successful HTTP responses (bytes)
+- successful_downloads_count (int): Number of successful requests (HTTP 200/206)
+- failed_download_attempts (int): Number of failed or unauthorized attempts (HTTP 401/403/404)
+- sensitive_paths_accessed (list[dict]): List of sensitive paths accessed: [{"path": str, "status_code": int, "bytes": int}]
+- sample_paths_accessed (list[str]): Sample of up to 5 non-sensitive endpoints accessed
+- exfiltration_risk (str): Evaluated risk level ("NONE" | "LOW" | "MEDIUM" | "HIGH")
+    """
+    return await execute_check_data_exfiltration_evidence(client_id, source_ip, window_id)
+
+
+@server.tool()
+@require_tool_permission("find_pivot_blast_radius")
+async def find_pivot_blast_radius(
+    client_id: str,
+    source_ip: str,
+) -> Dict[str, Any]:
+    """
+    Discover the blast radius, targeted endpoints, and threat context of an attacking IP.
+
+    Identifies affected microservices (source_id), HTTP paths/endpoints probed, User-Agents, and associated MITRE ATT&CK tactics and techniques.
+
+    Inputs:
+    - client_id (str, REQUIRED): Tenant unique ID
+    - source_ip (str, REQUIRED): IP address to investigate
+
+    Output includes:
+    - affected_sources (list[str])
+    - user_agents_used (list[str])
+    - targeted_paths (list[str])
+    - mitre_tactics_observed (list[str])
+    - mitre_techniques_observed (list[str])
+    """
+    return await execute_find_pivot_blast_radius(client_id, source_ip)
+
+
+async def main() -> None:
+    """Initialize Mongo dependency and run FastMCP over selected transport."""
+    transport_mode = os.getenv("MCP_TRANSPORT", "sse").lower()
+
+    await mongo_db_manager.connect()
+    await neo4j_db_manager.connect()
     try:
-        # Build arguments in the expected format
-        arguments = {"source_ip": source_ip, "limit": limit}
-        return await execute_get_threat_context(arguments)
-    except Exception as e:
-        logger.error(f"Error in get_threat_context: {str(e)}", exc_info=True)
-        return {
-            "source_ip": source_ip,
-            "history": [],
-            "record_count": 0,
-            "error": str(e)
-        }
+        if transport_mode == "stdio":
+            if not get_internal_token():
+                logger.error("MCP_INTERNAL_SIGNING_TOKEN/MCP_INTERNAL_TOKEN is required. Refusing to start.")
+                sys.exit(1)
+            await server.run_async(transport="stdio")
+            return
 
-# --- Server Startup Logic ---
-async def main():
-    """
-    Initializes and runs the MCP server, selecting the transport
-    based on the MCP_TRANSPORT environment variable.
-    """
-    transport_mode = os.getenv('MCP_TRANSPORT', 'http').lower()
-    
-    logger.info("Tools 'analyze_web_activity' and 'get_threat_context' registered.")
+        if transport_mode == "sse":
+            host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+            port = int(os.getenv("MCP_SERVER_PORT", "8080"))
+            if not get_internal_token():
+                logger.error("MCP_INTERNAL_TOKEN is required for SSE transport. Refusing to start.")
+                sys.exit(1)
+            middleware = [Middleware(InternalBearerAuthMiddleware)]
+            await server.run_http_async(
+                transport="sse",
+                host=host,
+                port=port,
+                middleware=middleware,
+            )
+            return
 
-    if transport_mode == 'stdio':
-        logger.info("Starting FastMCP Log Analysis Server over stdio channel...")
-        await server.run_async(transport='stdio')
-
-    elif transport_mode == 'http':
-        host = os.getenv('MCP_SERVER_HOST', '0.0.0.0')
-        port = int(os.getenv('MCP_SERVER_PORT', '8080'))
-        logger.info(f"Starting FastMCP Log Analysis Server on HTTP at {host}:{port}...")
-        await server.run_async(transport='http', host=host, port=port)
-        
-    else:
-        logger.error(f"Invalid MCP_TRANSPORT: '{transport_mode}'. Use 'stdio' or 'http'.")
+        logger.error("Invalid MCP_TRANSPORT: '%s'. Use 'stdio' or 'sse'.", transport_mode)
         sys.exit(1)
+    finally:
+        await mongo_db_manager.disconnect()
+        await neo4j_db_manager.disconnect()
+
 
 if __name__ == "__main__":
     try:
-        # This initial log is safe because logging is already forced to stderr.
-        logger.info("MCP Server process starting.")
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("MCP Server shutting down.")
-    except Exception as e:
-        logger.error(f"MCP Server failed to start: {e}", exc_info=True)
+        logger.info("MCP Server interrupted and shutting down.")
+    except Exception as exc:
+        logger.error("MCP Server failed to start: %s", exc, exc_info=True)

@@ -13,30 +13,27 @@ export default function AlertsPage() {
   const sourceId = useSentinelStore((state) => state.activeSourceId);
   const selectedThreatId = useSentinelStore((state) => state.selectedThreatId);
   const selectThreat = useSentinelStore((state) => state.selectThreat);
-  const { threats, pageInfo, loading, error, refetch } = useThreats(sourceId, { page, limit });
+  const { threats, pageInfo, loading, error } = useThreats(sourceId, { page, limit });
   const { applyFilters } = useFilters();
-  const { markAsReviewed, addAction, resolveReport } = useAlertAction();
+  const { markAsReviewed, addAction, resolveReport } = useAlertAction(sourceId);
 
   useEffect(() => {
     setPage(1);
   }, [sourceId]);
 
   const filtered = useMemo(() => applyFilters(threats), [threats, applyFilters]);
-  const selectedThreat = filtered.find((threat) => threat._id === selectedThreatId) ?? null;
+  const selectedThreat = filtered.find((threat) => threat.id === selectedThreatId) ?? null;
 
   async function handleReview(id: string) {
     await markAsReviewed(id);
-    await refetch();
   }
 
   async function handleAddAction(id: string, comment: string) {
     await addAction(id, comment);
-    await refetch();
   }
 
   async function handleResolve(id: string) {
     await resolveReport(id);
-    await refetch();
   }
 
   return (

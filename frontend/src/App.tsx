@@ -1,36 +1,12 @@
-import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from '@/components/Sidebar';
-import { apiFetch } from '@/lib/apiClient';
+import { useSourceIds } from '@/hooks/useSourceIds';
 import { useSentinelStore } from '@/store/sentinelStore';
 
 function App() {
-  const [loadingSources, setLoadingSources] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const sourceIds = useSentinelStore((state) => state.sourceIds);
-  const activeSourceId = useSentinelStore((state) => state.activeSourceId);
-  const setSourceIds = useSentinelStore((state) => state.setSourceIds);
+  const { sourceIds, activeSourceId, loadingSources, error } = useSourceIds();
   const setActiveSourceId = useSentinelStore((state) => state.setActiveSourceId);
 
-  useEffect(() => {
-    async function loadSourceIds() {
-      setLoadingSources(true);
-      setError(null);
-      try {
-        const ids = await apiFetch<string[]>('/api/v1/analytics/source_ids');
-        setSourceIds(ids);
-        if (ids.length > 0) {
-          setActiveSourceId(ids[0]);
-        }
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoadingSources(false);
-      }
-    }
-
-    void loadSourceIds();
-  }, [setActiveSourceId, setSourceIds]);
 
   return (
     <div className="flex h-screen bg-surface-base text-slate-100">

@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY core_orchestrator/ ./core_orchestrator/
 COPY shared/ ./shared/
 COPY data/ ./data/
+COPY scripts/ ./scripts/
 
 # El contenedor expone el puerto de la API REST
 EXPOSE 8000

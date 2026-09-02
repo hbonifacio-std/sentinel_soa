@@ -54,7 +54,7 @@ export function LogsTable({ logs }: Readonly<LogsTableProps>) {
             if (!log) return null;
             return (
               <div
-                key={log._id ?? virtualRow.index}
+                key={log.id ?? virtualRow.index}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -95,12 +95,12 @@ export function LogsTable({ logs }: Readonly<LogsTableProps>) {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs text-slate-300">Detalle completo del evento</p>
+              <p className="text-xs text-slate-300">Full event details</p>
               <button
                 className="rounded border border-surface-border px-2 py-1 text-xs text-slate-200"
                 onClick={() => setSelectedLog(null)}
               >
-                Cerrar
+                close
               </button>
             </div>
             <LogRowExpanded log={selectedLog} />

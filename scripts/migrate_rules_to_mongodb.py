@@ -21,14 +21,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core_orchestrator.models.rule_schema import (  # noqa: E402
+from core_orchestrator.domain.entities.rule_engine.rules import (  # noqa: E402
     HeuristicRule,
     RuleAuditLog,
     RuleVersion,
     hash_version,
     rules_to_bundle,
 )
-from core_orchestrator.services.database import db  # noqa: E402
+from core_orchestrator.services.database_mongo_service import db  # noqa: E402
 
 logger = logging.getLogger("migrate_rules")
 DEFAULT_SEED = ROOT / "data" / "mongodb" / "heuristic_rules.json"
@@ -86,7 +86,7 @@ async def migrate(seed_path: Path, dry_run: bool = False, force: bool = False) -
             logger.info("Cleared existing rule collections (--force).")
 
         for rule in rules:
-            await db.create_rule(rule)
+            await db.insert(rule)
             logger.info("  Inserted rule: %s", rule.rule_id)
 
         for version in versions:
