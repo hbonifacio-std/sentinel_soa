@@ -48,128 +48,138 @@ export default function ForensicPage() {
   const pageInfo = historyQuery.data?.info;
 
   return (
-    <div className="grid min-h-[70vh] grid-cols-1 gap-4 xl:grid-cols-[340px_1fr]">
-      <section className="space-y-3 rounded border border-surface-border bg-surface-elevated/40 p-4">
-        <h2 className="text-sm font-semibold text-slate-100">Analisis Forense</h2>
-        <form className="space-y-3" onSubmit={(event) => void handleSubmit(event)}>
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-400">Modelo IA</label>
-            <select
-              className="w-full rounded border border-surface-border bg-slate-950/50 p-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              value={selectedModelId}
-              onChange={(e) => setSelectedModelId(e.target.value)}
-            >
-              <option value="">Default (Tenant: {defaultModelId})</option>
-              {Object.entries(availableModels).map(([id, m]) => (
-                <option key={id} value={id}>
-                  {id} ({m.provider} — {m.model_name})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <textarea
-            className="min-h-20 w-full rounded border border-surface-border bg-slate-950/50 p-2 text-sm text-slate-100"
-            placeholder="Consulta forense (IP, URI, user agent, patron...)"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+    <div className="h-[calc(100vh-4rem)] grid grid-cols-1 gap-4 xl:grid-cols-[260px_1fr]">
+      <aside className="space-y-3 rounded border border-surface-border bg-surface-elevated/40 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-100">Conversaciones</h2>
           <button
-            type="submit"
-            className="w-full rounded border border-accent-cyan/60 bg-accent-glow px-3 py-2 text-sm text-cyan-200 disabled:opacity-60"
-            disabled={analyzeMutation.isPending || query.trim().length < 3}
+            type="button"
+            className="text-xs rounded border border-surface-border px-2 py-1 hover:bg-slate-900"
+            onClick={() => {
+              setSelectedReportId(null);
+              setQuery('');
+            }}
           >
-            {analyzeMutation.isPending ? 'Analizando...' : 'Ejecutar analisis'}
+            Nueva
           </button>
-        </form>
+        </div>
 
         <div className="space-y-2">
-          <p className="text-xs text-slate-400">Historial</p>
-          {historyQuery.isLoading ? <p className="text-xs text-slate-400">Cargando historial...</p> : null}
+          {historyQuery.isLoading ? <p className="text-xs text-slate-400">Cargando conversaciones...</p> : null}
           {historyQuery.error instanceof Error ? (
             <p className="text-xs text-red-400">{historyQuery.error.message}</p>
           ) : null}
-          <div className="space-y-1">
-            {history.map((item) => {
-              const lastUser = [...(item.messages ?? [])].reverse().find((m) => m.role === 'user');
-              const title = lastUser ? lastUser.content : item.messages?.[0]?.content ?? item.session_id;
-              return (
-                <button
-                  key={item.session_id}
-                  className="w-full rounded border border-surface-border px-2 py-1 text-left text-xs hover:bg-slate-900"
-                  onClick={() => setSelectedReportId(item.session_id ?? null)}
-                  type="button"
-                >
-                  <p className="font-medium text-slate-200">{title}</p>
-                  <p className="text-slate-400">{new Date(item.created_at_utc).toLocaleString()}</p>
-                </button>
-              );
-            })}
-          </div>
 
-          <div className="flex items-center gap-2 pt-1 text-xs text-slate-400">
-            <button
-              type="button"
-              className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
-              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-              disabled={!pageInfo?.prev_page}
-            >
-              Prev
-            </button>
-            <span>Pag {pageInfo?.page ?? page}</span>
-            <button
-              type="button"
-              className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
-              onClick={() => setPage((prev) => prev + 1)}
-              disabled={!pageInfo?.next_page}
-            >
-              Next
-            </button>
-            <select
-              className="ml-auto rounded border border-surface-border bg-slate-950/50 px-2 py-1"
-              value={limit}
-              onChange={(event) => {
-                setLimit(Number(event.target.value));
-                setPage(1);
-              }}
-            >
-              {[10, 25, 50].map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-1 overflow-y-auto max-h-[60vh]">
+            {history.length === 0 ? (
+              <p className="text-xs text-slate-400">Aún no hay conversaciones. Presiona "Nueva" para iniciar.</p>
+            ) : (
+              history.map((item) => {
+                const lastUser = [...(item.messages ?? [])].reverse().find((m) => m.role === 'user');
+                const title = lastUser ? lastUser.content : item.messages?.[0]?.content ?? item.session_id;
+                return (
+                  <button
+                    key={item.session_id}
+                    className="w-full rounded border border-surface-border px-2 py-2 text-left text-xs hover:bg-slate-900"
+                    onClick={() => setSelectedReportId(item.session_id ?? null)}
+                    type="button"
+                  >
+                    <p className="font-medium text-slate-200 truncate">{title}</p>
+                    <p className="text-slate-400">{new Date(item.created_at_utc).toLocaleString()}</p>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
-      </section>
 
-      <section className="space-y-3 rounded border border-surface-border bg-surface-elevated/40 p-4">
-        <h3 className="text-sm font-semibold text-slate-100">Reporte seleccionado</h3>
-        {!selectedReport ? <p className="text-sm text-slate-400">Selecciona un reporte del historial.</p> : null}
-        {selectedReport ? (
-          <>
-            <div className="grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-4">
-              <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Session</p>
-                <p className="truncate">{selectedReport.session_id}</p>
-              </div>
-              <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Client</p>
-                <p>{selectedReport.client_id}</p>
-              </div>
-              <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Creado</p>
-                <p>{new Date(selectedReport.created_at_utc).toLocaleString()}</p>
-              </div>
-              <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Estado</p>
-                <p className="truncate text-cyan-300">{selectedReport.is_active ? 'Activa' : 'Cerrada'}</p>
-              </div>
+        <div className="flex items-center gap-2 pt-2 text-xs text-slate-400">
+          <button
+            type="button"
+            className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
+            onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+            disabled={!pageInfo?.prev_page}
+          >
+            Prev
+          </button>
+          <span>Pag {pageInfo?.page ?? page}</span>
+          <button
+            type="button"
+            className="rounded border border-surface-border px-2 py-1 disabled:opacity-50"
+            onClick={() => setPage((prev) => prev + 1)}
+            disabled={!pageInfo?.next_page}
+          >
+            Next
+          </button>
+        </div>
+      </aside>
+
+      <section className="space-y-3 rounded border border-surface-border bg-surface-elevated/40 p-4 flex flex-col">
+        <header className="flex items-start justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-100">Chat Forense</h3>
+            <p className="text-xs text-slate-400">
+              {selectedReport ? `Session: ${selectedReport.session_id}` : 'Nueva conversación'}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {analyzeMutation.isPending ? (
+              <span className="inline-flex items-center gap-2 rounded bg-yellow-600 px-2 py-1 text-xs font-medium text-black">
+                <span className="h-2 w-2 rounded-full bg-white animate-pulse" /> Analizando
+              </span>
+            ) : null}
+          </div>
+        </header>
+
+        <main className="mt-3 flex-1 overflow-hidden">
+          {!selectedReport ? (
+            <div className="h-full rounded border border-dashed border-surface-border p-6 text-sm text-slate-400">
+              Inicia la conversación escribiendo tu mensaje en el campo inferior. Verás visualizaciones del análisis cuando la respuesta llegue (spinners, tarjetas destacadas y timeline).
             </div>
-            <ForensicHighlights highlights={selectedReport.highlighted} />
-            <ChatView messages={selectedReport.messages} />
-          </>
-        ) : null}
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-4">
+                <div className="rounded border border-surface-border p-2">
+                  <p className="text-slate-400">Client</p>
+                  <p>{selectedReport.client_id}</p>
+                </div>
+                <div className="rounded border border-surface-border p-2">
+                  <p className="text-slate-400">Creado</p>
+                  <p>{new Date(selectedReport.created_at_utc).toLocaleString()}</p>
+                </div>
+                <div className="rounded border border-surface-border p-2">
+                  <p className="text-slate-400">Estado</p>
+                  <p className="truncate text-cyan-300">{selectedReport.is_active ? 'Activa' : 'Cerrada'}</p>
+                </div>
+                <div className="rounded border border-surface-border p-2">
+                  <p className="text-slate-400">Session</p>
+                  <p className="truncate">{selectedReport.session_id}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-4 flex-1 overflow-hidden">
+                <ForensicHighlights highlights={selectedReport.highlighted} />
+
+                {/* Chat area: ChatView contains the single scrollable messages region and the floating input */}
+                <div className="flex-1 relative">
+                  <ChatView
+                    messages={selectedReport.messages}
+                    query={query}
+                    setQuery={setQuery}
+                    selectedModelId={selectedModelId}
+                    setSelectedModelId={setSelectedModelId}
+                    analyzeMutation={analyzeMutation}
+                    availableModels={availableModels}
+                    defaultModelId={defaultModelId}
+                    handleSubmit={handleSubmit}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
       </section>
     </div>
   );

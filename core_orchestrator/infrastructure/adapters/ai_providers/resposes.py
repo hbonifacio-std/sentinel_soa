@@ -17,9 +17,15 @@ class ResponseForensic(BaseModel):
     highlighted: List[str] = Field(
         ...,
         description=(
-            "List of key atomic forensic indicators, entities, or artifacts extracted from the analysis. "
-            "Each element MUST be a single technical value, term, or entity (e.g., IP address, hash, "
-            "CVE ID, domain, payload, technique, or status word). "
+            "List of key forensic indicators formatted strictly as 'CATEGORY: VALUE'. "
+            "Allowed categories and rules:"
+            "- 'SEVERITY': Overall risk level (e.g., 'SEVERITY: HIGH'). Include exactly ONE."
+            "- 'SOURCE': Targeted application or service ID (e.g., 'SOURCE: api-core-005')."
+            "- 'ATTACK': Identified threat or technique (e.g., 'ATTACK: SQL Injection Attempt', 'ATTACK: Credential Fuzzing')."
+            "- 'TOOL': Specific user-agent or tool detected (e.g., 'TOOL: sqlmap/1.6#stable')."
+            "- 'IP': Attacker origin IP address (e.g., 'IP: 198.51.100.42')."
+            "- 'ROUTE': Affected route with HTTP status in parentheses (e.g., 'ROUTE: /api/v1/products (HTTP 500)')."
+            "DO NOT output raw strings without a category prefix. DO NOT output plain timestamps or isolated HTTP codes."
         )
     )
 
