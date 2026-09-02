@@ -74,9 +74,6 @@ DETERMINISTIC_RULES_PRE_ANALYSIS:
 INPUT_PAYLOAD:
 {input_payload}
 
-Respond ONLY with a valid JSON object with this exact schema:
-SCHEMA:
-{output_schema}
 """
 
 # Optimized template for Ollama (which uses a detailed Modelfile)
@@ -122,7 +119,6 @@ def build_web_activity_prompt(
         "rule_score": rule_score,
         "rule_evidences": formatted_evidences,
         "input_payload": json.dumps(telemetry, default=str, ensure_ascii=False),
-        "output_schema": json.dumps(DEFAULT_WEB_ACTIVITY_SCHEMA, default=str, ensure_ascii=False),
     }
     if provider_name == 'ollama':
         return OPTIMIZED_PROMPT_TEMPLATE.format(**task_details)

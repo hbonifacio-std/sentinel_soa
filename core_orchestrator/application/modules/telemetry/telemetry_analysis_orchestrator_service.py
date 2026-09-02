@@ -21,17 +21,14 @@ from typing import Dict, Any, Optional
 
 
 from core_orchestrator.domain.entities.telemetry.logs_event import LogEvent
-from core_orchestrator.domain.exceptions.mcp_exceptions import MCPConnectionError
 from core_orchestrator.domain.entities.telemetry.telemetry_window import build_web_activity_window, TelemetryWindow
-from core_orchestrator.domain.ports.mcp_server.mcp_client_port import MCPClientPort
 
 from core_orchestrator.application.modules.telemetry.telemetry_analysis_service import TelemetryAnalysisService
-from core_orchestrator.application.modules.telemetry.telemetry_window_manager_service import TelemetryManagerWindowService
 from core_orchestrator.application.modules.telemetry.telemetry_service import TelemetryService
 
 
 
-logger = logging.getLogger("core_orchestrator.agent.runner")
+logger = logging.getLogger("core_orchestrator.service")
 
 # ── MCP Reconnect tunable ─────────────────────────────────────────────────
 _MCP_RETRY_INITIAL_DELAY_S = 5
@@ -67,57 +64,23 @@ class _PendingAnalysis:
 class TelemetryAnalysisOrchestratorService:
     def __init__(
         self,
-        telemetry_manager_window_service: TelemetryManagerWindowService,
         telemetry_service: TelemetryService,
         telemetry_analysis_service: TelemetryAnalysisService,
     ):
-        self.telemetry_processing_service = telemetry_manager_window_service
         self.telemetry_service = telemetry_service
-        self._agent_factory = telemetry_analysis_service
-        self.mcp_manager: Optional[MCPClientPort] = None
-        self.telemetry_analysis_service: Optional[TelemetryAnalysisService]= None
+        self.telemetry_analysis_service= telemetry_analysis_service
 
         self._analysis_queue: asyncio.Queue[_PendingAnalysis] = asyncio.Queue(
             maxsize=_ANALYSIS_QUEUE_MAXSIZE
         )
 
-        self._window_processor_handle: Optional[asyncio.Task] = None
         self._analysis_consumer_handle: Optional[asyncio.Task] = None
-        self._mcp_reconnect_handle: Optional[asyncio.Task] = None
 
 
         self._inflight_tasks: set = set()
 
         self._stop_event = asyncio.Event()
 
-    @property
-    def is_mcp_connected(self) -> bool:
-        """
-        Determine if an MCP session is currently connected.
-
-        This property returns a boolean value indicating the connection
-        status of the MCP (Message Conversion Protocol) session. It checks
-        whether the MCP session is active and maintains the connection.
-
-        Returns:
-            bool: True if the MCP session is alive and connected; False otherwise.
-        """
-        return self._is_mcp_session_alive()
-
-    async def is_mcp_healthy(self) -> bool:
-        """
-        Checks the health status of the MCP (Multi-Channel Processor) session.
-
-        This asynchronous method verifies if the MCP session managed by the
-        mcp_manager object is in a healthy state or not. If no mcp_manager
-        instance is present, it assumes the session is not healthy.
-
-        Returns:
-            bool: True if the MCP session is healthy, otherwise False.
-        """
-        if self.mcp_manager is None:
-            return False
-        return await self.mcp_manager.is_session_healthy()
 
     async def run_analysis(self, window_key: str, telemetry_window: TelemetryWindow) -> str:
         """
@@ -127,14 +90,6 @@ class TelemetryAnalysisOrchestratorService:
         Otherwise, the window is re-queued so the background consumer can
         process it once the MCP session is restored.
         """
-        if self.telemetry_analysis_service is None:
-            logger.info(
-                "Analysis service unavailable for window_key=%s. Re-queuing telemetry window.",
-                window_key,
-            )
-            await self._enqueue_analysis(telemetry_window, window_key=window_key)
-            return ""
-
         logger.info(
             "Dispatching telemetry window to analysis service for window_key=%s source_ip=%s window_id=%s",
             window_key,
@@ -250,20 +205,6 @@ class TelemetryAnalysisOrchestratorService:
                 except asyncio.TimeoutError:
                     continue
 
-                if self.telemetry_analysis_service is None:
-                    wait_time = _ANALYSIS_RETRY_DELAY_S
-                    logger.info(
-                        f"MCP not ready. Holding window '{pending.window_key}' "
-                        f"(attempt {pending.attempts + 1}). "
-                        f"Re-checking in {wait_time}s..."
-                    )
-                    await asyncio.sleep(wait_time)
-
-                    await self._analysis_queue.put(pending)
-                    self._analysis_queue.task_done()
-                    continue
-
-
                 task = asyncio.create_task(
                     self._run_and_handle_failure(pending)
                 )
@@ -310,8 +251,7 @@ class TelemetryAnalysisOrchestratorService:
         pending.increment()
         window_key = pending.window_key or "unknown"
         try:
-            if self.telemetry_analysis_service is None:
-                raise MCPConnectionError("MCP not ready. Skipping window analysis.")
+
             await self.telemetry_analysis_service.process_telemetry_window(pending.window_data)
             logger.info(
                 "Analysis completed for window_key=%s window_id=%s after %s attempt(s).",
@@ -344,22 +284,6 @@ class TelemetryAnalysisOrchestratorService:
                 )
 
 
-    def _is_mcp_session_alive(self) -> bool:
-        if self.mcp_manager is None:
-            return False
-        return getattr(self.mcp_manager, "_session", None) is not None
-
-    async def _teardown_mcp(self) -> None:
-        if self.mcp_manager is not None:
-            try:
-                await self.mcp_manager.close()
-            except Exception as e:
-                logger.exception("Error tearing down MCP: %s", e)
-
-        self.mcp_manager = None
-        self.telemetry_analysis_service = None
-
-
     def initialize_subsystem(self) -> None:
         """
         Initializes the Agent subsystem and starts its associated background tasks.
@@ -376,54 +300,17 @@ class TelemetryAnalysisOrchestratorService:
         logger.info("Initializing Agent subsystem...")
         self._stop_event.clear()
 
-        if self._mcp_reconnect_handle:
-            self._mcp_reconnect_handle.add_done_callback(self._on_background_task_done)
-
         self._analysis_consumer_handle = asyncio.create_task(
             self._analysis_consumer_task(), name="analysis-consumer"
         )
         if self._analysis_consumer_handle:
             self._analysis_consumer_handle.add_done_callback(self._on_background_task_done)
 
-        if self._window_processor_handle:
-            self._window_processor_handle.add_done_callback(self._on_background_task_done)
-
         logger.info(
             "Agent subsystem started: "
             "[window-processor] → [analysis-queue] → [analysis-consumer] → [mcp-agent]"
         )
 
-    async def shutdown_subsystem(self) -> None:
-        """
-        Asynchronously shuts down the Agent subsystem, ensuring all ongoing processes and tasks are canceled
-        and cleaned up properly.
-
-        The method completes a graceful shutdown by triggering the stop event, canceling existing async
-        tasks, and handling in-flight processes. It also executes the teardown logic for the MCP component
-        before concluding the shutdown.
-
-        Raises:
-            asyncio.CancelledError: Propagated if a cancellation occurs during task cancellation.
-            Exception: Catches and suppresses non-critical exceptions during task cancellations.
-        """
-        logger.info("Shutting down Agent subsystem...")
-        self._stop_event.set()
-
-        handles = [
-            self._window_processor_handle,
-            self._mcp_reconnect_handle,
-            self._analysis_consumer_handle,  # Este espera los in-flight
-        ]
-        for handle in handles:
-            if handle and not handle.done():
-                handle.cancel()
-                try:
-                    await handle
-                except (asyncio.CancelledError, Exception):
-                    pass
-
-        await self._teardown_mcp()
-        logger.info("Agent subsystem shut down cleanly.")
 
     @staticmethod
     def _on_background_task_done(task: asyncio.Task) -> None:

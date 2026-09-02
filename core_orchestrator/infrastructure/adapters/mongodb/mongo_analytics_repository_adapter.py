@@ -157,7 +157,7 @@ class MongoAnalyticsReportsAdapter(BaseRepository[AnalysisReport], AnalyticsRepo
             try:
                 logger.debug(f"Upserting analysis report to Neo4j with report_id={result}")
                 await self._graph_repository.upsert_analysis_report(report=report, report_id=result)
-                logger.info(f"Analysis report successfully synced to Neo4j with ID: {result}")
+
             except Exception as e:
                 logger.warning(f"Failed to sync analysis report to Neo4j (report_id={result}): {e}", exc_info=True)
         else:

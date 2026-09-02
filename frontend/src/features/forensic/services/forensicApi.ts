@@ -1,13 +1,15 @@
 import { apiFetch } from '@/lib/apiClient';
 import type {
   ForensicAnalyzeRequest,
-  ForensicAnalysisRecord,
+  ForensicChatSession,
   ForensicHistoryResponse,
   AvailableModelsResponse,
 } from '@/types/forensic';
 
-export async function analyzeForensicActivity(payload: ForensicAnalyzeRequest): Promise<ForensicAnalysisRecord> {
-  return apiFetch<ForensicAnalysisRecord>('/api/v1/forensic/analyze', {
+export async function analyzeForensicActivity(
+  payload: ForensicAnalyzeRequest,
+): Promise<ForensicChatSession> {
+  return apiFetch<ForensicChatSession>('/api/v1/forensic/analyze', {
     method: 'POST',
     body: JSON.stringify(payload),
   });
@@ -26,11 +28,12 @@ export async function getForensicHistory(
   return apiFetch<ForensicHistoryResponse>(`/api/v1/forensic/history?${params.toString()}`);
 }
 
-export async function getForensicReport(analysisId: string): Promise<ForensicAnalysisRecord> {
-  return apiFetch<ForensicAnalysisRecord>(`/api/v1/forensic/history/${analysisId}`);
+export async function getForensicReport(analysisId: string): Promise<ForensicChatSession> {
+  return apiFetch<ForensicChatSession>(`/api/v1/forensic/history/${analysisId}`);
 }
 
 export async function getAvailableModelsForChat(): Promise<AvailableModelsResponse> {
-  return apiFetch<AvailableModelsResponse>('/api/v1/forensic/entities');
+  // backend exposes /models for available chat models
+  return apiFetch<AvailableModelsResponse>('/api/v1/forensic/models');
 }
 

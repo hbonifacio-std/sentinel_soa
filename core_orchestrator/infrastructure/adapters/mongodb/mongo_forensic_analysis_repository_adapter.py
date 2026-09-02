@@ -72,9 +72,12 @@ class MongoForensicAnalysisRepositoryAdapter(BaseRepository[ForensicChatSession]
         }
 
     async def save_analysis(self, record: ForensicChatSession) -> Optional[ForensicChatSession]:
-        result = await self.insert(record)
-        analysis_id = result
-        return analysis_id
+        if record.session_id:
+            query = {"_id": ObjectId(record.session_id), "client_id": record.client_id}
+            result = await self.update_partial(query=query,model_instance=record)
+        else:
+            result = await self.insert(record)
+        return result
 
     async def get_by_id(self, session_id: str, client_id: str) -> Optional[ForensicChatSession]:
         query = {"_id": ObjectId(session_id), "client_id": client_id}

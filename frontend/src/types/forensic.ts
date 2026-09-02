@@ -1,23 +1,25 @@
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string; // ISO UTC
+  metadata?: Record<string, unknown>;
+}
+
 export interface ForensicAnalyzeRequest {
   query: string;
   source_id?: string | null;
-  page?: number;
-  limit?: number;
   model_id?: string | null;
+  session_id?: string | null;
 }
 
-export interface ForensicAnalysisRecord {
-  analysis_id: string;
-  query: string;
-  source_id?: string | null;
+export interface ForensicChatSession {
+  session_id?: string | null;
+  client_id: string;
   created_at_utc: string;
-  total_matches: number;
-  highlights: string[];
-  markdown_report: string;
-  sample_results: Array<Record<string, unknown>>;
-  llm_provider_used?: string | null;
-  llm_model_used?: string | null;
-  provider_source?: string | null;
+  updated_at_utc: string;
+  messages: ChatMessage[];
+  is_active: boolean;
+  highlighted: string[];
 }
 
 export interface ForensicHistoryInfo {
@@ -30,7 +32,7 @@ export interface ForensicHistoryInfo {
 
 export interface ForensicHistoryResponse {
   info: ForensicHistoryInfo;
-  results: ForensicAnalysisRecord[];
+  results: ForensicChatSession[];
 }
 
 export interface AvailableModelDef {

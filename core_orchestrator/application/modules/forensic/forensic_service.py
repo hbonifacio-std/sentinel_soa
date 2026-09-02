@@ -101,8 +101,7 @@ class ForensicService(ForensicServicePort):
         return update_session
 
     async def get_analysis_history(self, query: ForensicHistoryQueryDTO) -> PaginatedResult[ForensicChatSession]:
-        history = await self.forensic_repository.get_history(query)
-        return history
+        return await self.forensic_repository.get_history(query)
 
     async def get_analysis_by_id(self, session_id: str, client_id: str) -> ForensicChatSession | None:
         return await self.forensic_repository.get_by_id(session_id, client_id)

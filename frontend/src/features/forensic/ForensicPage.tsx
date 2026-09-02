@@ -1,10 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useForensicAnalysis } from '@/features/forensic/hooks/useForensicAnalysis';
 import { useForensicHistory, useForensicReport } from '@/features/forensic/hooks/useForensicHistory';
 import { useForensicModels } from '@/features/forensic/hooks/useForensicModels';
 import { useSentinelStore } from '@/store/sentinelStore';
 import { ForensicHighlights } from './components/ForensicHighlights';
+import ChatView from './components/ChatView';
 
 export default function ForensicPage() {
   const sourceId = useSentinelStore((state) => state.activeSourceId);
@@ -26,7 +26,7 @@ export default function ForensicPage() {
     if (reportQuery.data) {
       return reportQuery.data;
     }
-    return historyQuery.data?.results.find((item) => item.analysis_id === selectedReportId) ?? null;
+    return historyQuery.data?.results.find((item) => item.session_id === selectedReportId) ?? null;
   }, [historyQuery.data?.results, reportQuery.data, selectedReportId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -36,14 +36,12 @@ export default function ForensicPage() {
       return;
     }
 
-    const report = await analyzeMutation.mutateAsync({
+    const session = await analyzeMutation.mutateAsync({
       query: normalizedQuery,
       source_id: sourceId,
-      page: 1,
-      limit: 25,
       model_id: selectedModelId || undefined,
     });
-    setSelectedReportId(report.analysis_id);
+    setSelectedReportId(session.session_id ?? null);
   }
 
   const history = historyQuery.data?.results ?? [];
@@ -92,17 +90,21 @@ export default function ForensicPage() {
             <p className="text-xs text-red-400">{historyQuery.error.message}</p>
           ) : null}
           <div className="space-y-1">
-            {history.map((item) => (
-              <button
-                key={item.analysis_id}
-                className="w-full rounded border border-surface-border px-2 py-1 text-left text-xs hover:bg-slate-900"
-                onClick={() => setSelectedReportId(item.analysis_id)}
-                type="button"
-              >
-                <p className="font-medium text-slate-200">{item.query}</p>
-                <p className="text-slate-400">{new Date(item.created_at_utc).toLocaleString()}</p>
-              </button>
-            ))}
+            {history.map((item) => {
+              const lastUser = [...(item.messages ?? [])].reverse().find((m) => m.role === 'user');
+              const title = lastUser ? lastUser.content : item.messages?.[0]?.content ?? item.session_id;
+              return (
+                <button
+                  key={item.session_id}
+                  className="w-full rounded border border-surface-border px-2 py-1 text-left text-xs hover:bg-slate-900"
+                  onClick={() => setSelectedReportId(item.session_id ?? null)}
+                  type="button"
+                >
+                  <p className="font-medium text-slate-200">{title}</p>
+                  <p className="text-slate-400">{new Date(item.created_at_utc).toLocaleString()}</p>
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2 pt-1 text-xs text-slate-400">
@@ -148,28 +150,24 @@ export default function ForensicPage() {
           <>
             <div className="grid grid-cols-1 gap-2 text-xs text-slate-300 sm:grid-cols-4">
               <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Consulta</p>
-                <p className="truncate">{selectedReport.query}</p>
+                <p className="text-slate-400">Session</p>
+                <p className="truncate">{selectedReport.session_id}</p>
               </div>
               <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Coincidencias</p>
-                <p>{selectedReport.total_matches}</p>
+                <p className="text-slate-400">Client</p>
+                <p>{selectedReport.client_id}</p>
               </div>
               <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Fuente</p>
-                <p>{selectedReport.source_id ?? 'todas'}</p>
+                <p className="text-slate-400">Creado</p>
+                <p>{new Date(selectedReport.created_at_utc).toLocaleString()}</p>
               </div>
               <div className="rounded border border-surface-border p-2">
-                <p className="text-slate-400">Modelo IA</p>
-                <p className="truncate text-cyan-300">
-                  {selectedReport.llm_model_used
-                    ? `${selectedReport.llm_provider_used}/${selectedReport.llm_model_used}`
-                    : 'Default Global'}
-                </p>
+                <p className="text-slate-400">Estado</p>
+                <p className="truncate text-cyan-300">{selectedReport.is_active ? 'Activa' : 'Cerrada'}</p>
               </div>
             </div>
-            <ForensicHighlights highlights={selectedReport.highlights} />
-            <MarkdownRenderer content={selectedReport.markdown_report} />
+            <ForensicHighlights highlights={selectedReport.highlighted} />
+            <ChatView messages={selectedReport.messages} />
           </>
         ) : null}
       </section>

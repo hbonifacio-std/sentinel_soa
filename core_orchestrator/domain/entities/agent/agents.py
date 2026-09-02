@@ -24,9 +24,29 @@ class LLMResponseAnalyzer(BaseModel):
         Structured response common to all LLM providers.
         Ensures that regardless of the provider, the output follows the same schema.
         """
-    threat_score: int
-    reasoning_summary: str
-    recommendation: str
+    threat_score: int = Field(
+        ...,
+        ge=0,
+        le=100,
+        description="Assessed threat level ranging from 0 (Safe / Benign traffic) to 100 (Critical threat / Active attack).",
+    )
+    reasoning_summary: str = Field(
+        ...,
+        description=(
+            "Detailed step-by-step reasoning formatted in rich Markdown. "
+            "Must provide clear justification in ALL cases, whether a threat is detected or the log stream is confirmed benign. "
+            "Use bold text, bullet points, and inline code snippets for logs or IP addresses where appropriate."
+        ),
+    )
+
+    recommendation: str = Field(
+        ...,
+        description=(
+            "Actionable next steps formatted in rich Markdown. "
+            "If threat_score > 0, detail specific mitigation steps, IP blocks, or firewall rule adjustments. "
+            "If no threat is found (threat_score = 0), explicitly state 'No immediate action required' with routine monitoring recommendations."
+        ),
+    )
 
     model_config = {
         # Providers may still emit extra keys; ignore them and keep only the canonical 3 fields.

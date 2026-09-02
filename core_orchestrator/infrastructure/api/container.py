@@ -235,7 +235,6 @@ class Container:
 
         # Agent Runner — agent_factory centralizes MCP wiring upon each reconnection.
         self.telemetry_analysis_orchestrator_service = TelemetryAnalysisOrchestratorService(
-            telemetry_manager_window_service=self.telemetry_manager_window_service,
             telemetry_service=self.telemetry_service,
             telemetry_analysis_service=TelemetryAnalysisService(
                     analytics_report=self.mongo_analytics_report_adapter,

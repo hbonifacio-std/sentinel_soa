@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, List
 from core_orchestrator.application.modules.auth_clients.tenant_provider_ai_service import TenantProviderAiService
 from core_orchestrator.application.modules.rules_heuristics.rules_engine_service import RulesEngineService
+from core_orchestrator.domain.entities.agent.agents import LLMResponseAnalyzer
 from core_orchestrator.domain.entities.rule_engine.rules import RuleMatch, TACTIC_TO_KILL_CHAIN
 
 from core_orchestrator.domain.entities.telemetry import TelemetryWindow
@@ -106,9 +107,15 @@ class AiAnalysisAdapter(AiAnalysisPort):
             rule_score=deterministic_score,
             rule_evidences=rule_evidences
         )
-
-        analysis_result = await self.llm_analysis.ask_llm(ia_provider_client=provider, prompt=prompt)
-        report = self._build_safe_analysis_result(analysis_result, telemetry_window, source_ip,deterministic_matches)
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        analysis_result: LLMResponseAnalyzer = await self.llm_analysis.ask_llm(
+            ia_provider_client=provider,
+            messages=messages,
+            response_format=LLMResponseAnalyzer
+        )
+        report = self._build_safe_analysis_result(analysis_result.model_dump(), telemetry_window, source_ip,deterministic_matches)
 
         if report is None:
             logger.info(

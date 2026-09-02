@@ -4,6 +4,8 @@ from pymongo import InsertOne
 from pymongo.asynchronous.collection import AsyncCollection
 import asyncio
 
+from pymongo.results import UpdateResult
+
 from core_orchestrator.domain.object_value.object_id import ObjectId
 from core_orchestrator.infrastructure.adapters.helper.map_to_dataclass import map_to_dataclass
 from core_orchestrator.infrastructure.adapters.mongodb.responses import PaginatedResult, PaginationMeta
@@ -91,7 +93,8 @@ class BaseRepository(Generic[T]):
         return map_to_dataclass(self.model, data)
 
     async def insert(self, model_instance: T) -> Optional[T]:
-        id_field_name = model_instance.get_id_field_name() or None
+        get_id_fn = getattr(model_instance, "get_id_field_name", None)
+        id_field_name = get_id_fn() if callable(get_id_fn) else None
 
         document = self._to_db_document(model_instance)
         if id_field_name is not None:
@@ -101,10 +104,10 @@ class BaseRepository(Generic[T]):
         inserted_id_str = str(result.inserted_id)
 
 
-        if is_dataclass(model_instance):
+        if is_dataclass(model_instance) and id_field_name is not None:
             return replace(model_instance, **{id_field_name: inserted_id_str})
 
-        setattr(model_instance, id_field_name, inserted_id_str)
+
         return model_instance
 
     async def find_one(self, query: Dict[str, Any]) -> Optional[T]:
@@ -233,7 +236,7 @@ class BaseRepository(Generic[T]):
         )
 
 
-    async def update_partial(self, query: Dict[str, Any], updates: Dict[str, Any]) -> bool:
+    async def update_partial(self, query: Dict[str, Any],  model_instance: T) -> T :
         """
         Updates specific fields of a document in the database that match the given query.
 
@@ -253,10 +256,15 @@ class BaseRepository(Generic[T]):
         bool
             True if at least one document was successfully updated, False otherwise.
         """
-        if not updates:
+        if not model_instance:
             return False
-        result = await self.collection.update_one(query, {"$set": updates})
-        return result.modified_count > 0
+        document = self._to_db_document(model_instance)
+        result = await self.collection.update_one(query, {"$set": document})
+        # After update, fetch the actual updated document and map to dataclass.
+        if result.matched_count == 0:
+            return None
+        updated_doc = await self.collection.find_one(query)
+        return self._document_to_dataclass(updated_doc)
 
 
     async def delete_physical(self, query: Dict[str, Any]) -> bool:
