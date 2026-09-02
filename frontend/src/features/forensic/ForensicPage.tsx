@@ -89,7 +89,6 @@ export default function ForensicPage() {
     const pending = { ...userMsg, idempotencyKey, attempts: 0, error: false };
 
     setPendingUserMessage(pending);
-    setCurrentMessages((prev) => [...prev, userMsg]);
     setQuery('');
 
     try {

@@ -46,96 +46,97 @@ export default function ChatView({
     <div className="h-full flex flex-col relative">
       {/* Messages area: single scrollbar here */}
       <div ref={messagesRef} className="flex-1 overflow-auto pr-3 space-y-4 pb-28 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900" style={{maxHeight: '60vh'}}>
-        {sorted.length === 0 ? (
+        {sorted.length === 0 && (
           <p className="text-sm text-slate-400">No hay mensajes en esta sesión.</p>
-        ) : (
-          <>
-            {sorted.map((m, idx) => {
-              const isUser = m.role === 'user';
-              const isAssistant = m.role === 'assistant';
-
-              const bubbleClasses = isUser
-                ? 'ml-auto max-w-[65%] rounded-lg rounded-br-md border border-accent-cyan/40 bg-gradient-to-br from-cyan-900/80 to-cyan-800/60 p-3 text-sm text-slate-100 shadow-sm'
-                : 'mr-auto max-w-[65%] rounded-lg rounded-bl-md border border-surface-border bg-slate-900/50 p-3 text-sm text-slate-200 shadow-sm';
-
-              const metaClasses = 'text-xs text-slate-400 mb-1';
-              const timeClasses = 'mt-2 text-right text-[11px] text-slate-500';
-
-              return (
-                <div key={idx} className={`flex items-end ${isUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isUser ? (
-                    <div className="mr-3 flex-shrink-0">
-                      <div className="h-9 w-9 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200">AI</div>
-                    </div>
-                  ) : null}
-
-                  <div className={bubbleClasses}>
-                    <div className={metaClasses}>{isAssistant ? 'assistant' : m.role}</div>
-                    <div className="whitespace-pre-wrap leading-relaxed">
-                      <MarkdownRenderer content={m.content} />
-                    </div>
-                    <div className={timeClasses}>{new Date(m.timestamp).toLocaleString()}</div>
-                  </div>
-
-                  {isUser ? (
-                    <div className="ml-3 flex-shrink-0">
-                      <div className="h-9 w-9 rounded-full bg-cyan-800 flex items-center justify-center text-xs text-slate-100">U</div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-
-            {/* Pending user message (optimistic) */}
-            {pendingUserMessage ? (
-              <div className={`flex items-end justify-end`}>
-                <div className="ml-3 flex-shrink-0">
-                  <div className="h-9 w-9 rounded-full bg-cyan-800 flex items-center justify-center text-xs text-slate-100">U</div>
-                </div>
-
-                <div className="ml-auto max-w-[65%] rounded-lg rounded-br-md border border-accent-cyan/40 bg-gradient-to-br from-cyan-900/80 to-cyan-800/60 p-3 text-sm text-slate-100 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-slate-400 mb-1">user</div>
-                    {pendingUserMessage.error ? (
-                      <div className="text-xs text-rose-300 ml-2">Error · Intentos: {pendingUserMessage.attempts ?? 1}</div>
-                    ) : null}
-                  </div>
-
-                  <div className="whitespace-pre-wrap leading-relaxed">{pendingUserMessage.content}</div>
-
-                  <div className="mt-2 text-right text-[11px] text-slate-500">{new Date(pendingUserMessage.timestamp).toLocaleString()}</div>
-
-                  {pendingUserMessage.error ? (
-                    <div className="mt-2 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onRetry && onRetry()}
-                        disabled={analyzeMutation?.isPending}
-                        className="text-xs rounded px-3 py-1 border border-rose-600 bg-rose-900/20 text-rose-300 hover:bg-rose-900/40 disabled:opacity-50"
-                      >
-                        Reintentar
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {/* Placeholder assistant bubble when waiting for response */}
-            {analyzeMutation?.isPending ? (
-              <div className="flex items-end justify-start">
-                <div className="mr-3 flex-shrink-0">
-                  <div className="h-9 w-9 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200">AI</div>
-                </div>
-
-                <div className="mr-auto max-w-[65%] rounded-lg rounded-bl-md border border-surface-border bg-slate-900/40 p-3 text-sm text-slate-200 shadow-sm animate-pulse">
-                  <div className="text-xs text-slate-400 mb-1">assistant</div>
-                  <div className="h-4 w-48 rounded bg-slate-800/60" />
-                </div>
-              </div>
-            ) : null}
-          </>
         )}
+
+        <>
+          {sorted.map((m, idx) => {
+            const isUser = m.role === 'user';
+            const isAssistant = m.role === 'assistant';
+
+            const bubbleClasses = isUser
+              ? 'ml-auto max-w-[65%] rounded-lg rounded-br-md border border-accent-cyan/40 bg-gradient-to-br from-cyan-900/80 to-cyan-800/60 p-3 text-sm text-slate-100 shadow-sm'
+              : 'mr-auto max-w-[65%] rounded-lg rounded-bl-md border border-surface-border bg-slate-900/50 p-3 text-sm text-slate-200 shadow-sm';
+
+            const metaClasses = 'text-xs text-slate-400 mb-1';
+            const timeClasses = 'mt-2 text-right text-[11px] text-slate-500';
+
+            return (
+              <div key={idx} className={`flex items-end ${isUser ? 'justify-end' : 'justify-start'}`}>
+                {!isUser ? (
+                  <div className="mr-3 flex-shrink-0">
+                    <div className="h-9 w-9 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200">AI</div>
+                  </div>
+                ) : null}
+
+                <div className={bubbleClasses}>
+                  <div className={metaClasses}>{isAssistant ? 'assistant' : m.role}</div>
+                  <div className="whitespace-pre-wrap leading-relaxed">
+                    <MarkdownRenderer content={m.content} />
+                  </div>
+                  <div className={timeClasses}>{new Date(m.timestamp).toLocaleString()}</div>
+                </div>
+
+                {isUser ? (
+                  <div className="ml-3 flex-shrink-0">
+                    <div className="h-9 w-9 rounded-full bg-cyan-800 flex items-center justify-center text-xs text-slate-100">U</div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {/* Pending user message (optimistic) */}
+          {pendingUserMessage ? (
+            <div className={`flex items-end justify-end`}>
+              <div className="ml-auto max-w-[65%] rounded-lg rounded-br-md border border-accent-cyan/40 bg-gradient-to-br from-cyan-900/80 to-cyan-800/60 p-3 text-sm text-slate-100 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs text-slate-400 mb-1">user</div>
+                  {pendingUserMessage.error ? (
+                    <div className="text-xs text-rose-300 ml-2">Error · Intentos: {pendingUserMessage.attempts ?? 1}</div>
+                  ) : null}
+                </div>
+
+                <div className="whitespace-pre-wrap leading-relaxed">{pendingUserMessage.content}</div>
+
+                <div className="mt-2 text-right text-[11px] text-slate-500">{new Date(pendingUserMessage.timestamp).toLocaleString()}</div>
+
+                {pendingUserMessage.error ? (
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onRetry && onRetry()}
+                      disabled={analyzeMutation?.isPending}
+                      className="text-xs rounded px-3 py-1 border border-rose-600 bg-rose-900/20 text-rose-300 hover:bg-rose-900/40 disabled:opacity-50"
+                    >
+                      Reintentar
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="ml-3 flex-shrink-0">
+                <div className="h-9 w-9 rounded-full bg-cyan-800 flex items-center justify-center text-xs text-slate-100">U</div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Placeholder assistant bubble when waiting for response */}
+          {analyzeMutation?.isPending ? (
+            <div className="flex items-end justify-start">
+              <div className="mr-3 flex-shrink-0">
+                <div className="h-9 w-9 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200">AI</div>
+              </div>
+
+              <div className="mr-auto max-w-[65%] rounded-lg rounded-bl-md border border-surface-border bg-slate-900/40 p-3 text-sm text-slate-200 shadow-sm animate-pulse">
+                <div className="text-xs text-slate-400 mb-1">assistant</div>
+                <div className="h-4 w-48 rounded bg-slate-800/60" />
+              </div>
+            </div>
+          ) : null}
+        </>
+
       </div>
 
       {/* Floating input - sits at bottom of chat area */}
